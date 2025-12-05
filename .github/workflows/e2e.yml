@@ -8,40 +8,31 @@ on:
 
 jobs:
   e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
+    name: Run on Ubuntu
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     steps:
+      - name: Setup RunsOn magic cache
+        uses: runs-on/action@v2
+
       - name: Clone the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
         with:
           go-version-file: go.mod
-          cache: true
+          cache: true  # Enable Go module caching for faster dependency downloads
 
-      - name: Setup Kind cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: kind
-          wait: 300s
-
-      - name: Verify Kind cluster
+      - name: Install the latest version of kind
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
 
-      - name: Run E2E tests
+      - name: Verify kind installation
+        run: kind version
+
+      - name: Running Test e2e
         run: |
           go mod tidy
           make test-e2e
-        env:
-          KIND_CLUSTER: kind
-
-      - name: Collect logs on failure
-        if: failure()
-        run: |
-          echo "=== Pods ==="
-          kubectl get pods -A
-          echo "=== Events ==="
-          kubectl get events -A --sort-by='.lastTimestamp'
