@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -192,4 +193,75 @@ func (r *ResourceClient) IsPodReady(ctx context.Context, podName string) (bool, 
 	}
 
 	return false, nil
+}
+
+// CreateNamespace creates a namespace using the Kubernetes API.
+func (r *ResourceClient) CreateNamespace(ctx context.Context, name string) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+	_, err := r.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	return err
+}
+
+// DeleteNamespace deletes a namespace using the Kubernetes API.
+func (r *ResourceClient) DeleteNamespace(ctx context.Context, name string) error {
+	return r.clientset.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// CreateConfigMapFromYAML creates a ConfigMap from YAML data.
+func (r *ResourceClient) CreateConfigMapFromYAML(ctx context.Context, name string, data map[string]string) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: r.namespace,
+		},
+		Data: data,
+	}
+	_, err := r.clientset.CoreV1().ConfigMaps(r.namespace).Create(ctx, cm, metav1.CreateOptions{})
+	return err
+}
+
+// DeleteConfigMap deletes a ConfigMap.
+func (r *ResourceClient) DeleteConfigMap(ctx context.Context, name string) error {
+	return r.clientset.CoreV1().ConfigMaps(r.namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// CreateDeployment creates a Deployment.
+func (r *ResourceClient) CreateDeployment(ctx context.Context, deployment *appsv1.Deployment) error {
+	_, err := r.clientset.AppsV1().Deployments(r.namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	return err
+}
+
+// DeleteDeployment deletes a Deployment.
+func (r *ResourceClient) DeleteDeployment(ctx context.Context, name string) error {
+	return r.clientset.AppsV1().Deployments(r.namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// CreateService creates a Service.
+func (r *ResourceClient) CreateService(ctx context.Context, service *corev1.Service) error {
+	_, err := r.clientset.CoreV1().Services(r.namespace).Create(ctx, service, metav1.CreateOptions{})
+	return err
+}
+
+// DeleteService deletes a Service.
+func (r *ResourceClient) DeleteService(ctx context.Context, name string) error {
+	return r.clientset.CoreV1().Services(r.namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// WaitForDeploymentReady waits for a deployment to become ready.
+func (r *ResourceClient) WaitForDeploymentReady(ctx context.Context, name string) error {
+	// This is a simplified version - in production you'd want to use a Watch
+	deployment, err := r.clientset.AppsV1().Deployments(r.namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	if deployment.Status.ReadyReplicas < *deployment.Spec.Replicas {
+		return fmt.Errorf("deployment %s not ready: %d/%d replicas", name, deployment.Status.ReadyReplicas, *deployment.Spec.Replicas)
+	}
+
+	return nil
 }
