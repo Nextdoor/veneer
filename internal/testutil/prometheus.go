@@ -88,8 +88,19 @@ func (m *MockPrometheusServer) ClearMetrics() {
 // handler processes Prometheus API requests and returns mocked responses.
 // Supports both instant queries (/api/v1/query) and range queries (/api/v1/query_range).
 func (m *MockPrometheusServer) handler(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameter
-	query := r.URL.Query().Get("query")
+	// Parse query parameter - handle both GET (query param) and POST (form body)
+	var query string
+	if r.Method == http.MethodPost {
+		// For POST requests, the Prometheus client sends form-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, `{"status":"error","errorType":"bad_data","error":"failed to parse form"}`, http.StatusBadRequest)
+			return
+		}
+		query = r.FormValue("query")
+	} else {
+		// For GET requests, query is in URL parameter
+		query = r.URL.Query().Get("query")
+	}
 	if query == "" {
 		http.Error(w, `{"status":"error","errorType":"bad_data","error":"query missing"}`, http.StatusBadRequest)
 		return
@@ -122,7 +133,54 @@ type MetricFixture map[string]string
 // Use this fixture when testing the "prefer RI/SP" decision path.
 func LuminaMetricsWithSPCapacity() MetricFixture {
 	return MetricFixture{
-		// Query: savings_plan_remaining_capacity{type="ec2_instance", instance_family="m5"}
+		// Query with instance_family selector
+		`savings_plan_remaining_capacity{instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query without selector (all families)
+		`savings_plan_remaining_capacity`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "c5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-67890",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "30.00"]
+					}
+				]
+			}
+		}`,
+
+		// Old query format (kept for backwards compat)
 		`savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`: `{
 			"status": "success",
 			"data": {
@@ -160,8 +218,27 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 			}
 		}`,
 
-		// Query: ec2_reserved_instance
+		// Query: ec2_reserved_instance (all instance types)
 		`ec2_reserved_instance`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "1"]
+					}
+				]
+			}
+		}`,
+
+		// Query: ec2_reserved_instance{instance_type="m5.xlarge"}
+		`ec2_reserved_instance{instance_type="m5.xlarge"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
@@ -187,6 +264,26 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 // Use this fixture when testing the "prefer spot" decision path.
 func LuminaMetricsWithNoCapacity() MetricFixture {
 	return MetricFixture{
+		// Query with instance_family selector
+		`savings_plan_remaining_capacity{instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "0.00"]
+					}
+				]
+			}
+		}`,
+
+		// Old format
 		`savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`: `{
 			"status": "success",
 			"data": {
@@ -221,6 +318,16 @@ func LuminaMetricsWithNoCapacity() MetricFixture {
 // Use this fixture when testing error handling and edge cases.
 func LuminaMetricsEmpty() MetricFixture {
 	return MetricFixture{
+		// With selector
+		`savings_plan_remaining_capacity{instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": []
+			}
+		}`,
+
+		// Old format
 		`savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`: `{
 			"status": "success",
 			"data": {
@@ -245,7 +352,25 @@ func LuminaMetricsEmpty() MetricFixture {
 // Use this fixture when testing cost comparison logic (spot vs RI/SP).
 func LuminaMetricsWithSpotPrices() MetricFixture {
 	return MetricFixture{
-		// Spot pricing for m5.xlarge
+		// Spot pricing for m5.xlarge with selector
+		`ec2_spot_price{instance_type="m5.xlarge"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"instance_type": "m5.xlarge",
+							"region": "us-west-2",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "0.12"]
+					}
+				]
+			}
+		}`,
+
+		// Spot pricing (old format)
 		`ec2_spot_price{instance_type="m5.xlarge",region="us-west-2"}`: `{
 			"status": "success",
 			"data": {
@@ -263,7 +388,25 @@ func LuminaMetricsWithSpotPrices() MetricFixture {
 			}
 		}`,
 
-		// On-demand pricing
+		// On-demand pricing with selector
+		`ec2_ondemand_price{instance_type="m5.xlarge"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"instance_type": "m5.xlarge",
+							"region": "us-west-2",
+							"operating_system": "Linux"
+						},
+						"value": [1640000000, "0.192"]
+					}
+				]
+			}
+		}`,
+
+		// On-demand pricing (old format)
 		`ec2_ondemand_price{instance_type="m5.xlarge",region="us-west-2"}`: `{
 			"status": "success",
 			"data": {
