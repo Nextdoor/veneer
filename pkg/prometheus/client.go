@@ -195,6 +195,33 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 	return ris, nil
 }
 
+// buildInstanceTypeQuery builds a Prometheus query with optional instance_type filter.
+func buildInstanceTypeQuery(metricName, instanceType string) string {
+	if instanceType != "" {
+		return fmt.Sprintf(`%s{instance_type="%s"}`, metricName, instanceType)
+	}
+	return metricName
+}
+
+// executeQuery executes a Prometheus query and returns the vector result.
+func (c *Client) executeQuery(ctx context.Context, query string) (model.Vector, error) {
+	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query failed: %w", err)
+	}
+
+	if len(warnings) > 0 {
+		_ = warnings
+	}
+
+	vector, ok := result.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type: %T", result)
+	}
+
+	return vector, nil
+}
+
 // SpotPrice represents current spot pricing from Lumina metrics.
 type SpotPrice struct {
 	// InstanceType is the EC2 instance type
@@ -219,28 +246,10 @@ type SpotPrice struct {
 //
 // This queries: ec2_spot_price{instance_type="$type"}
 func (c *Client) QuerySpotPrice(ctx context.Context, instanceType string) ([]SpotPrice, error) {
-	// Build query
-	var query string
-	if instanceType != "" {
-		query = fmt.Sprintf(`ec2_spot_price{instance_type="%s"}`, instanceType)
-	} else {
-		query = `ec2_spot_price`
-	}
-
-	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	query := buildInstanceTypeQuery("ec2_spot_price", instanceType)
+	vector, err := c.executeQuery(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("prometheus query failed: %w", err)
-	}
-
-	if len(warnings) > 0 {
-		_ = warnings
-	}
-
-	// Parse results
-	vector, ok := result.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type: %T", result)
+		return nil, err
 	}
 
 	prices := make([]SpotPrice, 0, len(vector))
@@ -282,28 +291,10 @@ type OnDemandPrice struct {
 //
 // This queries: ec2_ondemand_price{instance_type="$type"}
 func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([]OnDemandPrice, error) {
-	// Build query
-	var query string
-	if instanceType != "" {
-		query = fmt.Sprintf(`ec2_ondemand_price{instance_type="%s"}`, instanceType)
-	} else {
-		query = `ec2_ondemand_price`
-	}
-
-	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	query := buildInstanceTypeQuery("ec2_ondemand_price", instanceType)
+	vector, err := c.executeQuery(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("prometheus query failed: %w", err)
-	}
-
-	if len(warnings) > 0 {
-		_ = warnings
-	}
-
-	// Parse results
-	vector, ok := result.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type: %T", result)
+		return nil, err
 	}
 
 	prices := make([]OnDemandPrice, 0, len(vector))
