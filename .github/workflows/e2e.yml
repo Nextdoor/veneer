@@ -31,6 +31,14 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      - name: Create Kind cluster
+        run: kind create cluster --name kind --wait 5m
+
+      - name: Verify Kind cluster
+        run: |
+          kubectl cluster-info --context kind-kind
+          kubectl get nodes
+
       - name: Running Test e2e
         run: |
           go mod tidy
