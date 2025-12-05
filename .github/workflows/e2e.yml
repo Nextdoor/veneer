@@ -1,0 +1,47 @@
+name: E2E Tests
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kind
+          wait: 300s
+
+      - name: Verify Kind cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Run E2E tests
+        run: |
+          go mod tidy
+          make test-e2e
+        env:
+          KIND_CLUSTER: kind
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -A
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp'
