@@ -114,13 +114,13 @@ func (m *MockPrometheusServer) handler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		// Return empty result set if query not found (not an error)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+		_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 		return
 	}
 
 	// Return mocked response
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprint(w, response)
+	_, _ = fmt.Fprint(w, response)
 }
 
 // MetricFixture represents a set of Prometheus queries and their responses.

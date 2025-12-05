@@ -28,7 +28,11 @@ func Run(cmd *exec.Cmd) (string, error) {
 	fmt.Printf("Running: %s\n", strings.Join(cmd.Args, " "))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("failed to run command %s: %w\nOutput: %s", strings.Join(cmd.Args, " "), err, string(output))
+		cmdStr := strings.Join(cmd.Args, " ")
+		return string(output), fmt.Errorf(
+			"failed to run command %s: %w\nOutput: %s",
+			cmdStr, err, string(output),
+		)
 	}
 	return string(output), nil
 }

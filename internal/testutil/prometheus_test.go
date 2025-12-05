@@ -37,7 +37,7 @@ func TestMockPrometheusServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query server: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("unexpected status code: got %d, want %d", resp.StatusCode, http.StatusOK)
@@ -82,7 +82,7 @@ func TestMockPrometheusServer_UnknownQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query server: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("unexpected status code: got %d, want %d", resp.StatusCode, http.StatusOK)
@@ -115,7 +115,7 @@ func TestMockPrometheusServer_MissingQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query server: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("unexpected status code: got %d, want %d", resp.StatusCode, http.StatusBadRequest)
@@ -136,7 +136,7 @@ func TestMockPrometheusServer_ClearMetrics(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&result1); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	data1 := result1["data"].(map[string]interface{})
 	results1 := data1["result"].([]interface{})
@@ -153,7 +153,7 @@ func TestMockPrometheusServer_ClearMetrics(t *testing.T) {
 	if err := json.NewDecoder(resp2.Body).Decode(&result2); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 
 	data2 := result2["data"].(map[string]interface{})
 	results2 := data2["result"].([]interface{})
@@ -206,7 +206,7 @@ func TestLuminaMetricsFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to query server: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			var result map[string]interface{}
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

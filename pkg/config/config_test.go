@@ -178,8 +178,8 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 	}
 
 	// Set environment variable
-	os.Setenv("KARVE_PROMETHEUS_URL", "http://override:9090")
-	defer os.Unsetenv("KARVE_PROMETHEUS_URL")
+	_ = os.Setenv("KARVE_PROMETHEUS_URL", "http://override:9090")
+	defer func() { _ = os.Unsetenv("KARVE_PROMETHEUS_URL") }()
 
 	// Load config
 	cfg, err := Load(configPath)

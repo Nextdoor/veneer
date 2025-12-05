@@ -39,7 +39,7 @@ lumina_ondemand_price_usd{instance_type="c5.2xlarge"} 0.34
 `
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	fmt.Fprint(w, metrics)
+	_, _ = fmt.Fprint(w, metrics)
 }
 
 func main() {
