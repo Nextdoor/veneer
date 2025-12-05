@@ -37,6 +37,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/nextdoor/karve/pkg/config"
+	"github.com/nextdoor/karve/pkg/prometheus"
+	"github.com/nextdoor/karve/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -111,6 +113,26 @@ func main() {
 	}
 
 	// +kubebuilder:scaffold:builder
+
+	// Create Prometheus client for querying Lumina metrics
+	promClient, err := prometheus.NewClient(cfg.PrometheusURL)
+	if err != nil {
+		setupLog.Error(err, "unable to create Prometheus client", "url", cfg.PrometheusURL)
+		os.Exit(1)
+	}
+
+	// Create and start metrics reconciler
+	metricsReconciler := &reconciler.MetricsReconciler{
+		PrometheusClient: promClient,
+		Logger:           ctrl.Log.WithName("metrics-reconciler"),
+		// Use default 5 minute interval
+	}
+
+	// Add metrics reconciler as a runnable
+	if err := mgr.Add(metricsReconciler); err != nil {
+		setupLog.Error(err, "unable to add metrics reconciler to manager")
+		os.Exit(1)
+	}
 
 	// Setup health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
