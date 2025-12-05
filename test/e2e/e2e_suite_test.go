@@ -61,12 +61,23 @@ var _ = BeforeSuite(func() {
 
 	By("building the manager(Operator) image")
 	cmd := exec.Command("docker", "build", "-t", projectImage, ".")
+	cmd.Dir = "../.." // Set working directory to project root
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build Docker image")
 
 	By("loading the manager(Operator) image on Kind")
 	err = utils.LoadImageToKindClusterWithName(projectImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load image to Kind cluster")
+
+	By("building the mock Lumina exporter image")
+	cmd = exec.Command("docker", "build", "-t", "mock-lumina-exporter:test", "-f", "test/e2e/mock-exporter/Dockerfile", "test/e2e/mock-exporter")
+	cmd.Dir = "../.."
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build mock exporter image")
+
+	By("loading the mock exporter image on Kind")
+	err = utils.LoadImageToKindClusterWithName("mock-lumina-exporter:test")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load mock exporter image to Kind cluster")
 
 	By("creating manager namespace")
 	client, err := NewResourceClient("")
@@ -78,38 +89,30 @@ var _ = BeforeSuite(func() {
 	// Update client to use the new namespace
 	client.namespace = namespace
 
-	By("deploying a mock Prometheus server for testing")
-	// Create ConfigMap with mock data
-	mockData := map[string]string{
-		"response.json": `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"lumina_data_freshness_seconds"},"value":[1640000000,"30"]}]}}`,
-	}
-	err = client.CreateConfigMapFromYAML(ctx, "mock-prometheus-config", mockData)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create mock Prometheus ConfigMap")
-
-	// Create mock Prometheus deployment
+	By("deploying mock Lumina exporter")
 	replicas := int32(1)
-	mockPrometheusDeployment := &appsv1.Deployment{
+	mockExporterDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mock-prometheus",
+			Name:      "mock-lumina-exporter",
 			Namespace: namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "mock-prometheus"},
+				MatchLabels: map[string]string{"app": "mock-lumina-exporter"},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "mock-prometheus"},
+					Labels: map[string]string{"app": "mock-lumina-exporter"},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "mock-server",
-							Image: "python:3.11-alpine",
-							Command: []string{"python3", "-m", "http.server", "9090"},
+							Name:            "exporter",
+							Image:           "mock-lumina-exporter:test",
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Ports: []corev1.ContainerPort{
-								{ContainerPort: 9090},
+								{ContainerPort: 8080},
 							},
 						},
 					},
@@ -117,17 +120,105 @@ var _ = BeforeSuite(func() {
 			},
 		},
 	}
-	err = client.CreateDeployment(ctx, mockPrometheusDeployment)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create mock Prometheus deployment")
+	err = client.CreateDeployment(ctx, mockExporterDeployment)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create mock exporter deployment")
 
-	// Create Service for mock Prometheus
-	mockPrometheusService := &corev1.Service{
+	mockExporterService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mock-lumina-exporter",
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": "mock-lumina-exporter"},
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+	err = client.CreateService(ctx, mockExporterService)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create mock exporter service")
+
+	By("deploying Prometheus server")
+	// Create Prometheus ConfigMap
+	prometheusConfig := map[string]string{
+		"prometheus.yml": `global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'lumina'
+    static_configs:
+      - targets: ['mock-lumina-exporter:8080']
+`,
+	}
+	err = client.CreateConfigMapFromYAML(ctx, "prometheus-config", prometheusConfig)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Prometheus ConfigMap")
+
+	prometheusDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prometheus",
+			Namespace: namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "prometheus"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "prometheus"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "prometheus",
+							Image: "prom/prometheus:latest",
+							Args: []string{
+								"--config.file=/etc/prometheus/prometheus.yml",
+								"--storage.tsdb.path=/prometheus",
+								"--web.console.libraries=/usr/share/prometheus/console_libraries",
+								"--web.console.templates=/usr/share/prometheus/consoles",
+							},
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 9090},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "config",
+									MountPath: "/etc/prometheus",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "config",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "prometheus-config",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	err = client.CreateDeployment(ctx, prometheusDeployment)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Prometheus deployment")
+
+	prometheusService := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "prometheus",
 			Namespace: namespace,
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": "mock-prometheus"},
+			Selector: map[string]string{"app": "prometheus"},
 			Ports: []corev1.ServicePort{
 				{
 					Port:       9090,
@@ -136,8 +227,24 @@ var _ = BeforeSuite(func() {
 			},
 		},
 	}
-	err = client.CreateService(ctx, mockPrometheusService)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create mock Prometheus service")
+	err = client.CreateService(ctx, prometheusService)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Prometheus service")
+
+	By("waiting for mock exporter deployment to be ready")
+	Eventually(func(g Gomega) {
+		err := client.WaitForDeploymentReady(ctx, "mock-lumina-exporter")
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 60*time.Second, 2*time.Second).Should(Succeed())
+
+	By("waiting for Prometheus deployment to be ready")
+	Eventually(func(g Gomega) {
+		err := client.WaitForDeploymentReady(ctx, "prometheus")
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 60*time.Second, 2*time.Second).Should(Succeed())
+
+	By("waiting for Prometheus to scrape metrics from mock exporter")
+	// Give Prometheus time to scrape the mock exporter (scrape interval is 5s, wait 15s to be safe)
+	time.Sleep(15 * time.Second)
 
 	By("creating Karve ConfigMap")
 	karveConfig := map[string]string{
@@ -219,10 +326,12 @@ var _ = AfterSuite(func() {
 	client, err := NewResourceClient(namespace)
 	if err == nil {
 		_ = client.DeleteDeployment(ctx, "karve-controller-manager")
-		_ = client.DeleteDeployment(ctx, "mock-prometheus")
+		_ = client.DeleteDeployment(ctx, "prometheus")
+		_ = client.DeleteDeployment(ctx, "mock-lumina-exporter")
 		_ = client.DeleteService(ctx, "prometheus")
+		_ = client.DeleteService(ctx, "mock-lumina-exporter")
 		_ = client.DeleteConfigMap(ctx, "karve-config")
-		_ = client.DeleteConfigMap(ctx, "mock-prometheus-config")
+		_ = client.DeleteConfigMap(ctx, "prometheus-config")
 	}
 
 	By("removing manager namespace")
