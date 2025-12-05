@@ -133,7 +133,9 @@ func TestMockPrometheusServer_ClearMetrics(t *testing.T) {
 	query := `savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`
 	resp, _ := http.Get(fmt.Sprintf("%s/api/v1/query?query=%s", server.URL, url.QueryEscape(query)))
 	var result1 map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result1)
+	if err := json.NewDecoder(resp.Body).Decode(&result1); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	resp.Body.Close()
 
 	data1 := result1["data"].(map[string]interface{})
@@ -148,7 +150,9 @@ func TestMockPrometheusServer_ClearMetrics(t *testing.T) {
 	// Verify metric is gone
 	resp2, _ := http.Get(fmt.Sprintf("%s/api/v1/query?query=%s", server.URL, url.QueryEscape(query)))
 	var result2 map[string]interface{}
-	json.NewDecoder(resp2.Body).Decode(&result2)
+	if err := json.NewDecoder(resp2.Body).Decode(&result2); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	resp2.Body.Close()
 
 	data2 := result2["data"].(map[string]interface{})
