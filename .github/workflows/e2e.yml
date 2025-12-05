@@ -9,10 +9,9 @@ on:
 jobs:
   e2e:
     name: Run on Ubuntu
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     steps:
-      - name: Setup RunsOn magic cache
-        uses: runs-on/action@v2
+      - uses: runs-on/action@v2
 
       - name: Clone the code
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
