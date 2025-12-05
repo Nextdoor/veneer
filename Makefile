@@ -35,8 +35,12 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: fmt vet ## Run tests.
+test: fmt vet ## Run unit tests.
 	go test ./... -coverprofile cover.out -covermode=atomic
+
+.PHONY: test-e2e
+test-e2e: ## Run E2E tests (requires Kind cluster).
+	go test -v -tags=e2e -timeout=20m ./test/e2e/...
 
 .PHONY: cover
 cover: ## Display test coverage report
