@@ -1,0 +1,45 @@
+name: E2E Tests
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    name: Run on Ubuntu
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
+    steps:
+      - uses: runs-on/action@v2
+
+      - name: Clone the code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+
+      - name: Setup Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        with:
+          go-version-file: go.mod
+          cache: true  # Enable Go module caching for faster dependency downloads
+
+      - name: Install the latest version of kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Verify kind installation
+        run: kind version
+
+      - name: Create Kind cluster
+        run: kind create cluster --name kind --wait 5m
+
+      - name: Verify Kind cluster
+        run: |
+          kubectl cluster-info --context kind-kind
+          kubectl get nodes
+
+      - name: Running Test e2e
+        run: |
+          go mod tidy
+          make test-e2e
