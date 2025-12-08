@@ -298,7 +298,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Query all capacity types
-	var decisions []overlay.Decision
+	decisions := make([]overlay.Decision, 0, 10) // Pre-allocate for expected capacity types
 
 	// 1. Compute SPs
 	computeUtils, err := promClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeCompute)
