@@ -1,0 +1,29 @@
+# Karve Controller - Local Development Configuration
+#
+# This file is used for local development with `make run`.
+# It expects you to port-forward to a Prometheus instance:
+#
+#   kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
+#
+# Then run: make run
+
+# Prometheus URL pointing to localhost (assumes port-forward)
+prometheusUrl: "http://localhost:9090"
+
+# Debug logging for local development
+logLevel: "debug"
+
+# Default bind addresses
+metricsBindAddress: ":8080"
+healthProbeBindAddress: ":8081"
+
+# Overlay management configuration
+overlayManagement:
+  # Delete overlays when utilization reaches 95%
+  utilizationThreshold: 95.0
+
+  # Overlay weights (higher = higher priority)
+  weights:
+    reservedInstance: 30        # Highest priority (instance-type specific)
+    ec2InstanceSavingsPlan: 20  # Medium priority (family-specific)
+    computeSavingsPlan: 10      # Lowest priority (global)

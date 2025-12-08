@@ -29,6 +29,8 @@ Karpenter → Uses adjusted pricing for provisioning decisions
 
 ## Development
 
+### Quick Start
+
 ```bash
 # Build
 make build
@@ -36,20 +38,44 @@ make build
 # Run tests
 make test
 
-# Run locally (requires kubeconfig)
-make run
+# Lint
+make lint
 ```
+
+### Running Locally
+
+To run Karve locally against a Kubernetes cluster:
+
+1. **Port-forward to Prometheus/Lumina:**
+   ```bash
+   kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
+   ```
+
+2. **Configure kubeconfig:**
+   Ensure `~/.kube/config` points to your target cluster
+
+3. **Run the controller:**
+   ```bash
+   make run
+   ```
+
+The `make run` target uses `config.local.yaml` which is pre-configured for local development with `http://localhost:9090`.
+
+**Troubleshooting:**
+- If port 8081 is in use: `lsof -ti:8081 | xargs kill -9`
+- If config not found: `config.local.yaml` should already exist (created by repo)
+- If Prometheus connection fails: Verify port-forward is running
 
 ## Configuration
 
-Create `config.yaml`:
+See [config.example.yaml](config.example.yaml) for all configuration options.
+
+Local development uses `config.local.yaml`:
 
 ```yaml
-prometheusUrl: "http://prometheus:9090"
-logLevel: "info"
+prometheusUrl: "http://localhost:9090"  # Via port-forward
+logLevel: "debug"                        # Verbose logging for development
 ```
-
-See [config.example.yaml](config.example.yaml) for all options.
 
 ## Contributing
 

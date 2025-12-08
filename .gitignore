@@ -31,7 +31,7 @@ go.work
 # Kubeconfig might contain secrets
 *.kubeconfig
 
-# Allow local config.yaml for testing
+# Allow local config.yaml for testing (use config.local.yaml for development)
 config.yaml
 
 # Helm chart artifacts
