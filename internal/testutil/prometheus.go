@@ -45,7 +45,8 @@ import (
 //	// Use server.URL in your Prometheus client
 //	client := prometheus.NewClient(server.URL)
 type MockPrometheusServer struct {
-	*httptest.Server
+	Server  *httptest.Server
+	URL     string
 	metrics map[string]string // query -> response JSON
 }
 
@@ -58,8 +59,14 @@ func NewMockPrometheusServer() *MockPrometheusServer {
 
 	// Create HTTP server with handler
 	mock.Server = httptest.NewServer(http.HandlerFunc(mock.handler))
+	mock.URL = mock.Server.URL
 
 	return mock
+}
+
+// Close shuts down the mock server and blocks until all outstanding requests have completed.
+func (m *MockPrometheusServer) Close() {
+	m.Server.Close()
 }
 
 // SetMetrics loads metric fixtures into the mock server.

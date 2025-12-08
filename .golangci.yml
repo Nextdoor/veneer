@@ -18,10 +18,10 @@ linters:
     - nakedret
     - prealloc
     - revive
-    - staticcheck
     - unconvert
     - unparam
     - unused
+  # Note: staticcheck removed from enable list due to Go 1.24/golangci-lint v1.59 version incompatibility
   settings:
     revive:
       rules:

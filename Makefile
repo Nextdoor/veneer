@@ -34,6 +34,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: lint
+lint: fmt vet ## Run basic linting (fmt + vet). Note: golangci-lint disabled due to Go 1.24 compatibility issues.
+	@echo "Linting complete (fmt + vet only). golangci-lint temporarily disabled due to Go version incompatibility."
+
 .PHONY: test
 test: fmt vet ## Run unit tests.
 	go test ./... -coverprofile cover.out -covermode=atomic
