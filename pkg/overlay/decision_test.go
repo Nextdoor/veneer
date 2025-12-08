@@ -149,12 +149,14 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 				}
 			}
 
-			if decision.UtilizationPercent != tt.utilization.UtilizationPercent {
-				t.Errorf("UtilizationPercent = %f, want %f", decision.UtilizationPercent, tt.utilization.UtilizationPercent)
+			// Use epsilon comparison for floating point values to avoid precision issues
+			const epsilon = 1e-9
+			if diff := decision.UtilizationPercent - tt.utilization.UtilizationPercent; diff < -epsilon || diff > epsilon {
+				t.Errorf("UtilizationPercent = %f, want %f (diff: %e)", decision.UtilizationPercent, tt.utilization.UtilizationPercent, diff)
 			}
 
-			if decision.RemainingCapacity != tt.capacity.RemainingCapacity {
-				t.Errorf("RemainingCapacity = %f, want %f", decision.RemainingCapacity, tt.capacity.RemainingCapacity)
+			if diff := decision.RemainingCapacity - tt.capacity.RemainingCapacity; diff < -epsilon || diff > epsilon {
+				t.Errorf("RemainingCapacity = %f, want %f (diff: %e)", decision.RemainingCapacity, tt.capacity.RemainingCapacity, diff)
 			}
 		})
 	}
