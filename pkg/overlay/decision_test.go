@@ -116,7 +116,7 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decision := engine.AnalyzeComputeSavingsPlan(tt.utilization, tt.capacity)
+			decision := engine.AnalyzeComputeSavingsPlanSingle(tt.utilization, tt.capacity)
 
 			// Verify decision fields
 			if decision.Name != "cost-aware-compute-sp-global" {
@@ -223,7 +223,7 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decision := engine.AnalyzeEC2InstanceSavingsPlan(tt.utilization, tt.capacity)
+			decision := engine.AnalyzeEC2InstanceSavingsPlanSingle(tt.utilization, tt.capacity)
 
 			if decision.Name != tt.wantName {
 				t.Errorf("Name = %q, want %q", decision.Name, tt.wantName)
@@ -296,7 +296,7 @@ func TestAnalyzeReservedInstance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decision := engine.AnalyzeReservedInstance(tt.ri)
+			decision := engine.AnalyzeReservedInstanceSingle(tt.ri)
 
 			if decision.Name != tt.wantName {
 				t.Errorf("Name = %q, want %q", decision.Name, tt.wantName)
@@ -340,7 +340,7 @@ func TestDecisionEngineWithCustomThreshold(t *testing.T) {
 		RemainingCapacity: 10.00,
 	}
 
-	decision := engine.AnalyzeComputeSavingsPlan(utilization, capacity)
+	decision := engine.AnalyzeComputeSavingsPlanSingle(utilization, capacity)
 
 	if decision.ShouldExist {
 		t.Errorf("ShouldExist = true with 92%% utilization and 90%% threshold, want false")
@@ -363,7 +363,7 @@ func TestDecisionEngineWithCustomWeights(t *testing.T) {
 		InstanceType: "m5.xlarge",
 		Count:        1,
 	}
-	riDecision := engine.AnalyzeReservedInstance(ri)
+	riDecision := engine.AnalyzeReservedInstanceSingle(ri)
 	if riDecision.Weight != 100 {
 		t.Errorf("RI Weight = %d, want 100", riDecision.Weight)
 	}
@@ -379,7 +379,7 @@ func TestDecisionEngineWithCustomWeights(t *testing.T) {
 		InstanceFamily:    "m5",
 		RemainingCapacity: 20.00,
 	}
-	ec2SPDecision := engine.AnalyzeEC2InstanceSavingsPlan(ec2SPUtil, ec2SPCap)
+	ec2SPDecision := engine.AnalyzeEC2InstanceSavingsPlanSingle(ec2SPUtil, ec2SPCap)
 	if ec2SPDecision.Weight != 50 {
 		t.Errorf("EC2 SP Weight = %d, want 50", ec2SPDecision.Weight)
 	}
@@ -393,7 +393,7 @@ func TestDecisionEngineWithCustomWeights(t *testing.T) {
 		Type:              prometheus.SavingsPlanTypeCompute,
 		RemainingCapacity: 50.00,
 	}
-	computeSPDecision := engine.AnalyzeComputeSavingsPlan(computeSPUtil, computeSPCap)
+	computeSPDecision := engine.AnalyzeComputeSavingsPlanSingle(computeSPUtil, computeSPCap)
 	if computeSPDecision.Weight != 25 {
 		t.Errorf("Compute SP Weight = %d, want 25", computeSPDecision.Weight)
 	}

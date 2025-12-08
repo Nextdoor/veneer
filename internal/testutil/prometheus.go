@@ -426,6 +426,189 @@ func LuminaMetricsWithSpotPrices() MetricFixture {
 	}
 }
 
+// LuminaMetricsWithMultipleSPs returns metrics with multiple overlapping Savings Plans.
+// Scenario: 3 Compute SPs (global), 2 EC2 Instance SPs for m5 family, 2 RIs for m5.xlarge.
+//
+// Use this fixture to test aggregation logic when multiple SPs target the same capacity.
+func LuminaMetricsWithMultipleSPs() MetricFixture {
+	return MetricFixture{
+		// Query: savings_plan_utilization_percent{type="compute"}
+		// 3 Compute SPs with different utilization rates
+		`savings_plan_utilization_percent{type="compute"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "90.0"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "85.0"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-003",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "80.0"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_utilization_percent{type="ec2_instance"}
+		// 2 EC2 Instance SPs for m5 family, 1 for c5 family
+		`savings_plan_utilization_percent{type="ec2_instance"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "92.0"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "88.0"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "c5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "75.0"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_remaining_capacity (all)
+		`savings_plan_remaining_capacity`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "10.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-003",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "15.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "8.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "12.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "c5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "25.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query: ec2_reserved_instance (all)
+		// 2 RIs for m5.xlarge type
+		`ec2_reserved_instance`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "3"]
+					},
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2b"
+						},
+						"value": [1640000000, "2"]
+					}
+				]
+			}
+		}`,
+	}
+}
+
 // LuminaMetricsWithSPUtilization returns metrics showing Savings Plan utilization percentages.
 // Scenario: Compute SP at 87.5% utilization (below threshold), EC2 Instance SP at 96.2% (above threshold).
 //

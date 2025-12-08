@@ -111,7 +111,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		}
 
 		// Analyze and make decision
-		decision := engine.AnalyzeComputeSavingsPlan(utilizations[0], computeCapacity)
+		decision := engine.AnalyzeComputeSavingsPlanSingle(utilizations[0], computeCapacity)
 
 		// Validate decision
 		if decision.Name != "cost-aware-compute-sp-global" {
@@ -173,7 +173,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		}
 
 		// Analyze and make decision
-		decision := engine.AnalyzeEC2InstanceSavingsPlan(utilizations[0], m5Capacity)
+		decision := engine.AnalyzeEC2InstanceSavingsPlanSingle(utilizations[0], m5Capacity)
 
 		// Validate decision
 		if decision.Name != "cost-aware-ec2-sp-m5" {
@@ -217,7 +217,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		}
 
 		// Analyze and make decision
-		decision := engine.AnalyzeReservedInstance(ris[0])
+		decision := engine.AnalyzeReservedInstanceSingle(ris[0])
 
 		// Validate decision
 		if decision.Name != "cost-aware-ri-m5.xlarge" {
@@ -310,7 +310,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 		// Find matching capacity
 		for _, cap := range computeCaps {
 			if cap.Type == prometheus.SavingsPlanTypeCompute && cap.SavingsPlanARN == util.SavingsPlanARN {
-				decision := engine.AnalyzeComputeSavingsPlan(util, cap)
+				decision := engine.AnalyzeComputeSavingsPlanSingle(util, cap)
 				decisions = append(decisions, decision)
 				break
 			}
@@ -331,7 +331,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 		}
 		for _, cap := range familyCaps {
 			if cap.Type == prometheus.SavingsPlanTypeEC2Instance && cap.InstanceFamily == util.InstanceFamily {
-				decision := engine.AnalyzeEC2InstanceSavingsPlan(util, cap)
+				decision := engine.AnalyzeEC2InstanceSavingsPlanSingle(util, cap)
 				decisions = append(decisions, decision)
 				break
 			}
@@ -344,7 +344,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 		t.Fatalf("failed to query reserved instances: %v", err)
 	}
 	for _, ri := range ris {
-		decision := engine.AnalyzeReservedInstance(ri)
+		decision := engine.AnalyzeReservedInstanceSingle(ri)
 		decisions = append(decisions, decision)
 	}
 

@@ -98,13 +98,207 @@ func NewDecisionEngine(cfg *config.Config) *DecisionEngine {
 	}
 }
 
+// AggregatedSavingsPlan represents aggregated metrics for multiple Savings Plans of the same type/family.
+type AggregatedSavingsPlan struct {
+	// Type is the SP type ("compute" or "ec2_instance")
+	Type string
+
+	// InstanceFamily is the instance family (only for EC2 Instance SPs, empty for Compute SPs)
+	InstanceFamily string
+
+	// Region is the region (only for EC2 Instance SPs, empty for Compute SPs)
+	Region string
+
+	// AccountID is the AWS account ID (from first SP in group)
+	AccountID string
+
+	// TotalRemainingCapacity is the sum of all remaining capacities in $/hour
+	TotalRemainingCapacity float64
+
+	// AverageUtilization is the weighted average utilization across all SPs
+	AverageUtilization float64
+
+	// Count is the number of SPs aggregated
+	Count int
+}
+
+// AggregateComputeSavingsPlans aggregates multiple Compute Savings Plans into a single decision.
+//
+// This is necessary because multiple Compute SPs of the same type would otherwise create
+// duplicate overlay names. We sum capacities and calculate weighted average utilization.
+func AggregateComputeSavingsPlans(
+	utilizations []prometheus.SavingsPlanUtilization,
+	capacities []prometheus.SavingsPlanCapacity,
+) AggregatedSavingsPlan {
+	if len(utilizations) == 0 {
+		return AggregatedSavingsPlan{}
+	}
+
+	// Build capacity lookup by ARN
+	capacityByARN := make(map[string]prometheus.SavingsPlanCapacity)
+	for _, cap := range capacities {
+		capacityByARN[cap.SavingsPlanARN] = cap
+	}
+
+	agg := AggregatedSavingsPlan{
+		Type:      prometheus.SavingsPlanTypeCompute,
+		AccountID: utilizations[0].AccountID,
+	}
+
+	var totalCommitment float64
+
+	for _, util := range utilizations {
+		cap, ok := capacityByARN[util.SavingsPlanARN]
+		if !ok {
+			continue
+		}
+
+		// Sum remaining capacities
+		agg.TotalRemainingCapacity += cap.RemainingCapacity
+
+		// Calculate commitment from capacity and utilization
+		// RemainingCapacity = HourlyCommitment - CurrentUtilizationRate
+		// CurrentUtilizationRate = HourlyCommitment * (UtilizationPercent / 100)
+		// Therefore: HourlyCommitment = RemainingCapacity / (1 - UtilizationPercent/100)
+		//
+		// Special case: if RemainingCapacity is 0, we can't back-calculate commitment.
+		// In this case, preserve the utilization by not contributing to the average.
+		if cap.RemainingCapacity != 0 && util.UtilizationPercent != 100 {
+			hourlyCommitment := cap.RemainingCapacity / (1 - util.UtilizationPercent/100)
+			totalCommitment += hourlyCommitment
+		}
+
+		agg.Count++
+	}
+
+	// Calculate weighted average utilization
+	// AverageUtilization = (TotalCommitment - TotalRemainingCapacity) / TotalCommitment * 100
+	if totalCommitment > 0 {
+		agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
+	} else if agg.Count == 1 && len(utilizations) == 1 {
+		// Special case: single SP where we couldn't calculate commitment (e.g., capacity = 0)
+		// Use the provided utilization directly
+		agg.AverageUtilization = utilizations[0].UtilizationPercent
+	}
+
+	return agg
+}
+
+// AggregateEC2InstanceSavingsPlans aggregates EC2 Instance Savings Plans by instance family.
+//
+// Returns a map of instance family -> aggregated metrics. Multiple SPs for the same family
+// are summed together to prevent duplicate overlay names.
+func AggregateEC2InstanceSavingsPlans(
+	utilizations []prometheus.SavingsPlanUtilization,
+	capacities []prometheus.SavingsPlanCapacity,
+) map[string]AggregatedSavingsPlan {
+	// Build capacity lookup by ARN
+	capacityByARN := make(map[string]prometheus.SavingsPlanCapacity)
+	for _, cap := range capacities {
+		capacityByARN[cap.SavingsPlanARN] = cap
+	}
+
+	// Group by instance family
+	byFamily := make(map[string][]prometheus.SavingsPlanUtilization)
+	for _, util := range utilizations {
+		byFamily[util.InstanceFamily] = append(byFamily[util.InstanceFamily], util)
+	}
+
+	// Aggregate each family
+	result := make(map[string]AggregatedSavingsPlan)
+	for family, utils := range byFamily {
+		if len(utils) == 0 {
+			continue
+		}
+
+		agg := AggregatedSavingsPlan{
+			Type:           prometheus.SavingsPlanTypeEC2Instance,
+			InstanceFamily: family,
+			Region:         utils[0].Region,
+			AccountID:      utils[0].AccountID,
+		}
+
+		var totalCommitment float64
+
+		for _, util := range utils {
+			cap, ok := capacityByARN[util.SavingsPlanARN]
+			if !ok {
+				continue
+			}
+
+			agg.TotalRemainingCapacity += cap.RemainingCapacity
+
+			// Calculate commitment (same logic as Compute SPs)
+			if cap.RemainingCapacity != 0 && util.UtilizationPercent != 100 {
+				hourlyCommitment := cap.RemainingCapacity / (1 - util.UtilizationPercent/100)
+				totalCommitment += hourlyCommitment
+			}
+
+			agg.Count++
+		}
+
+		if totalCommitment > 0 {
+			agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
+		} else if agg.Count == 1 && len(utils) == 1 {
+			// Special case: single SP where we couldn't calculate commitment
+			agg.AverageUtilization = utils[0].UtilizationPercent
+		}
+
+		result[family] = agg
+	}
+
+	return result
+}
+
+// AggregatedReservedInstance represents aggregated RI metrics for a single instance type.
+type AggregatedReservedInstance struct {
+	// AccountID is the AWS account ID
+	AccountID string
+
+	// Region is the AWS region
+	Region string
+
+	// InstanceType is the EC2 instance type
+	InstanceType string
+
+	// TotalCount is the sum of all RI counts across all AZs
+	TotalCount int
+}
+
+// AggregateReservedInstances aggregates Reserved Instances by instance type.
+//
+// RIs can exist in multiple AZs, so we sum the counts per instance type
+// to prevent duplicate overlay names (one overlay per instance type, not per AZ).
+func AggregateReservedInstances(ris []prometheus.ReservedInstance) map[string]AggregatedReservedInstance {
+	byType := make(map[string]AggregatedReservedInstance)
+
+	for _, ri := range ris {
+		agg, exists := byType[ri.InstanceType]
+		if !exists {
+			agg = AggregatedReservedInstance{
+				AccountID:    ri.AccountID,
+				Region:       ri.Region,
+				InstanceType: ri.InstanceType,
+			}
+		}
+
+		agg.TotalCount += ri.Count
+		byType[ri.InstanceType] = agg
+	}
+
+	return byType
+}
+
 // AnalyzeComputeSavingsPlan determines if a global Compute SP overlay should exist.
 //
 // Compute SPs apply to ALL instance families and ALL regions, so the overlay targets
 // all on-demand instances globally (using karpenter.k8s.aws/instance-family: Exists).
+//
+// This method expects aggregated metrics for proper handling of multiple SPs.
+// For single SPs, you can create a simple aggregation or use the convenience wrapper
+// AnalyzeComputeSavingsPlanSingle().
 func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
-	utilization prometheus.SavingsPlanUtilization,
-	capacity prometheus.SavingsPlanCapacity,
+	agg AggregatedSavingsPlan,
 ) Decision {
 	decision := Decision{
 		Name:               "cost-aware-compute-sp-global",
@@ -112,8 +306,8 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 		Weight:             e.Config.OverlayManagement.Weights.ComputeSavingsPlan,
 		Price:              "0.00", // 100% discount for Phase 2
 		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
-		UtilizationPercent: utilization.UtilizationPercent,
-		RemainingCapacity:  capacity.RemainingCapacity,
+		UtilizationPercent: agg.AverageUtilization,
+		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
 	// Decision logic: overlay exists if BOTH conditions are true
@@ -121,16 +315,16 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	// 2. Remaining capacity available
 	threshold := e.Config.OverlayManagement.UtilizationThreshold
 
-	if utilization.UtilizationPercent >= threshold {
+	if agg.AverageUtilization >= threshold {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", utilization.UtilizationPercent, threshold)
-	} else if capacity.RemainingCapacity <= 0 {
+		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.AverageUtilization, threshold)
+	} else if agg.TotalRemainingCapacity <= 0 {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", capacity.RemainingCapacity)
+		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", agg.TotalRemainingCapacity)
 	} else {
 		decision.ShouldExist = true
 		decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
-			utilization.UtilizationPercent, threshold, capacity.RemainingCapacity)
+			agg.AverageUtilization, threshold, agg.TotalRemainingCapacity)
 	}
 
 	return decision
@@ -139,35 +333,37 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 // AnalyzeEC2InstanceSavingsPlan determines if a family-specific EC2 Instance SP overlay should exist.
 //
 // EC2 Instance SPs apply to a specific instance family in a specific region.
+//
+// NOTE: This method now expects aggregated metrics. Call AggregateEC2InstanceSavingsPlans()
+// first to combine multiple EC2 Instance SPs for the same family before calling this method.
 func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
-	utilization prometheus.SavingsPlanUtilization,
-	capacity prometheus.SavingsPlanCapacity,
+	agg AggregatedSavingsPlan,
 ) Decision {
 	// Generate unique name per family
-	overlayName := fmt.Sprintf("cost-aware-ec2-sp-%s", utilization.InstanceFamily)
+	overlayName := fmt.Sprintf("cost-aware-ec2-sp-%s", agg.InstanceFamily)
 
 	decision := Decision{
 		Name:               overlayName,
 		CapacityType:       CapacityTypeEC2InstanceSavingsPlan,
 		Weight:             e.Config.OverlayManagement.Weights.EC2InstanceSavingsPlan,
 		Price:              "0.00", // 100% discount for Phase 2
-		TargetSelector:     fmt.Sprintf("karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]", utilization.InstanceFamily),
-		UtilizationPercent: utilization.UtilizationPercent,
-		RemainingCapacity:  capacity.RemainingCapacity,
+		TargetSelector:     fmt.Sprintf("karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]", agg.InstanceFamily),
+		UtilizationPercent: agg.AverageUtilization,
+		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
 	threshold := e.Config.OverlayManagement.UtilizationThreshold
 
-	if utilization.UtilizationPercent >= threshold {
+	if agg.AverageUtilization >= threshold {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", utilization.UtilizationPercent, threshold)
-	} else if capacity.RemainingCapacity <= 0 {
+		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.AverageUtilization, threshold)
+	} else if agg.TotalRemainingCapacity <= 0 {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", capacity.RemainingCapacity)
+		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", agg.TotalRemainingCapacity)
 	} else {
 		decision.ShouldExist = true
 		decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
-			utilization.UtilizationPercent, threshold, capacity.RemainingCapacity)
+			agg.AverageUtilization, threshold, agg.TotalRemainingCapacity)
 	}
 
 	return decision
@@ -176,9 +372,12 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 // AnalyzeReservedInstance determines if an instance-type-specific RI overlay should exist.
 //
 // RIs are binary: either available (count > 0) or not. No utilization percentage.
-func (e *DecisionEngine) AnalyzeReservedInstance(ri prometheus.ReservedInstance) Decision {
+//
+// NOTE: This method now expects aggregated metrics. Call AggregateReservedInstances()
+// first to combine multiple RIs for the same instance type across AZs before calling this method.
+func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance) Decision {
 	// Generate unique name per instance type
-	overlayName := fmt.Sprintf("cost-aware-ri-%s", ri.InstanceType)
+	overlayName := fmt.Sprintf("cost-aware-ri-%s", agg.InstanceType)
 
 	decision := Decision{
 		Name:         overlayName,
@@ -186,19 +385,65 @@ func (e *DecisionEngine) AnalyzeReservedInstance(ri prometheus.ReservedInstance)
 		Weight:       e.Config.OverlayManagement.Weights.ReservedInstance,
 		Price:        "0.00", // 100% discount for Phase 2
 		TargetSelector: fmt.Sprintf("node.kubernetes.io/instance-type: In [%s], karpenter.sh/capacity-type: In [on-demand]",
-			ri.InstanceType),
+			agg.InstanceType),
 		UtilizationPercent: 0, // RIs don't have utilization metrics
 		RemainingCapacity:  0, // RIs tracked by count, not $/hour
 	}
 
 	// Decision logic: overlay exists if RI count > 0
-	if ri.Count > 0 {
+	if agg.TotalCount > 0 {
 		decision.ShouldExist = true
-		decision.Reason = fmt.Sprintf("%d reserved instances available", ri.Count)
+		decision.Reason = fmt.Sprintf("%d reserved instances available", agg.TotalCount)
 	} else {
 		decision.ShouldExist = false
 		decision.Reason = "no reserved instances available"
 	}
 
 	return decision
+}
+
+// AnalyzeComputeSavingsPlanSingle is a convenience wrapper for analyzing a single Compute SP.
+// For production code with multiple SPs, use AggregateComputeSavingsPlans() + AnalyzeComputeSavingsPlan().
+func (e *DecisionEngine) AnalyzeComputeSavingsPlanSingle(
+	utilization prometheus.SavingsPlanUtilization,
+	capacity prometheus.SavingsPlanCapacity,
+) Decision {
+	// Create single-item aggregation
+	agg := AggregateComputeSavingsPlans(
+		[]prometheus.SavingsPlanUtilization{utilization},
+		[]prometheus.SavingsPlanCapacity{capacity},
+	)
+	return e.AnalyzeComputeSavingsPlan(agg)
+}
+
+// AnalyzeEC2InstanceSavingsPlanSingle is a convenience wrapper for analyzing a single EC2 Instance SP.
+// For production code with multiple SPs, use AggregateEC2InstanceSavingsPlans() + AnalyzeEC2InstanceSavingsPlan().
+func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlanSingle(
+	utilization prometheus.SavingsPlanUtilization,
+	capacity prometheus.SavingsPlanCapacity,
+) Decision {
+	// Create single-item aggregation
+	aggByFamily := AggregateEC2InstanceSavingsPlans(
+		[]prometheus.SavingsPlanUtilization{utilization},
+		[]prometheus.SavingsPlanCapacity{capacity},
+	)
+	// Return the single aggregated result
+	for _, agg := range aggByFamily {
+		return e.AnalyzeEC2InstanceSavingsPlan(agg)
+	}
+	// Should never reach here if inputs are valid
+	return Decision{}
+}
+
+// AnalyzeReservedInstanceSingle is a convenience wrapper for analyzing a single RI.
+// For production code with multiple RIs, use AggregateReservedInstances() + AnalyzeReservedInstance().
+func (e *DecisionEngine) AnalyzeReservedInstanceSingle(ri prometheus.ReservedInstance) Decision {
+	// Create single-item aggregation
+	aggByType := AggregateReservedInstances([]prometheus.ReservedInstance{ri})
+	// Return the single aggregated result
+	for _, agg := range aggByType {
+		return e.AnalyzeReservedInstance(agg)
+	}
+	// Should never reach here if inputs are valid
+	return Decision{}
 }
