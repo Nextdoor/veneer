@@ -26,33 +26,32 @@ import (
 	"strconv"
 	"time"
 
+	luminametrics "github.com/nextdoor/lumina/pkg/metrics"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 )
 
-// Lumina metric name constants.
-// TODO: Import these from github.com/nextdoor/lumina/pkg/metrics once
-// https://github.com/Nextdoor/lumina/issues/129 is implemented.
+// Re-export Lumina metric and label constants for convenience.
+// These constants provide type-safe, compile-time checked access to
+// Lumina metric names and labels. See github.com/nextdoor/lumina/pkg/metrics
+// for full documentation.
 const (
-	metricSavingsPlanRemainingCapacity  = "savings_plan_remaining_capacity"
-	metricSavingsPlanUtilizationPercent = "savings_plan_utilization_percent"
-	metricEC2ReservedInstance           = "ec2_reserved_instance"
-	metricLuminaDataFreshnessSeconds    = "lumina_data_freshness_seconds"
-)
+	// Metric names
+	metricSavingsPlanRemainingCapacity  = luminametrics.MetricSavingsPlanRemainingCapacity
+	metricSavingsPlanUtilizationPercent = luminametrics.MetricSavingsPlanUtilizationPercent
+	metricEC2ReservedInstance           = luminametrics.MetricEC2ReservedInstance
+	metricLuminaDataFreshnessSeconds    = luminametrics.MetricLuminaDataFreshnessSeconds
 
-// Lumina metric label name constants.
-// TODO: Import these from github.com/nextdoor/lumina/pkg/metrics once
-// https://github.com/Nextdoor/lumina/issues/129 is implemented.
-const (
-	labelInstanceFamily   = "instance_family"
-	labelInstanceType     = "instance_type"
-	labelType             = "type"
-	labelSavingsPlanARN   = "savings_plan_arn"
-	labelAccountID        = "account_id"
-	labelRegion           = "region"
-	labelAvailabilityZone = "availability_zone"
-	labelOperatingSystem  = "operating_system"
+	// Label names
+	labelInstanceFamily   = luminametrics.LabelInstanceFamily
+	labelInstanceType     = luminametrics.LabelInstanceType
+	labelType             = luminametrics.LabelType
+	labelSavingsPlanARN   = luminametrics.LabelSavingsPlanARN
+	labelAccountID        = luminametrics.LabelAccountID
+	labelRegion           = luminametrics.LabelRegion
+	labelAvailabilityZone = luminametrics.LabelAvailabilityZone
+	labelOperatingSystem  = "operating_system" // Not exported by Lumina yet
 )
 
 // Savings Plan type constants.
