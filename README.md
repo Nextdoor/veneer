@@ -29,6 +29,13 @@ Karpenter → Uses adjusted pricing for provisioning decisions
 
 ## Development
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide including:
+- Local setup and prerequisites
+- Running Karve locally with kubectl port-forward
+- Testing strategies (unit, integration, E2E)
+- Debugging tips and troubleshooting
+- Code style guidelines and contribution workflow
+
 ### Quick Start
 
 ```bash
@@ -51,20 +58,12 @@ To run Karve locally against a Kubernetes cluster:
    kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
    ```
 
-2. **Configure kubeconfig:**
-   Ensure `~/.kube/config` points to your target cluster
-
-3. **Run the controller:**
+2. **Run the controller:**
    ```bash
    make run
    ```
 
-The `make run` target uses `config.local.yaml` which is pre-configured for local development with `http://localhost:9090`.
-
-**Troubleshooting:**
-- If port 8081 is in use: `lsof -ti:8081 | xargs kill -9`
-- If config not found: `config.local.yaml` should already exist (created by repo)
-- If Prometheus connection fails: Verify port-forward is running
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions, troubleshooting, and advanced topics
 
 ## Configuration
 
@@ -79,12 +78,13 @@ logLevel: "debug"                        # Verbose logging for development
 
 ## Contributing
 
-This project will be open-sourced. See [CLAUDE.md](CLAUDE.md) for development guidelines.
+This project will be open-sourced. See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide and [CLAUDE.md](CLAUDE.md) for code style guidelines.
 
-**Requirements:**
-- 100% code coverage
-- Integration tests for all functionality
-- No internal references
+**Key Requirements:**
+- Comprehensive test coverage with focus on integration tests
+- All code must be open-source ready (no internal references)
+- Follow conventional commit format
+- Run `make lint` and `make test` before committing
 
 ## License
 
