@@ -501,5 +501,90 @@ func LuminaMetricsWithSPUtilization() MetricFixture {
 				]
 			}
 		}`,
+
+		// Query: savings_plan_remaining_capacity{instance_family="m5"}
+		`savings_plan_remaining_capacity{instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_remaining_capacity (all)
+		`savings_plan_remaining_capacity`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "12.50"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query: ec2_reserved_instance{instance_type="m5.xlarge"}
+		`ec2_reserved_instance{instance_type="m5.xlarge"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "2"]
+					}
+				]
+			}
+		}`,
+
+		// Query: ec2_reserved_instance (all)
+		`ec2_reserved_instance`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "2"]
+					}
+				]
+			}
+		}`,
 	}
 }
