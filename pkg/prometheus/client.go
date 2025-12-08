@@ -89,7 +89,9 @@ type SavingsPlanCapacity struct {
 	// Type is the Savings Plan type ("ec2_instance" or "compute")
 	Type string
 
-	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5")
+	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5").
+	// Optional: empty string for Compute SPs (which apply globally to all families).
+	// Only populated for EC2 Instance SPs.
 	InstanceFamily string
 
 	// SavingsPlanARN is the ARN of the Savings Plan
@@ -378,11 +380,14 @@ type SavingsPlanUtilization struct {
 	// Type is the Savings Plan type ("ec2_instance" or "compute")
 	Type string
 
-	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5")
-	// Empty for Compute SPs
+	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5").
+	// Optional: empty string for Compute SPs (which apply globally to all families).
+	// Only populated for EC2 Instance SPs.
 	InstanceFamily string
 
-	// Region is the AWS region (empty for Compute SPs)
+	// Region is the AWS region.
+	// Optional: empty string for Compute SPs (which apply globally to all regions).
+	// Only populated for EC2 Instance SPs.
 	Region string
 
 	// SavingsPlanARN is the ARN of the Savings Plan
@@ -391,8 +396,8 @@ type SavingsPlanUtilization struct {
 	// AccountID is the AWS account ID
 	AccountID string
 
-	// UtilizationPercent is the current utilization percentage (0-100+)
-	// Can exceed 100% if over-committed (spillover to on-demand)
+	// UtilizationPercent is the current utilization percentage (0-100+).
+	// Can exceed 100% if over-committed (spillover to on-demand rates).
 	UtilizationPercent float64
 
 	// Timestamp is when this metric was recorded
