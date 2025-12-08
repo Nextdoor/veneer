@@ -355,11 +355,14 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 	overlayName := fmt.Sprintf("cost-aware-ec2-sp-%s", agg.InstanceFamily)
 
 	decision := Decision{
-		Name:               overlayName,
-		CapacityType:       CapacityTypeEC2InstanceSavingsPlan,
-		Weight:             e.Config.OverlayManagement.Weights.EC2InstanceSavingsPlan,
-		Price:              "0.00", // 100% discount for Phase 2
-		TargetSelector:     fmt.Sprintf("karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]", agg.InstanceFamily),
+		Name:         overlayName,
+		CapacityType: CapacityTypeEC2InstanceSavingsPlan,
+		Weight:       e.Config.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+		Price:        "0.00", // 100% discount for Phase 2
+		TargetSelector: fmt.Sprintf(
+			"karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]",
+			agg.InstanceFamily,
+		),
 		UtilizationPercent: agg.AverageUtilization,
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}

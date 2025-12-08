@@ -210,16 +210,32 @@ func TestOverlayManagementDefaults(t *testing.T) {
 
 	// Verify defaults are applied
 	if cfg.OverlayManagement.UtilizationThreshold != DefaultOverlayUtilizationThreshold {
-		t.Errorf("UtilizationThreshold = %f, want %f", cfg.OverlayManagement.UtilizationThreshold, DefaultOverlayUtilizationThreshold)
+		t.Errorf(
+			"UtilizationThreshold = %f, want %f",
+			cfg.OverlayManagement.UtilizationThreshold,
+			DefaultOverlayUtilizationThreshold,
+		)
 	}
 	if cfg.OverlayManagement.Weights.ReservedInstance != DefaultOverlayWeightReservedInstance {
-		t.Errorf("ReservedInstance weight = %d, want %d", cfg.OverlayManagement.Weights.ReservedInstance, DefaultOverlayWeightReservedInstance)
+		t.Errorf(
+			"ReservedInstance weight = %d, want %d",
+			cfg.OverlayManagement.Weights.ReservedInstance,
+			DefaultOverlayWeightReservedInstance,
+		)
 	}
 	if cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan != DefaultOverlayWeightEC2InstanceSavingsPlan {
-		t.Errorf("EC2InstanceSavingsPlan weight = %d, want %d", cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan, DefaultOverlayWeightEC2InstanceSavingsPlan)
+		t.Errorf(
+			"EC2InstanceSavingsPlan weight = %d, want %d",
+			cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+			DefaultOverlayWeightEC2InstanceSavingsPlan,
+		)
 	}
 	if cfg.OverlayManagement.Weights.ComputeSavingsPlan != DefaultOverlayWeightComputeSavingsPlan {
-		t.Errorf("ComputeSavingsPlan weight = %d, want %d", cfg.OverlayManagement.Weights.ComputeSavingsPlan, DefaultOverlayWeightComputeSavingsPlan)
+		t.Errorf(
+			"ComputeSavingsPlan weight = %d, want %d",
+			cfg.OverlayManagement.Weights.ComputeSavingsPlan,
+			DefaultOverlayWeightComputeSavingsPlan,
+		)
 	}
 }
 

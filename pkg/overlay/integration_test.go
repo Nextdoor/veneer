@@ -33,6 +33,8 @@ import (
 //  1. Prometheus client successfully queries metrics
 //  2. Decision engine produces correct decisions based on real metric data
 //  3. Multiple capacity types are handled correctly with appropriate precedence
+//
+//nolint:gocyclo // Integration test complexity is acceptable for comprehensive validation
 func TestDecisionEngineIntegration(t *testing.T) {
 	// Start mock Prometheus server with Lumina metrics
 	fixture := testutil.LuminaMetricsWithSPUtilization()
@@ -247,6 +249,8 @@ func TestDecisionEngineIntegration(t *testing.T) {
 
 // TestMultipleCapacityTypesIntegration tests handling of multiple capacity types simultaneously.
 // This validates the full workflow when multiple overlays need to be managed concurrently.
+//
+//nolint:gocyclo // Integration test complexity is acceptable for comprehensive validation
 func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	// Start mock Prometheus server
 	fixture := testutil.LuminaMetricsWithSPUtilization()

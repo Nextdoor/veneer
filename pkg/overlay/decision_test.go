@@ -23,6 +23,11 @@ import (
 	"github.com/nextdoor/karve/pkg/prometheus"
 )
 
+const (
+	// Expected price value for all test cases (overlay price is not yet implemented)
+	expectedTestPrice = "0.00"
+)
+
 // Helper to create test config with default values
 func testConfig() *config.Config {
 	return &config.Config{
@@ -131,8 +136,8 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 				t.Errorf("Weight = %d, want 10", decision.Weight)
 			}
 
-			if decision.Price != "0.00" {
-				t.Errorf("Price = %q, want %q", decision.Price, "0.00")
+			if decision.Price != expectedTestPrice {
+				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {
@@ -239,8 +244,8 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 				t.Errorf("Weight = %d, want 20", decision.Weight)
 			}
 
-			if decision.Price != "0.00" {
-				t.Errorf("Price = %q, want %q", decision.Price, "0.00")
+			if decision.Price != expectedTestPrice {
+				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {
@@ -312,8 +317,8 @@ func TestAnalyzeReservedInstance(t *testing.T) {
 				t.Errorf("Weight = %d, want 30", decision.Weight)
 			}
 
-			if decision.Price != "0.00" {
-				t.Errorf("Price = %q, want %q", decision.Price, "0.00")
+			if decision.Price != expectedTestPrice {
+				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {

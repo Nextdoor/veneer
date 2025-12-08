@@ -185,18 +185,30 @@ func (c *Config) Validate() error {
 
 	// Validate overlay management configuration
 	if c.OverlayManagement.UtilizationThreshold < 0 || c.OverlayManagement.UtilizationThreshold > 100 {
-		return fmt.Errorf("overlay utilization threshold must be between 0 and 100, got %f", c.OverlayManagement.UtilizationThreshold)
+		return fmt.Errorf(
+			"overlay utilization threshold must be between 0 and 100, got %f",
+			c.OverlayManagement.UtilizationThreshold,
+		)
 	}
 
 	// Validate weights are positive
 	if c.OverlayManagement.Weights.ReservedInstance < 0 {
-		return fmt.Errorf("reserved instance weight must be non-negative, got %d", c.OverlayManagement.Weights.ReservedInstance)
+		return fmt.Errorf(
+			"reserved instance weight must be non-negative, got %d",
+			c.OverlayManagement.Weights.ReservedInstance,
+		)
 	}
 	if c.OverlayManagement.Weights.EC2InstanceSavingsPlan < 0 {
-		return fmt.Errorf("ec2 instance savings plan weight must be non-negative, got %d", c.OverlayManagement.Weights.EC2InstanceSavingsPlan)
+		return fmt.Errorf(
+			"ec2 instance savings plan weight must be non-negative, got %d",
+			c.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+		)
 	}
 	if c.OverlayManagement.Weights.ComputeSavingsPlan < 0 {
-		return fmt.Errorf("compute savings plan weight must be non-negative, got %d", c.OverlayManagement.Weights.ComputeSavingsPlan)
+		return fmt.Errorf(
+			"compute savings plan weight must be non-negative, got %d",
+			c.OverlayManagement.Weights.ComputeSavingsPlan,
+		)
 	}
 
 	return nil
