@@ -192,3 +192,142 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 		t.Errorf("PrometheusURL = %q, want %q (env var override)", cfg.PrometheusURL, "http://override:9090")
 	}
 }
+
+func TestOverlayManagementDefaults(t *testing.T) {
+	// Create minimal config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `prometheusUrl: "http://prometheus:9090"`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Load config
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify defaults are applied
+	if cfg.OverlayManagement.UtilizationThreshold != DefaultOverlayUtilizationThreshold {
+		t.Errorf("UtilizationThreshold = %f, want %f", cfg.OverlayManagement.UtilizationThreshold, DefaultOverlayUtilizationThreshold)
+	}
+	if cfg.OverlayManagement.Weights.ReservedInstance != DefaultOverlayWeightReservedInstance {
+		t.Errorf("ReservedInstance weight = %d, want %d", cfg.OverlayManagement.Weights.ReservedInstance, DefaultOverlayWeightReservedInstance)
+	}
+	if cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan != DefaultOverlayWeightEC2InstanceSavingsPlan {
+		t.Errorf("EC2InstanceSavingsPlan weight = %d, want %d", cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan, DefaultOverlayWeightEC2InstanceSavingsPlan)
+	}
+	if cfg.OverlayManagement.Weights.ComputeSavingsPlan != DefaultOverlayWeightComputeSavingsPlan {
+		t.Errorf("ComputeSavingsPlan weight = %d, want %d", cfg.OverlayManagement.Weights.ComputeSavingsPlan, DefaultOverlayWeightComputeSavingsPlan)
+	}
+}
+
+func TestOverlayManagementCustomValues(t *testing.T) {
+	// Create config with custom overlay values
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `
+prometheusUrl: "http://prometheus:9090"
+overlayManagement:
+  utilizationThreshold: 90.0
+  weights:
+    reservedInstance: 100
+    ec2InstanceSavingsPlan: 50
+    computeSavingsPlan: 25
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Load config
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify custom values are loaded
+	if cfg.OverlayManagement.UtilizationThreshold != 90.0 {
+		t.Errorf("UtilizationThreshold = %f, want 90.0", cfg.OverlayManagement.UtilizationThreshold)
+	}
+	if cfg.OverlayManagement.Weights.ReservedInstance != 100 {
+		t.Errorf("ReservedInstance weight = %d, want 100", cfg.OverlayManagement.Weights.ReservedInstance)
+	}
+	if cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan != 50 {
+		t.Errorf("EC2InstanceSavingsPlan weight = %d, want 50", cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan)
+	}
+	if cfg.OverlayManagement.Weights.ComputeSavingsPlan != 25 {
+		t.Errorf("ComputeSavingsPlan weight = %d, want 25", cfg.OverlayManagement.Weights.ComputeSavingsPlan)
+	}
+}
+
+func TestValidateOverlayManagement(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  OverlayManagementConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance:       30,
+					EC2InstanceSavingsPlan: 20,
+					ComputeSavingsPlan:     10,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "threshold too high",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 150.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "threshold negative",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: -10.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative RI weight",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance: -1,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero weights are valid",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance:       0,
+					EC2InstanceSavingsPlan: 0,
+					ComputeSavingsPlan:     0,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				PrometheusURL:     "http://prometheus:9090",
+				OverlayManagement: tt.config,
+			}
+
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
