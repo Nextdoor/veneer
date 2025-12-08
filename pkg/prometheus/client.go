@@ -31,6 +31,36 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+// Lumina metric name constants.
+// TODO: Import these from github.com/nextdoor/lumina/pkg/metrics once
+// https://github.com/Nextdoor/lumina/issues/129 is implemented.
+const (
+	metricSavingsPlanRemainingCapacity  = "savings_plan_remaining_capacity"
+	metricSavingsPlanUtilizationPercent = "savings_plan_utilization_percent"
+	metricEC2ReservedInstance           = "ec2_reserved_instance"
+	metricLuminaDataFreshnessSeconds    = "lumina_data_freshness_seconds"
+)
+
+// Lumina metric label name constants.
+// TODO: Import these from github.com/nextdoor/lumina/pkg/metrics once
+// https://github.com/Nextdoor/lumina/issues/129 is implemented.
+const (
+	labelInstanceFamily   = "instance_family"
+	labelInstanceType     = "instance_type"
+	labelType             = "type"
+	labelSavingsPlanARN   = "savings_plan_arn"
+	labelAccountID        = "account_id"
+	labelRegion           = "region"
+	labelAvailabilityZone = "availability_zone"
+	labelOperatingSystem  = "operating_system"
+)
+
+// Savings Plan type constants.
+const (
+	SavingsPlanTypeCompute     = "compute"
+	SavingsPlanTypeEC2Instance = "ec2_instance"
+)
+
 // Client is a Prometheus client for querying Lumina metrics.
 // It wraps the official Prometheus Go client and provides typed methods
 // for the specific metrics Karve needs.
@@ -105,9 +135,9 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	// Build query
 	var query string
 	if instanceFamily != "" {
-		query = fmt.Sprintf(`savings_plan_remaining_capacity{instance_family="%s"}`, instanceFamily)
+		query = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanRemainingCapacity, labelInstanceFamily, instanceFamily)
 	} else {
-		query = `savings_plan_remaining_capacity`
+		query = metricSavingsPlanRemainingCapacity
 	}
 
 	// Execute query
@@ -132,10 +162,10 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	capacities := make([]SavingsPlanCapacity, 0, len(vector))
 	for _, sample := range vector {
 		capacity := SavingsPlanCapacity{
-			Type:              string(sample.Metric["type"]),
-			InstanceFamily:    string(sample.Metric["instance_family"]),
-			SavingsPlanARN:    string(sample.Metric["savings_plan_arn"]),
-			AccountID:         string(sample.Metric["account_id"]),
+			Type:              string(sample.Metric[labelType]),
+			InstanceFamily:    string(sample.Metric[labelInstanceFamily]),
+			SavingsPlanARN:    string(sample.Metric[labelSavingsPlanARN]),
+			AccountID:         string(sample.Metric[labelAccountID]),
 			RemainingCapacity: float64(sample.Value),
 			Timestamp:         sample.Timestamp.Time(),
 		}
@@ -154,9 +184,9 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 	// Build query
 	var query string
 	if instanceType != "" {
-		query = fmt.Sprintf(`ec2_reserved_instance{instance_type="%s"}`, instanceType)
+		query = fmt.Sprintf(`%s{%s="%s"}`, metricEC2ReservedInstance, labelInstanceType, instanceType)
 	} else {
-		query = `ec2_reserved_instance`
+		query = metricEC2ReservedInstance
 	}
 
 	// Execute query
@@ -182,10 +212,10 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 		count := int(sample.Value)
 
 		ri := ReservedInstance{
-			AccountID:        string(sample.Metric["account_id"]),
-			Region:           string(sample.Metric["region"]),
-			InstanceType:     string(sample.Metric["instance_type"]),
-			AvailabilityZone: string(sample.Metric["availability_zone"]),
+			AccountID:        string(sample.Metric[labelAccountID]),
+			Region:           string(sample.Metric[labelRegion]),
+			InstanceType:     string(sample.Metric[labelInstanceType]),
+			AvailabilityZone: string(sample.Metric[labelAvailabilityZone]),
 			Count:            count,
 			Timestamp:        sample.Timestamp.Time(),
 		}
@@ -318,7 +348,7 @@ func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([
 // This is useful for determining if Lumina's data is stale and cost decisions
 // should be delayed until fresh data is available.
 func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
-	query := `lumina_data_freshness_seconds`
+	query := metricLuminaDataFreshnessSeconds
 
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
@@ -340,6 +370,82 @@ func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
 
 	// Return the first sample (should only be one)
 	return float64(vector[0].Value), nil
+}
+
+// SavingsPlanUtilization represents current utilization of a Savings Plan.
+// This is critical for overlay lifecycle decisions (create/delete based on capacity thresholds).
+type SavingsPlanUtilization struct {
+	// Type is the Savings Plan type ("ec2_instance" or "compute")
+	Type string
+
+	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5")
+	// Empty for Compute SPs
+	InstanceFamily string
+
+	// Region is the AWS region (empty for Compute SPs)
+	Region string
+
+	// SavingsPlanARN is the ARN of the Savings Plan
+	SavingsPlanARN string
+
+	// AccountID is the AWS account ID
+	AccountID string
+
+	// UtilizationPercent is the current utilization percentage (0-100+)
+	// Can exceed 100% if over-committed (spillover to on-demand)
+	UtilizationPercent float64
+
+	// Timestamp is when this metric was recorded
+	Timestamp time.Time
+}
+
+// QuerySavingsPlanUtilization queries Prometheus for Savings Plan utilization percentages.
+// This is critical for determining when to create/delete NodeOverlays based on capacity thresholds.
+//
+// The spType parameter filters by Savings Plan type ("compute" or "ec2_instance").
+// Pass empty string to get all types.
+//
+// This queries: savings_plan_utilization_percent{type="$spType"}
+func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string) ([]SavingsPlanUtilization, error) {
+	// Build query
+	var query string
+	if spType != "" {
+		query = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanUtilizationPercent, labelType, spType)
+	} else {
+		query = metricSavingsPlanUtilizationPercent
+	}
+
+	// Execute query
+	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query failed: %w", err)
+	}
+
+	if len(warnings) > 0 {
+		_ = warnings
+	}
+
+	// Parse results
+	vector, ok := result.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type: %T", result)
+	}
+
+	utilizations := make([]SavingsPlanUtilization, 0, len(vector))
+	for _, sample := range vector {
+		util := SavingsPlanUtilization{
+			Type:               string(sample.Metric[labelType]),
+			InstanceFamily:     string(sample.Metric[labelInstanceFamily]),
+			Region:             string(sample.Metric[labelRegion]),
+			SavingsPlanARN:     string(sample.Metric[labelSavingsPlanARN]),
+			AccountID:          string(sample.Metric[labelAccountID]),
+			UtilizationPercent: float64(sample.Value),
+			Timestamp:          sample.Timestamp.Time(),
+		}
+		utilizations = append(utilizations, util)
+	}
+
+	return utilizations, nil
 }
 
 // QueryRaw executes a raw PromQL query and returns the result as a string.

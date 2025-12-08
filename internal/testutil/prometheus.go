@@ -425,3 +425,81 @@ func LuminaMetricsWithSpotPrices() MetricFixture {
 		}`,
 	}
 }
+
+// LuminaMetricsWithSPUtilization returns metrics showing Savings Plan utilization percentages.
+// Scenario: Compute SP at 87.5% utilization (below threshold), EC2 Instance SP at 96.2% (above threshold).
+//
+// Use this fixture when testing overlay lifecycle decisions based on utilization thresholds.
+func LuminaMetricsWithSPUtilization() MetricFixture {
+	return MetricFixture{
+		// Query: savings_plan_utilization_percent{type="compute"}
+		`savings_plan_utilization_percent{type="compute"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "87.5"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_utilization_percent{type="ec2_instance"}
+		`savings_plan_utilization_percent{type="ec2_instance"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "96.2"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_utilization_percent (all types)
+		`savings_plan_utilization_percent`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "87.5"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "96.2"]
+					}
+				]
+			}
+		}`,
+	}
+}

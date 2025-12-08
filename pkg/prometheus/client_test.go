@@ -422,3 +422,82 @@ func TestQueryServerUnavailable(t *testing.T) {
 		t.Error("QueryRaw() expected error with unavailable server")
 	}
 }
+
+func TestQuerySavingsPlanUtilization(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	server.SetMetrics(testutil.LuminaMetricsWithSPUtilization())
+
+	client, err := NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name                 string
+		spType               string
+		wantCount            int
+		wantUtilizationFirst float64
+	}{
+		{
+			name:                 "compute SPs",
+			spType:               SavingsPlanTypeCompute,
+			wantCount:            1,
+			wantUtilizationFirst: 87.5,
+		},
+		{
+			name:                 "ec2_instance SPs",
+			spType:               SavingsPlanTypeEC2Instance,
+			wantCount:            1,
+			wantUtilizationFirst: 96.2,
+		},
+		{
+			name:      "all SP types",
+			spType:    "",
+			wantCount: 2, // compute + ec2_instance
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			utilizations, err := client.QuerySavingsPlanUtilization(ctx, tt.spType)
+			if err != nil {
+				t.Fatalf("QuerySavingsPlanUtilization() error = %v", err)
+			}
+
+			if len(utilizations) != tt.wantCount {
+				t.Errorf("got %d utilizations, want %d", len(utilizations), tt.wantCount)
+			}
+
+			if tt.wantCount > 0 && tt.wantUtilizationFirst > 0 {
+				if utilizations[0].UtilizationPercent != tt.wantUtilizationFirst {
+					t.Errorf("got utilization %f%%, want %f%%", utilizations[0].UtilizationPercent, tt.wantUtilizationFirst)
+				}
+			}
+		})
+	}
+}
+
+func TestQuerySavingsPlanUtilization_Empty(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	// No metrics loaded - should return empty result
+	client, err := NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	ctx := context.Background()
+	utilizations, err := client.QuerySavingsPlanUtilization(ctx, "")
+	if err != nil {
+		t.Fatalf("QuerySavingsPlanUtilization() error = %v", err)
+	}
+
+	if len(utilizations) != 0 {
+		t.Errorf("got %d utilizations, want 0", len(utilizations))
+	}
+}
