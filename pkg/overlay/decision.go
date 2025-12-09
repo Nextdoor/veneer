@@ -179,10 +179,13 @@ func AggregateComputeSavingsPlans(
 	return agg
 }
 
-// AggregateEC2InstanceSavingsPlans aggregates EC2 Instance Savings Plans by instance family.
+// AggregateEC2InstanceSavingsPlans aggregates EC2 Instance Savings Plans by instance family and region.
 //
-// Returns a map of instance family -> aggregated metrics. Multiple SPs for the same family
+// Returns a map of "family:region" -> aggregated metrics. Multiple SPs for the same family+region
 // are summed together to prevent duplicate overlay names.
+//
+// EC2 Instance SPs are scoped to ONE family + ONE region, so we must group by both dimensions.
+// Example keys: "m5:us-west-2", "c5:us-east-1"
 func AggregateEC2InstanceSavingsPlans(
 	utilizations []prometheus.SavingsPlanUtilization,
 	capacities []prometheus.SavingsPlanCapacity,
@@ -193,22 +196,25 @@ func AggregateEC2InstanceSavingsPlans(
 		capacityByARN[cap.SavingsPlanARN] = cap
 	}
 
-	// Group by instance family
-	byFamily := make(map[string][]prometheus.SavingsPlanUtilization)
+	// Group by instance family AND region (composite key)
+	// EC2 Instance SPs are scoped to one family + one region, so we must group by both
+	byFamilyRegion := make(map[string][]prometheus.SavingsPlanUtilization)
 	for _, util := range utilizations {
-		byFamily[util.InstanceFamily] = append(byFamily[util.InstanceFamily], util)
+		// Create composite key: "family:region"
+		key := util.InstanceFamily + ":" + util.Region
+		byFamilyRegion[key] = append(byFamilyRegion[key], util)
 	}
 
-	// Aggregate each family
+	// Aggregate each family+region combination
 	result := make(map[string]AggregatedSavingsPlan)
-	for family, utils := range byFamily {
+	for key, utils := range byFamilyRegion {
 		if len(utils) == 0 {
 			continue
 		}
 
 		agg := AggregatedSavingsPlan{
 			Type:           prometheus.SavingsPlanTypeEC2Instance,
-			InstanceFamily: family,
+			InstanceFamily: utils[0].InstanceFamily,
 			Region:         utils[0].Region,
 			AccountID:      utils[0].AccountID,
 		}
@@ -244,7 +250,7 @@ func AggregateEC2InstanceSavingsPlans(
 			agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
 		}
 
-		result[family] = agg
+		result[key] = agg
 	}
 
 	return result
@@ -265,15 +271,21 @@ type AggregatedReservedInstance struct {
 	TotalCount int
 }
 
-// AggregateReservedInstances aggregates Reserved Instances by instance type.
+// AggregateReservedInstances aggregates Reserved Instances by instance type and region.
 //
-// RIs can exist in multiple AZs, so we sum the counts per instance type
-// to prevent duplicate overlay names (one overlay per instance type, not per AZ).
+// RIs can exist in multiple AZs within the same region, so we sum the counts per instance type+region
+// to prevent duplicate overlay names (one overlay per instance type+region, not per AZ).
+//
+// RIs are scoped to ONE instance type + ONE region + ONE account, so we must group by type and region.
+// Example keys: "m5.xlarge:us-west-2", "c5.2xlarge:us-east-1"
 func AggregateReservedInstances(ris []prometheus.ReservedInstance) map[string]AggregatedReservedInstance {
-	byType := make(map[string]AggregatedReservedInstance)
+	byTypeRegion := make(map[string]AggregatedReservedInstance)
 
 	for _, ri := range ris {
-		agg, exists := byType[ri.InstanceType]
+		// Create composite key: "instanceType:region"
+		key := ri.InstanceType + ":" + ri.Region
+
+		agg, exists := byTypeRegion[key]
 		if !exists {
 			agg = AggregatedReservedInstance{
 				AccountID:    ri.AccountID,
@@ -283,10 +295,10 @@ func AggregateReservedInstances(ris []prometheus.ReservedInstance) map[string]Ag
 		}
 
 		agg.TotalCount += ri.Count
-		byType[ri.InstanceType] = agg
+		byTypeRegion[key] = agg
 	}
 
-	return byType
+	return byTypeRegion
 }
 
 // AnalyzeComputeSavingsPlan determines if a global Compute SP overlay should exist.
@@ -300,8 +312,15 @@ func AggregateReservedInstances(ris []prometheus.ReservedInstance) map[string]Ag
 func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	agg AggregatedSavingsPlan,
 ) Decision {
+	// Generate overlay name using configured prefix
+	prefix := e.Config.OverlayManagement.Naming.ComputeSavingsPlanPrefix
+	if prefix == "" {
+		prefix = config.DefaultOverlayNamingComputeSPPrefix
+	}
+	overlayName := fmt.Sprintf("%s-global", prefix)
+
 	decision := Decision{
-		Name:               "cost-aware-compute-sp-global",
+		Name:               overlayName,
 		CapacityType:       CapacityTypeComputeSavingsPlan,
 		Weight:             e.Config.OverlayManagement.Weights.ComputeSavingsPlan,
 		Price:              "0.00", // 100% discount for Phase 2
@@ -335,12 +354,16 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 // EC2 Instance SPs apply to a specific instance family in a specific region.
 //
 // NOTE: This method now expects aggregated metrics. Call AggregateEC2InstanceSavingsPlans()
-// first to combine multiple EC2 Instance SPs for the same family before calling this method.
+// first to combine multiple EC2 Instance SPs for the same family+region before calling this method.
 func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 	agg AggregatedSavingsPlan,
 ) Decision {
-	// Generate unique name per family
-	overlayName := fmt.Sprintf("cost-aware-ec2-sp-%s", agg.InstanceFamily)
+	// Generate unique name per family and region using configured prefix
+	prefix := e.Config.OverlayManagement.Naming.EC2InstanceSavingsPlanPrefix
+	if prefix == "" {
+		prefix = config.DefaultOverlayNamingEC2InstanceSPPrefix
+	}
+	overlayName := fmt.Sprintf("%s-%s-%s", prefix, agg.InstanceFamily, agg.Region)
 
 	decision := Decision{
 		Name:         overlayName,
@@ -377,10 +400,14 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 // RIs are binary: either available (count > 0) or not. No utilization percentage.
 //
 // NOTE: This method now expects aggregated metrics. Call AggregateReservedInstances()
-// first to combine multiple RIs for the same instance type across AZs before calling this method.
+// first to combine multiple RIs for the same instance type+region across AZs before calling this method.
 func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance) Decision {
-	// Generate unique name per instance type
-	overlayName := fmt.Sprintf("cost-aware-ri-%s", agg.InstanceType)
+	// Generate unique name per instance type and region using configured prefix
+	prefix := e.Config.OverlayManagement.Naming.ReservedInstancePrefix
+	if prefix == "" {
+		prefix = config.DefaultOverlayNamingReservedInstancePrefix
+	}
+	overlayName := fmt.Sprintf("%s-%s-%s", prefix, agg.InstanceType, agg.Region)
 
 	decision := Decision{
 		Name:         overlayName,

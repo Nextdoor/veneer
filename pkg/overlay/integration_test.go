@@ -63,7 +63,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 	defer mockServer.Close()
 
 	// Create Prometheus client pointing to mock server
-	promClient, err := prometheus.NewClient(mockServer.URL)
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL)
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}

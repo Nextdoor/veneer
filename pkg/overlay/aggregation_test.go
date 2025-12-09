@@ -67,7 +67,7 @@ func TestMultipleSavingsPlansAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL)
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL)
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL)
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}

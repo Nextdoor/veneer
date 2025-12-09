@@ -64,14 +64,27 @@ const (
 // Client is a Prometheus client for querying Lumina metrics.
 // It wraps the official Prometheus Go client and provides typed methods
 // for the specific metrics Karve needs.
+//
+// The client is scoped to a specific AWS account and region to prevent
+// creating NodeOverlays for capacity that won't apply to this cluster.
 type Client struct {
-	api v1.API
+	api       v1.API
+	accountID string // AWS account ID to filter queries (prevents cross-account queries)
+	region    string // AWS region to filter queries (prevents cross-region queries)
 }
 
-// NewClient creates a new Prometheus client.
-// The url parameter should be the base URL of the Prometheus server
-// (e.g., "http://prometheus:9090").
-func NewClient(url string) (*Client, error) {
+// NewClient creates a new Prometheus client scoped to a specific AWS account and region.
+//
+// The url parameter should be the base URL of the Prometheus server (e.g., "http://prometheus:9090").
+// The accountID and region parameters are used to filter all queries to only return metrics
+// for capacity in this cluster's account and region.
+//
+// Why scoping is critical:
+// Lumina monitors multiple AWS accounts and regions, but this Karve instance runs in ONE cluster
+// in ONE account and ONE region. Without filtering, we would create NodeOverlays for RIs/SPs from
+// other accounts/regions, causing Karpenter to launch on-demand instances that won't actually
+// receive the pre-paid discount.
+func NewClient(url, accountID, region string) (*Client, error) {
 	promClient, err := api.NewClient(api.Config{
 		Address: url,
 	})
@@ -80,7 +93,9 @@ func NewClient(url string) (*Client, error) {
 	}
 
 	return &Client{
-		api: v1.NewAPI(promClient),
+		api:       v1.NewAPI(promClient),
+		accountID: accountID,
+		region:    region,
 	}, nil
 }
 
@@ -93,6 +108,11 @@ type SavingsPlanCapacity struct {
 	// Optional: empty string for Compute SPs (which apply globally to all families).
 	// Only populated for EC2 Instance SPs.
 	InstanceFamily string
+
+	// Region is the AWS region.
+	// Optional: "all" for Compute SPs (which apply globally to all regions).
+	// Only populated with specific region for EC2 Instance SPs.
+	Region string
 
 	// SavingsPlanARN is the ARN of the Savings Plan
 	SavingsPlanARN string
@@ -140,22 +160,36 @@ type ReservedInstance struct {
 // Important: We use savings_plan_hourly_commitment as the PRIMARY source because it has
 // instance_family and region labels, while savings_plan_remaining_capacity does not.
 // We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
+//
+// The client is scoped to a specific account and region, so only SPs from this cluster's
+// account/region are returned.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
 	// Capture query time once at the start to ensure consistency across both queries
 	queryTime := time.Now()
 
-	// Build queries for both metrics
-	// Note: Only the commitment metric has instance_family label, so we only filter it there.
-	// The remaining capacity metric will return all SPs (we correlate by ARN afterward).
-	var commitmentQuery string
+	// Build queries for both metrics with account/region filtering
+	// Note: Only the commitment metric has instance_family and region labels.
+	// The remaining capacity metric only has account_id and type labels.
+	var commitmentQuery, remainingQuery string
+
+	// Build commitment query (has all labels we need)
 	if instanceFamily != "" {
-		commitmentQuery = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanHourlyCommitment, labelInstanceFamily, instanceFamily)
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s"}`,
+			metricSavingsPlanHourlyCommitment,
+			labelAccountID, c.accountID,
+			labelRegion, c.region,
+			labelInstanceFamily, instanceFamily)
 	} else {
-		commitmentQuery = metricSavingsPlanHourlyCommitment
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricSavingsPlanHourlyCommitment,
+			labelAccountID, c.accountID,
+			labelRegion, c.region)
 	}
 
-	// Always query all remaining capacity (no instance_family filter - that label doesn't exist on this metric)
-	remainingQuery := metricSavingsPlanRemainingCapacity
+	// Build remaining capacity query (only has account_id, not region or family)
+	remainingQuery = fmt.Sprintf(`%s{%s="%s"}`,
+		metricSavingsPlanRemainingCapacity,
+		labelAccountID, c.accountID)
 
 	// Execute hourly commitment query first (this is our PRIMARY data source)
 	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
@@ -202,6 +236,7 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 		capacity := SavingsPlanCapacity{
 			Type:              string(sample.Metric[labelType]),
 			InstanceFamily:    string(sample.Metric[labelInstanceFamily]),
+			Region:            string(sample.Metric[labelRegion]),
 			SavingsPlanARN:    arn,
 			AccountID:         string(sample.Metric[labelAccountID]),
 			RemainingCapacity: remainingByARN[arn], // Lookup remaining capacity by ARN
@@ -218,14 +253,22 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 // The instanceType parameter filters results (e.g., "m5.xlarge").
 // Pass empty string to get all instance types.
 //
-// This queries: ec2_reserved_instance{instance_type="$type"}
+// The client is scoped to a specific account and region, so only RIs from this cluster's
+// account/region are returned.
 func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string) ([]ReservedInstance, error) {
-	// Build query
+	// Build query with account/region filtering
 	var query string
 	if instanceType != "" {
-		query = fmt.Sprintf(`%s{%s="%s"}`, metricEC2ReservedInstance, labelInstanceType, instanceType)
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s"}`,
+			metricEC2ReservedInstance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region,
+			labelInstanceType, instanceType)
 	} else {
-		query = metricEC2ReservedInstance
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricEC2ReservedInstance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region)
 	}
 
 	// Execute query
@@ -447,14 +490,20 @@ type SavingsPlanUtilization struct {
 // The spType parameter filters by Savings Plan type ("compute" or "ec2_instance").
 // Pass empty string to get all types.
 //
-// This queries: savings_plan_utilization_percent{type="$spType"}
+// The client is scoped to a specific account, so only SPs from this cluster's account are returned.
+// Note: We don't filter by region here because utilization metrics don't have region labels.
 func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string) ([]SavingsPlanUtilization, error) {
-	// Build query
+	// Build query with account filtering (utilization metric doesn't have region label)
 	var query string
 	if spType != "" {
-		query = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanUtilizationPercent, labelType, spType)
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricSavingsPlanUtilizationPercent,
+			labelAccountID, c.accountID,
+			labelType, spType)
 	} else {
-		query = metricSavingsPlanUtilizationPercent
+		query = fmt.Sprintf(`%s{%s="%s"}`,
+			metricSavingsPlanUtilizationPercent,
+			labelAccountID, c.accountID)
 	}
 
 	// Execute query

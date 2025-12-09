@@ -28,16 +28,19 @@ import (
 
 // Configuration key constants for viper SetDefault and BindEnv calls.
 const (
-	KeyPrometheusURL                       = "prometheusUrl"
-	KeyLogLevel                            = "logLevel"
-	KeyMetricsBindAddress                  = "metricsBindAddress"
-	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
-	KeyAWSAccountID                        = "aws.accountId"
-	KeyAWSRegion                           = "aws.region"
-	KeyOverlayUtilizationThreshold         = "overlayManagement.utilizationThreshold"
-	KeyOverlayWeightReservedInstance       = "overlayManagement.weights.reservedInstance"
-	KeyOverlayWeightEC2InstanceSavingsPlan = "overlayManagement.weights.ec2InstanceSavingsPlan"
-	KeyOverlayWeightComputeSavingsPlan     = "overlayManagement.weights.computeSavingsPlan"
+	KeyPrometheusURL                          = "prometheusUrl"
+	KeyLogLevel                               = "logLevel"
+	KeyMetricsBindAddress                     = "metricsBindAddress"
+	KeyHealthProbeBindAddress                 = "healthProbeBindAddress"
+	KeyAWSAccountID                           = "aws.accountId"
+	KeyAWSRegion                              = "aws.region"
+	KeyOverlayUtilizationThreshold            = "overlayManagement.utilizationThreshold"
+	KeyOverlayWeightReservedInstance          = "overlayManagement.weights.reservedInstance"
+	KeyOverlayWeightEC2InstanceSavingsPlan    = "overlayManagement.weights.ec2InstanceSavingsPlan"
+	KeyOverlayWeightComputeSavingsPlan        = "overlayManagement.weights.computeSavingsPlan"
+	KeyOverlayNamingReservedInstancePrefix    = "overlayManagement.naming.reservedInstancePrefix"
+	KeyOverlayNamingEC2InstanceSPPrefix       = "overlayManagement.naming.ec2InstanceSavingsPlanPrefix"
+	KeyOverlayNamingComputeSPPrefix           = "overlayManagement.naming.computeSavingsPlanPrefix"
 )
 
 // Environment variable name constants.
@@ -53,14 +56,17 @@ const (
 
 // Default configuration values.
 const (
-	DefaultPrometheusURL                       = "http://prometheus:9090"
-	DefaultLogLevel                            = "info"
-	DefaultMetricsBindAddress                  = ":8080"
-	DefaultHealthProbeBindAddress              = ":8081"
-	DefaultOverlayUtilizationThreshold         = 95.0 // Delete overlays at 95% utilization
-	DefaultOverlayWeightReservedInstance       = 30   // Highest priority (most specific)
-	DefaultOverlayWeightEC2InstanceSavingsPlan = 20   // Medium priority (family-specific)
-	DefaultOverlayWeightComputeSavingsPlan     = 10   // Lowest priority (global)
+	DefaultPrometheusURL                          = "http://prometheus:9090"
+	DefaultLogLevel                               = "info"
+	DefaultMetricsBindAddress                     = ":8080"
+	DefaultHealthProbeBindAddress                 = ":8081"
+	DefaultOverlayUtilizationThreshold            = 95.0              // Delete overlays at 95% utilization
+	DefaultOverlayWeightReservedInstance          = 30                // Highest priority (most specific)
+	DefaultOverlayWeightEC2InstanceSavingsPlan    = 20                // Medium priority (family-specific)
+	DefaultOverlayWeightComputeSavingsPlan        = 10                // Lowest priority (global)
+	DefaultOverlayNamingReservedInstancePrefix    = "cost-aware-ri"   // RI overlay name prefix
+	DefaultOverlayNamingEC2InstanceSPPrefix       = "cost-aware-ec2-sp" // EC2 Instance SP overlay name prefix
+	DefaultOverlayNamingComputeSPPrefix           = "cost-aware-compute-sp" // Compute SP overlay name prefix
 )
 
 // Config represents the complete controller configuration.
@@ -127,6 +133,9 @@ type OverlayManagementConfig struct {
 	// Higher weights win. Reserved Instances (most specific) should have highest weight,
 	// followed by EC2 Instance SPs (family-specific), then Compute SPs (global).
 	Weights OverlayWeightsConfig `yaml:"weights,omitempty"`
+
+	// Naming controls overlay naming conventions.
+	Naming OverlayNamingConfig `yaml:"naming,omitempty"`
 }
 
 // OverlayWeightsConfig defines precedence for different capacity types.
@@ -146,6 +155,27 @@ type OverlayWeightsConfig struct {
 	// ComputeSavingsPlan weight for Compute SP overlays (global, all families).
 	// Default: 10 (lowest priority)
 	ComputeSavingsPlan int `yaml:"computeSavingsPlan,omitempty"`
+}
+
+// OverlayNamingConfig controls overlay naming conventions.
+//
+// This allows customization of overlay names to avoid conflicts with other systems
+// or to match organizational naming standards.
+type OverlayNamingConfig struct {
+	// ReservedInstancePrefix is the prefix for RI-backed overlay names.
+	// Default: "cost-aware-ri"
+	// Example with default: "cost-aware-ri-m5-xlarge-us-west-2"
+	ReservedInstancePrefix string `yaml:"reservedInstancePrefix,omitempty"`
+
+	// EC2InstanceSavingsPlanPrefix is the prefix for EC2 Instance SP overlay names.
+	// Default: "cost-aware-ec2-sp"
+	// Example with default: "cost-aware-ec2-sp-m5-us-west-2"
+	EC2InstanceSavingsPlanPrefix string `yaml:"ec2InstanceSavingsPlanPrefix,omitempty"`
+
+	// ComputeSavingsPlanPrefix is the prefix for Compute SP overlay names.
+	// Default: "cost-aware-compute-sp"
+	// Example with default: "cost-aware-compute-sp-global"
+	ComputeSavingsPlanPrefix string `yaml:"computeSavingsPlanPrefix,omitempty"`
 }
 
 // Load loads configuration from a YAML file and validates it.
@@ -169,6 +199,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault(KeyOverlayWeightReservedInstance, DefaultOverlayWeightReservedInstance)
 	v.SetDefault(KeyOverlayWeightEC2InstanceSavingsPlan, DefaultOverlayWeightEC2InstanceSavingsPlan)
 	v.SetDefault(KeyOverlayWeightComputeSavingsPlan, DefaultOverlayWeightComputeSavingsPlan)
+	v.SetDefault(KeyOverlayNamingReservedInstancePrefix, DefaultOverlayNamingReservedInstancePrefix)
+	v.SetDefault(KeyOverlayNamingEC2InstanceSPPrefix, DefaultOverlayNamingEC2InstanceSPPrefix)
+	v.SetDefault(KeyOverlayNamingComputeSPPrefix, DefaultOverlayNamingComputeSPPrefix)
 
 	// Enable environment variable overrides with KARVE_ prefix
 	v.SetEnvPrefix(EnvPrefix)
