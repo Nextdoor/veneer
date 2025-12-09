@@ -136,18 +136,34 @@ type ReservedInstance struct {
 // Pass empty string to get all instance families.
 //
 // This queries both savings_plan_remaining_capacity and savings_plan_hourly_commitment metrics.
+//
+// Important: We use savings_plan_hourly_commitment as the PRIMARY source because it has
+// instance_family and region labels, while savings_plan_remaining_capacity does not.
+// We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
 	// Capture query time once at the start to ensure consistency across both queries
 	queryTime := time.Now()
 
-	// Build queries for both remaining capacity and hourly commitment
-	var remainingQuery, commitmentQuery string
+	// Build queries for both metrics
+	// Note: Only the commitment metric has instance_family label, so we only filter it there.
+	// The remaining capacity metric will return all SPs (we correlate by ARN afterward).
+	var commitmentQuery string
 	if instanceFamily != "" {
-		remainingQuery = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanRemainingCapacity, labelInstanceFamily, instanceFamily)
 		commitmentQuery = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanHourlyCommitment, labelInstanceFamily, instanceFamily)
 	} else {
-		remainingQuery = metricSavingsPlanRemainingCapacity
 		commitmentQuery = metricSavingsPlanHourlyCommitment
+	}
+
+	// Always query all remaining capacity (no instance_family filter - that label doesn't exist on this metric)
+	remainingQuery := metricSavingsPlanRemainingCapacity
+
+	// Execute hourly commitment query first (this is our PRIMARY data source)
+	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
+	}
+	if len(warnings) > 0 {
+		_ = warnings
 	}
 
 	// Execute remaining capacity query
@@ -159,13 +175,10 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 		_ = warnings
 	}
 
-	// Execute hourly commitment query
-	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
-	if err != nil {
-		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
-	}
-	if len(warnings) > 0 {
-		_ = warnings
+	// Parse hourly commitment results (PRIMARY source)
+	commitmentVector, ok := commitmentResult.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected hourly commitment result type: %T", commitmentResult)
 	}
 
 	// Parse remaining capacity results
@@ -174,30 +187,25 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 		return nil, fmt.Errorf("unexpected remaining capacity result type: %T", remainingResult)
 	}
 
-	// Parse hourly commitment results
-	commitmentVector, ok := commitmentResult.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected hourly commitment result type: %T", commitmentResult)
-	}
-
-	// Build a map of ARN -> hourly commitment for fast lookup
-	commitmentByARN := make(map[string]float64, len(commitmentVector))
-	for _, sample := range commitmentVector {
-		arn := string(sample.Metric[labelSavingsPlanARN])
-		commitmentByARN[arn] = float64(sample.Value)
-	}
-
-	// Combine the data using remaining capacity as the primary source
-	capacities := make([]SavingsPlanCapacity, 0, len(remainingVector))
+	// Build a map of ARN -> remaining capacity for fast lookup
+	remainingByARN := make(map[string]float64, len(remainingVector))
 	for _, sample := range remainingVector {
+		arn := string(sample.Metric[labelSavingsPlanARN])
+		remainingByARN[arn] = float64(sample.Value)
+	}
+
+	// Combine the data using hourly commitment as the primary source
+	// This ensures we get the correct instance_family and region labels from the commitment metric
+	capacities := make([]SavingsPlanCapacity, 0, len(commitmentVector))
+	for _, sample := range commitmentVector {
 		arn := string(sample.Metric[labelSavingsPlanARN])
 		capacity := SavingsPlanCapacity{
 			Type:              string(sample.Metric[labelType]),
 			InstanceFamily:    string(sample.Metric[labelInstanceFamily]),
 			SavingsPlanARN:    arn,
 			AccountID:         string(sample.Metric[labelAccountID]),
-			RemainingCapacity: float64(sample.Value),
-			HourlyCommitment:  commitmentByARN[arn], // Lookup commitment by ARN
+			RemainingCapacity: remainingByARN[arn], // Lookup remaining capacity by ARN
+			HourlyCommitment:  float64(sample.Value),
 			Timestamp:         sample.Timestamp.Time(),
 		}
 		capacities = append(capacities, capacity)
