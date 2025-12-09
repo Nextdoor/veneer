@@ -137,6 +137,9 @@ type ReservedInstance struct {
 //
 // This queries both savings_plan_remaining_capacity and savings_plan_hourly_commitment metrics.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
+	// Capture query time once at the start to ensure consistency across both queries
+	queryTime := time.Now()
+
 	// Build queries for both remaining capacity and hourly commitment
 	var remainingQuery, commitmentQuery string
 	if instanceFamily != "" {
@@ -148,7 +151,7 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	}
 
 	// Execute remaining capacity query
-	remainingResult, warnings, err := c.api.Query(ctx, remainingQuery, time.Now())
+	remainingResult, warnings, err := c.api.Query(ctx, remainingQuery, queryTime)
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query for remaining capacity failed: %w", err)
 	}
@@ -157,7 +160,7 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	}
 
 	// Execute hourly commitment query
-	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, time.Now())
+	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
 	}
