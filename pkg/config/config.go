@@ -34,13 +34,13 @@ const (
 	KeyHealthProbeBindAddress                 = "healthProbeBindAddress"
 	KeyAWSAccountID                           = "aws.accountId"
 	KeyAWSRegion                              = "aws.region"
-	KeyOverlayUtilizationThreshold            = "overlayManagement.utilizationThreshold"
-	KeyOverlayWeightReservedInstance          = "overlayManagement.weights.reservedInstance"
-	KeyOverlayWeightEC2InstanceSavingsPlan    = "overlayManagement.weights.ec2InstanceSavingsPlan"
-	KeyOverlayWeightComputeSavingsPlan        = "overlayManagement.weights.computeSavingsPlan"
-	KeyOverlayNamingReservedInstancePrefix    = "overlayManagement.naming.reservedInstancePrefix"
-	KeyOverlayNamingEC2InstanceSPPrefix       = "overlayManagement.naming.ec2InstanceSavingsPlanPrefix"
-	KeyOverlayNamingComputeSPPrefix           = "overlayManagement.naming.computeSavingsPlanPrefix"
+	KeyOverlayUtilizationThreshold            = "overlays.utilizationThreshold"
+	KeyOverlayWeightReservedInstance          = "overlays.weights.reservedInstance"
+	KeyOverlayWeightEC2InstanceSavingsPlan    = "overlays.weights.ec2InstanceSavingsPlan"
+	KeyOverlayWeightComputeSavingsPlan        = "overlays.weights.computeSavingsPlan"
+	KeyOverlayNamingReservedInstancePrefix    = "overlays.naming.reservedInstancePrefix"
+	KeyOverlayNamingEC2InstanceSPPrefix       = "overlays.naming.ec2InstanceSavingsPlanPrefix"
+	KeyOverlayNamingComputeSPPrefix           = "overlays.naming.computeSavingsPlanPrefix"
 )
 
 // Environment variable name constants.
@@ -87,8 +87,8 @@ type Config struct {
 	// AWS contains AWS-specific configuration for the cluster context.
 	AWS AWSConfig `yaml:"aws,omitempty"`
 
-	// OverlayManagement configures NodeOverlay lifecycle behavior.
-	OverlayManagement OverlayManagementConfig `yaml:"overlayManagement,omitempty"`
+	// Overlays configures NodeOverlay lifecycle behavior.
+	Overlays OverlayManagementConfig `yaml:"overlays,omitempty"`
 }
 
 // AWSConfig contains AWS-specific configuration for scoping Savings Plans and Reserved Instances.
@@ -267,31 +267,31 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.LogLevel)
 	}
 
-	// Validate overlay management configuration
-	if c.OverlayManagement.UtilizationThreshold < 0 || c.OverlayManagement.UtilizationThreshold > 100 {
+	// Validate overlay configuration
+	if c.Overlays.UtilizationThreshold < 0 || c.Overlays.UtilizationThreshold > 100 {
 		return fmt.Errorf(
 			"overlay utilization threshold must be between 0 and 100, got %f",
-			c.OverlayManagement.UtilizationThreshold,
+			c.Overlays.UtilizationThreshold,
 		)
 	}
 
 	// Validate weights are positive
-	if c.OverlayManagement.Weights.ReservedInstance < 0 {
+	if c.Overlays.Weights.ReservedInstance < 0 {
 		return fmt.Errorf(
 			"reserved instance weight must be non-negative, got %d",
-			c.OverlayManagement.Weights.ReservedInstance,
+			c.Overlays.Weights.ReservedInstance,
 		)
 	}
-	if c.OverlayManagement.Weights.EC2InstanceSavingsPlan < 0 {
+	if c.Overlays.Weights.EC2InstanceSavingsPlan < 0 {
 		return fmt.Errorf(
 			"ec2 instance savings plan weight must be non-negative, got %d",
-			c.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+			c.Overlays.Weights.EC2InstanceSavingsPlan,
 		)
 	}
-	if c.OverlayManagement.Weights.ComputeSavingsPlan < 0 {
+	if c.Overlays.Weights.ComputeSavingsPlan < 0 {
 		return fmt.Errorf(
 			"compute savings plan weight must be non-negative, got %d",
-			c.OverlayManagement.Weights.ComputeSavingsPlan,
+			c.Overlays.Weights.ComputeSavingsPlan,
 		)
 	}
 

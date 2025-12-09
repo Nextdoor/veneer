@@ -313,7 +313,7 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	agg AggregatedSavingsPlan,
 ) Decision {
 	// Generate overlay name using configured prefix
-	prefix := e.Config.OverlayManagement.Naming.ComputeSavingsPlanPrefix
+	prefix := e.Config.Overlays.Naming.ComputeSavingsPlanPrefix
 	if prefix == "" {
 		prefix = config.DefaultOverlayNamingComputeSPPrefix
 	}
@@ -322,7 +322,7 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	decision := Decision{
 		Name:               overlayName,
 		CapacityType:       CapacityTypeComputeSavingsPlan,
-		Weight:             e.Config.OverlayManagement.Weights.ComputeSavingsPlan,
+		Weight:             e.Config.Overlays.Weights.ComputeSavingsPlan,
 		Price:              "0.00", // 100% discount for Phase 2
 		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
 		UtilizationPercent: agg.AverageUtilization,
@@ -332,7 +332,7 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	// Decision logic: overlay exists if BOTH conditions are true
 	// 1. Utilization below threshold
 	// 2. Remaining capacity available
-	threshold := e.Config.OverlayManagement.UtilizationThreshold
+	threshold := e.Config.Overlays.UtilizationThreshold
 
 	if agg.AverageUtilization >= threshold {
 		decision.ShouldExist = false
@@ -359,7 +359,7 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 	agg AggregatedSavingsPlan,
 ) Decision {
 	// Generate unique name per family and region using configured prefix
-	prefix := e.Config.OverlayManagement.Naming.EC2InstanceSavingsPlanPrefix
+	prefix := e.Config.Overlays.Naming.EC2InstanceSavingsPlanPrefix
 	if prefix == "" {
 		prefix = config.DefaultOverlayNamingEC2InstanceSPPrefix
 	}
@@ -368,7 +368,7 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 	decision := Decision{
 		Name:         overlayName,
 		CapacityType: CapacityTypeEC2InstanceSavingsPlan,
-		Weight:       e.Config.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+		Weight:       e.Config.Overlays.Weights.EC2InstanceSavingsPlan,
 		Price:        "0.00", // 100% discount for Phase 2
 		TargetSelector: fmt.Sprintf(
 			"karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]",
@@ -378,7 +378,7 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
-	threshold := e.Config.OverlayManagement.UtilizationThreshold
+	threshold := e.Config.Overlays.UtilizationThreshold
 
 	if agg.AverageUtilization >= threshold {
 		decision.ShouldExist = false
@@ -403,7 +403,7 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 // first to combine multiple RIs for the same instance type+region across AZs before calling this method.
 func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance) Decision {
 	// Generate unique name per instance type and region using configured prefix
-	prefix := e.Config.OverlayManagement.Naming.ReservedInstancePrefix
+	prefix := e.Config.Overlays.Naming.ReservedInstancePrefix
 	if prefix == "" {
 		prefix = config.DefaultOverlayNamingReservedInstancePrefix
 	}
@@ -412,7 +412,7 @@ func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance)
 	decision := Decision{
 		Name:         overlayName,
 		CapacityType: CapacityTypeReservedInstance,
-		Weight:       e.Config.OverlayManagement.Weights.ReservedInstance,
+		Weight:       e.Config.Overlays.Weights.ReservedInstance,
 		Price:        "0.00", // 100% discount for Phase 2
 		TargetSelector: fmt.Sprintf("node.kubernetes.io/instance-type: In [%s], karpenter.sh/capacity-type: In [on-demand]",
 			agg.InstanceType),

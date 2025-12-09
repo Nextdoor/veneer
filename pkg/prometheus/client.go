@@ -153,7 +153,7 @@ type ReservedInstance struct {
 
 // QuerySavingsPlanCapacity queries Prometheus for Savings Plan remaining capacity and hourly commitment.
 // The instanceFamily parameter filters results (e.g., "m5", "c5").
-// Pass empty string to get all instance families.
+// Pass empty string to get all instance families (includes both EC2 Instance and Compute SPs).
 //
 // This queries both savings_plan_remaining_capacity and savings_plan_hourly_commitment metrics.
 //
@@ -161,8 +161,13 @@ type ReservedInstance struct {
 // instance_family and region labels, while savings_plan_remaining_capacity does not.
 // We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
 //
-// The client is scoped to a specific account and region, so only SPs from this cluster's
-// account/region are returned.
+// Filtering behavior:
+// - EC2 Instance SPs: Filtered by account_id AND region (e.g., region="us-west-2")
+// - Compute SPs: Filtered by account_id only (they have region="all" in Lumina)
+//
+// The client is scoped to a specific account and region. When instanceFamily is specified,
+// we filter to that family + this region. When empty, we get both EC2 Instance SPs for this
+// region AND Compute SPs (which have region="all").
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
 	// Capture query time once at the start to ensure consistency across both queries
 	queryTime := time.Now()
@@ -173,14 +178,17 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	var commitmentQuery, remainingQuery string
 
 	// Build commitment query (has all labels we need)
+	// Use regex to match both this cluster's region AND "all" (for Compute SPs)
 	if instanceFamily != "" {
+		// Specific family: get EC2 Instance SPs for this region in this family
 		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s"}`,
 			metricSavingsPlanHourlyCommitment,
 			labelAccountID, c.accountID,
 			labelRegion, c.region,
 			labelInstanceFamily, instanceFamily)
 	} else {
-		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+		// All families: get EC2 Instance SPs for this region + Compute SPs (region="all")
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s=~"%s|all"}`,
 			metricSavingsPlanHourlyCommitment,
 			labelAccountID, c.accountID,
 			labelRegion, c.region)

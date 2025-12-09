@@ -31,7 +31,7 @@ const (
 // Helper to create test config with default values
 func testConfig() *config.Config {
 	return &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -354,7 +354,7 @@ func TestAnalyzeReservedInstance(t *testing.T) {
 func TestDecisionEngineWithCustomThreshold(t *testing.T) {
 	// Test with custom threshold of 90%
 	cfg := testConfig()
-	cfg.OverlayManagement.UtilizationThreshold = 90.0
+	cfg.Overlays.UtilizationThreshold = 90.0
 	engine := NewDecisionEngine(cfg)
 
 	utilization := prometheus.SavingsPlanUtilization{
@@ -379,9 +379,9 @@ func TestDecisionEngineWithCustomThreshold(t *testing.T) {
 
 func TestDecisionEngineWithCustomWeights(t *testing.T) {
 	cfg := testConfig()
-	cfg.OverlayManagement.Weights.ReservedInstance = 100
-	cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan = 50
-	cfg.OverlayManagement.Weights.ComputeSavingsPlan = 25
+	cfg.Overlays.Weights.ReservedInstance = 100
+	cfg.Overlays.Weights.EC2InstanceSavingsPlan = 50
+	cfg.Overlays.Weights.ComputeSavingsPlan = 25
 	engine := NewDecisionEngine(cfg)
 
 	// Test RI weight

@@ -73,7 +73,7 @@ func TestMultipleSavingsPlansAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -177,7 +177,7 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -304,7 +304,7 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,

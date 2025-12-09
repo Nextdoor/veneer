@@ -70,7 +70,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 
 	// Create decision engine with test config
 	cfg := &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -131,7 +131,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		// Fixture has 87.5% utilization (below 95% threshold)
 		if !decision.ShouldExist {
 			t.Errorf("ShouldExist = false, want true (utilization %.1f%% is below threshold %.1f%%)",
-				utilizations[0].UtilizationPercent, cfg.OverlayManagement.UtilizationThreshold)
+				utilizations[0].UtilizationPercent, cfg.Overlays.UtilizationThreshold)
 		}
 
 		if decision.UtilizationPercent != 87.5 {
@@ -193,7 +193,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		// Fixture has 96.2% utilization (above 95% threshold)
 		if decision.ShouldExist {
 			t.Errorf("ShouldExist = true, want false (utilization %.1f%% is above threshold %.1f%%)",
-				utilizations[0].UtilizationPercent, cfg.OverlayManagement.UtilizationThreshold)
+				utilizations[0].UtilizationPercent, cfg.Overlays.UtilizationThreshold)
 		}
 
 		if decision.UtilizationPercent != 96.2 {
@@ -284,7 +284,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlayManagementConfig{
+		OverlayManagement: config.OverlaysConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,

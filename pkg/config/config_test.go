@@ -303,31 +303,31 @@ aws:
 	}
 
 	// Verify defaults are applied
-	if cfg.OverlayManagement.UtilizationThreshold != DefaultOverlayUtilizationThreshold {
+	if cfg.Overlays.UtilizationThreshold != DefaultOverlayUtilizationThreshold {
 		t.Errorf(
 			"UtilizationThreshold = %f, want %f",
-			cfg.OverlayManagement.UtilizationThreshold,
+			cfg.Overlays.UtilizationThreshold,
 			DefaultOverlayUtilizationThreshold,
 		)
 	}
-	if cfg.OverlayManagement.Weights.ReservedInstance != DefaultOverlayWeightReservedInstance {
+	if cfg.Overlays.Weights.ReservedInstance != DefaultOverlayWeightReservedInstance {
 		t.Errorf(
 			"ReservedInstance weight = %d, want %d",
-			cfg.OverlayManagement.Weights.ReservedInstance,
+			cfg.Overlays.Weights.ReservedInstance,
 			DefaultOverlayWeightReservedInstance,
 		)
 	}
-	if cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan != DefaultOverlayWeightEC2InstanceSavingsPlan {
+	if cfg.Overlays.Weights.EC2InstanceSavingsPlan != DefaultOverlayWeightEC2InstanceSavingsPlan {
 		t.Errorf(
 			"EC2InstanceSavingsPlan weight = %d, want %d",
-			cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan,
+			cfg.Overlays.Weights.EC2InstanceSavingsPlan,
 			DefaultOverlayWeightEC2InstanceSavingsPlan,
 		)
 	}
-	if cfg.OverlayManagement.Weights.ComputeSavingsPlan != DefaultOverlayWeightComputeSavingsPlan {
+	if cfg.Overlays.Weights.ComputeSavingsPlan != DefaultOverlayWeightComputeSavingsPlan {
 		t.Errorf(
 			"ComputeSavingsPlan weight = %d, want %d",
-			cfg.OverlayManagement.Weights.ComputeSavingsPlan,
+			cfg.Overlays.Weights.ComputeSavingsPlan,
 			DefaultOverlayWeightComputeSavingsPlan,
 		)
 	}
@@ -342,7 +342,7 @@ prometheusUrl: "http://prometheus:9090"
 aws:
   accountId: "123456789012"
   region: "us-west-2"
-overlayManagement:
+overlays:
   utilizationThreshold: 90.0
   weights:
     reservedInstance: 100
@@ -360,17 +360,17 @@ overlayManagement:
 	}
 
 	// Verify custom values are loaded
-	if cfg.OverlayManagement.UtilizationThreshold != 90.0 {
-		t.Errorf("UtilizationThreshold = %f, want 90.0", cfg.OverlayManagement.UtilizationThreshold)
+	if cfg.Overlays.UtilizationThreshold != 90.0 {
+		t.Errorf("UtilizationThreshold = %f, want 90.0", cfg.Overlays.UtilizationThreshold)
 	}
-	if cfg.OverlayManagement.Weights.ReservedInstance != 100 {
-		t.Errorf("ReservedInstance weight = %d, want 100", cfg.OverlayManagement.Weights.ReservedInstance)
+	if cfg.Overlays.Weights.ReservedInstance != 100 {
+		t.Errorf("ReservedInstance weight = %d, want 100", cfg.Overlays.Weights.ReservedInstance)
 	}
-	if cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan != 50 {
-		t.Errorf("EC2InstanceSavingsPlan weight = %d, want 50", cfg.OverlayManagement.Weights.EC2InstanceSavingsPlan)
+	if cfg.Overlays.Weights.EC2InstanceSavingsPlan != 50 {
+		t.Errorf("EC2InstanceSavingsPlan weight = %d, want 50", cfg.Overlays.Weights.EC2InstanceSavingsPlan)
 	}
-	if cfg.OverlayManagement.Weights.ComputeSavingsPlan != 25 {
-		t.Errorf("ComputeSavingsPlan weight = %d, want 25", cfg.OverlayManagement.Weights.ComputeSavingsPlan)
+	if cfg.Overlays.Weights.ComputeSavingsPlan != 25 {
+		t.Errorf("ComputeSavingsPlan weight = %d, want 25", cfg.Overlays.Weights.ComputeSavingsPlan)
 	}
 }
 
