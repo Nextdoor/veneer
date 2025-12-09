@@ -32,6 +32,8 @@ const (
 	KeyLogLevel                            = "logLevel"
 	KeyMetricsBindAddress                  = "metricsBindAddress"
 	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
+	KeyAWSAccountID                        = "aws.accountId"
+	KeyAWSRegion                           = "aws.region"
 	KeyOverlayUtilizationThreshold         = "overlayManagement.utilizationThreshold"
 	KeyOverlayWeightReservedInstance       = "overlayManagement.weights.reservedInstance"
 	KeyOverlayWeightEC2InstanceSavingsPlan = "overlayManagement.weights.ec2InstanceSavingsPlan"
@@ -44,6 +46,8 @@ const (
 	EnvLogLevel               = "KARVE_LOG_LEVEL"
 	EnvMetricsBindAddress     = "KARVE_METRICS_BIND_ADDRESS"
 	EnvHealthProbeBindAddress = "KARVE_HEALTH_PROBE_BIND_ADDRESS"
+	EnvAWSAccountID           = "KARVE_AWS_ACCOUNT_ID"
+	EnvAWSRegion              = "KARVE_AWS_REGION"
 	EnvPrefix                 = "KARVE"
 )
 
@@ -74,8 +78,35 @@ type Config struct {
 	// HealthProbeBindAddress is the address the health probe endpoint binds to.
 	HealthProbeBindAddress string `yaml:"healthProbeBindAddress,omitempty"`
 
+	// AWS contains AWS-specific configuration for the cluster context.
+	AWS AWSConfig `yaml:"aws,omitempty"`
+
 	// OverlayManagement configures NodeOverlay lifecycle behavior.
 	OverlayManagement OverlayManagementConfig `yaml:"overlayManagement,omitempty"`
+}
+
+// AWSConfig contains AWS-specific configuration for scoping Savings Plans and Reserved Instances.
+//
+// Lumina typically monitors multiple AWS accounts and regions. Karve needs to know which
+// account and region THIS cluster runs in so it only creates NodeOverlays for capacity that
+// will actually apply to instances launched in this cluster.
+type AWSConfig struct {
+	// AccountID is the AWS account ID where this Kubernetes cluster runs.
+	// This is used to filter Prometheus queries to only return RIs and SPs from this account.
+	//
+	// REQUIRED: Must be set via config file or KARVE_AWS_ACCOUNT_ID env var.
+	//
+	// Example: "123456789012"
+	AccountID string `yaml:"accountId,omitempty"`
+
+	// Region is the AWS region where this Kubernetes cluster runs.
+	// This is used to filter Prometheus queries and NodeOverlay selectors to only
+	// target capacity in this region.
+	//
+	// REQUIRED: Must be set via config file or KARVE_AWS_REGION env var.
+	//
+	// Example: "us-west-2"
+	Region string `yaml:"region,omitempty"`
 }
 
 // OverlayManagementConfig controls when overlays are created/deleted based on capacity utilization.
@@ -145,6 +176,8 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv(KeyLogLevel, EnvLogLevel)
 	_ = v.BindEnv(KeyMetricsBindAddress, EnvMetricsBindAddress)
 	_ = v.BindEnv(KeyHealthProbeBindAddress, EnvHealthProbeBindAddress)
+	_ = v.BindEnv(KeyAWSAccountID, EnvAWSAccountID)
+	_ = v.BindEnv(KeyAWSRegion, EnvAWSRegion)
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -170,6 +203,24 @@ func (c *Config) Validate() error {
 	// Validate Prometheus URL
 	if c.PrometheusURL == "" {
 		return fmt.Errorf("prometheus URL is required")
+	}
+
+	// Validate AWS configuration (required)
+	if c.AWS.AccountID == "" {
+		return fmt.Errorf("aws.accountId is required - set via config file or KARVE_AWS_ACCOUNT_ID env var")
+	}
+	if c.AWS.Region == "" {
+		return fmt.Errorf("aws.region is required - set via config file or KARVE_AWS_REGION env var")
+	}
+
+	// Validate AWS account ID format (12 digits)
+	if len(c.AWS.AccountID) != 12 {
+		return fmt.Errorf("aws.accountId must be exactly 12 digits, got %q", c.AWS.AccountID)
+	}
+	for _, ch := range c.AWS.AccountID {
+		if ch < '0' || ch > '9' {
+			return fmt.Errorf("aws.accountId must contain only digits, got %q", c.AWS.AccountID)
+		}
 	}
 
 	// Validate log level
