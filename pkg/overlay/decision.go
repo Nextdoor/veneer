@@ -159,32 +159,21 @@ func AggregateComputeSavingsPlans(
 			}
 		}
 
-		// Sum remaining capacities
+		// Sum remaining capacities and hourly commitments
 		agg.TotalRemainingCapacity += cap.RemainingCapacity
-
-		// Calculate commitment from capacity and utilization
-		// RemainingCapacity = HourlyCommitment - CurrentUtilizationRate
-		// CurrentUtilizationRate = HourlyCommitment * (UtilizationPercent / 100)
-		// Therefore: HourlyCommitment = RemainingCapacity / (1 - UtilizationPercent/100)
-		//
-		// Special case: if RemainingCapacity is 0, we can't back-calculate commitment.
-		// In this case, preserve the utilization by not contributing to the average.
-		if cap.RemainingCapacity != 0 && util.UtilizationPercent != 100 {
-			hourlyCommitment := cap.RemainingCapacity / (1 - util.UtilizationPercent/100)
-			totalCommitment += hourlyCommitment
-		}
+		totalCommitment += cap.HourlyCommitment
 
 		agg.Count++
 	}
 
 	// Calculate weighted average utilization
-	// AverageUtilization = (TotalCommitment - TotalRemainingCapacity) / TotalCommitment * 100
-	if totalCommitment > 0 {
-		agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
-	} else if agg.Count == 1 && len(utilizations) == 1 {
-		// Special case: single SP where we couldn't calculate commitment (e.g., capacity = 0)
-		// Use the provided utilization directly
+	// For single SPs, use the reported utilization to preserve Lumina's exact value
+	// For multiple SPs, calculate weighted average using real commitment values
+	if agg.Count == 1 && len(utilizations) == 1 {
 		agg.AverageUtilization = utilizations[0].UtilizationPercent
+	} else if totalCommitment > 0 {
+		// Weighted average: (total used capacity / total commitment) * 100
+		agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
 	}
 
 	return agg
@@ -238,22 +227,21 @@ func AggregateEC2InstanceSavingsPlans(
 				}
 			}
 
+			// Sum remaining capacities and hourly commitments
 			agg.TotalRemainingCapacity += cap.RemainingCapacity
-
-			// Calculate commitment (same logic as Compute SPs)
-			if cap.RemainingCapacity != 0 && util.UtilizationPercent != 100 {
-				hourlyCommitment := cap.RemainingCapacity / (1 - util.UtilizationPercent/100)
-				totalCommitment += hourlyCommitment
-			}
+			totalCommitment += cap.HourlyCommitment
 
 			agg.Count++
 		}
 
-		if totalCommitment > 0 {
-			agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
-		} else if agg.Count == 1 && len(utils) == 1 {
-			// Special case: single SP where we couldn't calculate commitment
+		// Calculate weighted average utilization
+		// For single SPs, use the reported utilization to preserve Lumina's exact value
+		// For multiple SPs, calculate weighted average using real commitment values
+		if agg.Count == 1 && len(utils) == 1 {
 			agg.AverageUtilization = utils[0].UtilizationPercent
+		} else if totalCommitment > 0 {
+			// Weighted average: (total used capacity / total commitment) * 100
+			agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
 		}
 
 		result[family] = agg

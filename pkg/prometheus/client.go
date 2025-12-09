@@ -40,6 +40,7 @@ const (
 	// Metric names
 	metricSavingsPlanRemainingCapacity  = luminametrics.MetricSavingsPlanRemainingCapacity
 	metricSavingsPlanUtilizationPercent = luminametrics.MetricSavingsPlanUtilizationPercent
+	metricSavingsPlanHourlyCommitment   = luminametrics.MetricSavingsPlanHourlyCommitment
 	metricEC2ReservedInstance           = luminametrics.MetricEC2ReservedInstance
 	metricLuminaDataFreshnessSeconds    = luminametrics.MetricLuminaDataFreshnessSeconds
 
@@ -102,6 +103,9 @@ type SavingsPlanCapacity struct {
 	// RemainingCapacity is the remaining capacity in $/hour
 	RemainingCapacity float64
 
+	// HourlyCommitment is the total hourly commitment in $/hour
+	HourlyCommitment float64
+
 	// Timestamp is when this metric was recorded
 	Timestamp time.Time
 }
@@ -127,47 +131,70 @@ type ReservedInstance struct {
 	Timestamp time.Time
 }
 
-// QuerySavingsPlanCapacity queries Prometheus for Savings Plan remaining capacity.
+// QuerySavingsPlanCapacity queries Prometheus for Savings Plan remaining capacity and hourly commitment.
 // The instanceFamily parameter filters results (e.g., "m5", "c5").
 // Pass empty string to get all instance families.
 //
-// This queries: savings_plan_remaining_capacity{instance_family="$family"}
+// This queries both savings_plan_remaining_capacity and savings_plan_hourly_commitment metrics.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
-	// Build query
-	var query string
+	// Build queries for both remaining capacity and hourly commitment
+	var remainingQuery, commitmentQuery string
 	if instanceFamily != "" {
-		query = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanRemainingCapacity, labelInstanceFamily, instanceFamily)
+		remainingQuery = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanRemainingCapacity, labelInstanceFamily, instanceFamily)
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s"}`, metricSavingsPlanHourlyCommitment, labelInstanceFamily, instanceFamily)
 	} else {
-		query = metricSavingsPlanRemainingCapacity
+		remainingQuery = metricSavingsPlanRemainingCapacity
+		commitmentQuery = metricSavingsPlanHourlyCommitment
 	}
 
-	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	// Execute remaining capacity query
+	remainingResult, warnings, err := c.api.Query(ctx, remainingQuery, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("prometheus query failed: %w", err)
+		return nil, fmt.Errorf("prometheus query for remaining capacity failed: %w", err)
 	}
-
-	// Log warnings if any
 	if len(warnings) > 0 {
-		// In production code, use a proper logger here
-		// For now, warnings are silently ignored
 		_ = warnings
 	}
 
-	// Parse results
-	vector, ok := result.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type: %T", result)
+	// Execute hourly commitment query
+	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
+	}
+	if len(warnings) > 0 {
+		_ = warnings
 	}
 
-	capacities := make([]SavingsPlanCapacity, 0, len(vector))
-	for _, sample := range vector {
+	// Parse remaining capacity results
+	remainingVector, ok := remainingResult.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected remaining capacity result type: %T", remainingResult)
+	}
+
+	// Parse hourly commitment results
+	commitmentVector, ok := commitmentResult.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected hourly commitment result type: %T", commitmentResult)
+	}
+
+	// Build a map of ARN -> hourly commitment for fast lookup
+	commitmentByARN := make(map[string]float64, len(commitmentVector))
+	for _, sample := range commitmentVector {
+		arn := string(sample.Metric[labelSavingsPlanARN])
+		commitmentByARN[arn] = float64(sample.Value)
+	}
+
+	// Combine the data using remaining capacity as the primary source
+	capacities := make([]SavingsPlanCapacity, 0, len(remainingVector))
+	for _, sample := range remainingVector {
+		arn := string(sample.Metric[labelSavingsPlanARN])
 		capacity := SavingsPlanCapacity{
 			Type:              string(sample.Metric[labelType]),
 			InstanceFamily:    string(sample.Metric[labelInstanceFamily]),
-			SavingsPlanARN:    string(sample.Metric[labelSavingsPlanARN]),
+			SavingsPlanARN:    arn,
 			AccountID:         string(sample.Metric[labelAccountID]),
 			RemainingCapacity: float64(sample.Value),
+			HourlyCommitment:  commitmentByARN[arn], // Lookup commitment by ARN
 			Timestamp:         sample.Timestamp.Time(),
 		}
 		capacities = append(capacities, capacity)
