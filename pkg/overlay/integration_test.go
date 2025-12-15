@@ -70,7 +70,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 
 	// Create decision engine with test config
 	cfg := &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -178,8 +178,9 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		decision := engine.AnalyzeEC2InstanceSavingsPlanSingle(utilizations[0], m5Capacity)
 
 		// Validate decision
-		if decision.Name != "cost-aware-ec2-sp-m5" {
-			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ec2-sp-m5")
+		// Name now includes region
+		if decision.Name != "cost-aware-ec2-sp-m5-us-west-2" {
+			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ec2-sp-m5-us-west-2")
 		}
 
 		if decision.CapacityType != overlay.CapacityTypeEC2InstanceSavingsPlan {
@@ -221,9 +222,9 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		// Analyze and make decision
 		decision := engine.AnalyzeReservedInstanceSingle(ris[0])
 
-		// Validate decision
-		if decision.Name != "cost-aware-ri-m5.xlarge" {
-			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ri-m5.xlarge")
+		// Validate decision (name now includes region)
+		if decision.Name != "cost-aware-ri-m5.xlarge-us-west-2" {
+			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ri-m5.xlarge-us-west-2")
 		}
 
 		if decision.CapacityType != overlay.CapacityTypeReservedInstance {
@@ -284,7 +285,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,

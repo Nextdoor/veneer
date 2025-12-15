@@ -42,7 +42,7 @@ func TestMetricsReconciler_Start(t *testing.T) {
 		}`,
 	})
 
-	client, err := prometheus.NewClient(server.URL)
+	client, err := prometheus.NewClient(server.URL, "123456789012", "us-west-2")
 	if err != nil {
 		t.Fatalf("Failed to create Prometheus client: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestMetricsReconciler_StartWithCancel(t *testing.T) {
 		}`,
 	})
 
-	client, _ := prometheus.NewClient(server.URL)
+	client, _ := prometheus.NewClient(server.URL, "123456789012", "us-west-2")
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
@@ -173,7 +173,7 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 				server.SetMetrics(fixture)
 			}
 
-			client, _ := prometheus.NewClient(server.URL)
+			client, _ := prometheus.NewClient(server.URL, "123456789012", "us-west-2")
 
 			reconciler := &MetricsReconciler{
 				PrometheusClient: client,
@@ -199,7 +199,7 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 
 func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 	// Use unavailable server to trigger connection errors
-	client, _ := prometheus.NewClient("http://localhost:1")
+	client, _ := prometheus.NewClient("http://localhost:1", "123456789012", "us-west-2")
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
@@ -229,7 +229,7 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 		}`,
 	})
 
-	client, _ := prometheus.NewClient(server.URL)
+	client, _ := prometheus.NewClient(server.URL, "123456789012", "us-west-2")
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,

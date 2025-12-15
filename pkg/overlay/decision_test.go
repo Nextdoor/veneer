@@ -31,7 +31,7 @@ const (
 // Helper to create test config with default values
 func testConfig() *config.Config {
 	return &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,

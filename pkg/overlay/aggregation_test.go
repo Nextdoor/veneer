@@ -73,7 +73,7 @@ func TestMultipleSavingsPlansAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -177,7 +177,7 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -220,10 +220,11 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 		t.Fatalf("expected 2 families, got %d", len(aggByFamily))
 	}
 
-	// Test m5 aggregation (2 SPs)
-	m5Agg, ok := aggByFamily["m5"]
+	// Test m5 aggregation (2 SPs) - now keyed by "family:region"
+	m5Key := "m5:us-west-2"
+	m5Agg, ok := aggByFamily[m5Key]
 	if !ok {
-		t.Fatal("expected m5 family in aggregation")
+		t.Fatalf("expected %s in aggregation, got keys: %v", m5Key, aggByFamily)
 	}
 
 	if m5Agg.Count != 2 {
@@ -239,8 +240,9 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	// Create decision from aggregated m5 data
 	m5Decision := engine.AnalyzeEC2InstanceSavingsPlan(m5Agg)
 
-	if m5Decision.Name != "cost-aware-ec2-sp-m5" {
-		t.Errorf("expected Name='cost-aware-ec2-sp-m5', got '%s'", m5Decision.Name)
+	// Name now includes region
+	if m5Decision.Name != "cost-aware-ec2-sp-m5-us-west-2" {
+		t.Errorf("expected Name='cost-aware-ec2-sp-m5-us-west-2', got '%s'", m5Decision.Name)
 	}
 
 	if m5Decision.RemainingCapacity != expectedM5Capacity {
@@ -251,10 +253,11 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 		t.Errorf("expected ShouldExist=true, got false. Reason: %s", m5Decision.Reason)
 	}
 
-	// Test c5 aggregation (1 SP)
-	c5Agg, ok := aggByFamily["c5"]
+	// Test c5 aggregation (1 SP) - now keyed by "family:region"
+	c5Key := "c5:us-west-2"
+	c5Agg, ok := aggByFamily[c5Key]
 	if !ok {
-		t.Fatal("expected c5 family in aggregation")
+		t.Fatalf("expected %s in aggregation, got keys: %v", c5Key, aggByFamily)
 	}
 
 	if c5Agg.Count != 1 {
@@ -304,7 +307,7 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		OverlayManagement: config.OverlaysConfig{
+		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
@@ -334,10 +337,11 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 		t.Fatalf("expected 1 instance type, got %d", len(aggByType))
 	}
 
-	// Test m5.xlarge aggregation (2 RIs in different AZs)
-	m5XlargeAgg, ok := aggByType["m5.xlarge"]
+	// Test m5.xlarge aggregation (2 RIs in different AZs) - now keyed by "type:region"
+	m5XlargeKey := "m5.xlarge:us-west-2"
+	m5XlargeAgg, ok := aggByType[m5XlargeKey]
 	if !ok {
-		t.Fatal("expected m5.xlarge in aggregation")
+		t.Fatalf("expected %s in aggregation, got keys: %v", m5XlargeKey, aggByType)
 	}
 
 	// Expected total count: 3 (us-west-2a) + 2 (us-west-2b) = 5 RIs
@@ -349,8 +353,9 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	// Create ONE decision from aggregated data
 	decision := engine.AnalyzeReservedInstance(m5XlargeAgg)
 
-	if decision.Name != "cost-aware-ri-m5.xlarge" {
-		t.Errorf("expected Name='cost-aware-ri-m5.xlarge', got '%s'", decision.Name)
+	// Name now includes region
+	if decision.Name != "cost-aware-ri-m5.xlarge-us-west-2" {
+		t.Errorf("expected Name='cost-aware-ri-m5.xlarge-us-west-2', got '%s'", decision.Name)
 	}
 
 	if !decision.ShouldExist {

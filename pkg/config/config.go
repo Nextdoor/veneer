@@ -28,19 +28,19 @@ import (
 
 // Configuration key constants for viper SetDefault and BindEnv calls.
 const (
-	KeyPrometheusURL                          = "prometheusUrl"
-	KeyLogLevel                               = "logLevel"
-	KeyMetricsBindAddress                     = "metricsBindAddress"
-	KeyHealthProbeBindAddress                 = "healthProbeBindAddress"
-	KeyAWSAccountID                           = "aws.accountId"
-	KeyAWSRegion                              = "aws.region"
-	KeyOverlayUtilizationThreshold            = "overlays.utilizationThreshold"
-	KeyOverlayWeightReservedInstance          = "overlays.weights.reservedInstance"
-	KeyOverlayWeightEC2InstanceSavingsPlan    = "overlays.weights.ec2InstanceSavingsPlan"
-	KeyOverlayWeightComputeSavingsPlan        = "overlays.weights.computeSavingsPlan"
-	KeyOverlayNamingReservedInstancePrefix    = "overlays.naming.reservedInstancePrefix"
-	KeyOverlayNamingEC2InstanceSPPrefix       = "overlays.naming.ec2InstanceSavingsPlanPrefix"
-	KeyOverlayNamingComputeSPPrefix           = "overlays.naming.computeSavingsPlanPrefix"
+	KeyPrometheusURL                       = "prometheusUrl"
+	KeyLogLevel                            = "logLevel"
+	KeyMetricsBindAddress                  = "metricsBindAddress"
+	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
+	KeyAWSAccountID                        = "aws.accountId"
+	KeyAWSRegion                           = "aws.region"
+	KeyOverlayUtilizationThreshold         = "overlays.utilizationThreshold"
+	KeyOverlayWeightReservedInstance       = "overlays.weights.reservedInstance"
+	KeyOverlayWeightEC2InstanceSavingsPlan = "overlays.weights.ec2InstanceSavingsPlan"
+	KeyOverlayWeightComputeSavingsPlan     = "overlays.weights.computeSavingsPlan"
+	KeyOverlayNamingReservedInstancePrefix = "overlays.naming.reservedInstancePrefix"
+	KeyOverlayNamingEC2InstanceSPPrefix    = "overlays.naming.ec2InstanceSavingsPlanPrefix"
+	KeyOverlayNamingComputeSPPrefix        = "overlays.naming.computeSavingsPlanPrefix"
 )
 
 // Environment variable name constants.
@@ -56,17 +56,17 @@ const (
 
 // Default configuration values.
 const (
-	DefaultPrometheusURL                          = "http://prometheus:9090"
-	DefaultLogLevel                               = "info"
-	DefaultMetricsBindAddress                     = ":8080"
-	DefaultHealthProbeBindAddress                 = ":8081"
-	DefaultOverlayUtilizationThreshold            = 95.0              // Delete overlays at 95% utilization
-	DefaultOverlayWeightReservedInstance          = 30                // Highest priority (most specific)
-	DefaultOverlayWeightEC2InstanceSavingsPlan    = 20                // Medium priority (family-specific)
-	DefaultOverlayWeightComputeSavingsPlan        = 10                // Lowest priority (global)
-	DefaultOverlayNamingReservedInstancePrefix    = "cost-aware-ri"   // RI overlay name prefix
-	DefaultOverlayNamingEC2InstanceSPPrefix       = "cost-aware-ec2-sp" // EC2 Instance SP overlay name prefix
-	DefaultOverlayNamingComputeSPPrefix           = "cost-aware-compute-sp" // Compute SP overlay name prefix
+	DefaultPrometheusURL                       = "http://prometheus:9090"
+	DefaultLogLevel                            = "info"
+	DefaultMetricsBindAddress                  = ":8080"
+	DefaultHealthProbeBindAddress              = ":8081"
+	DefaultOverlayUtilizationThreshold         = 95.0                    // Delete overlays at 95% utilization
+	DefaultOverlayWeightReservedInstance       = 30                      // Highest priority (most specific)
+	DefaultOverlayWeightEC2InstanceSavingsPlan = 20                      // Medium priority (family-specific)
+	DefaultOverlayWeightComputeSavingsPlan     = 10                      // Lowest priority (global)
+	DefaultOverlayNamingReservedInstancePrefix = "cost-aware-ri"         // RI overlay name prefix
+	DefaultOverlayNamingEC2InstanceSPPrefix    = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
+	DefaultOverlayNamingComputeSPPrefix        = "cost-aware-compute-sp" // Compute SP overlay name prefix
 )
 
 // Config represents the complete controller configuration.

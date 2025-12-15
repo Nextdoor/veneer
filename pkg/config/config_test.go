@@ -438,7 +438,7 @@ func TestValidateOverlayManagement(t *testing.T) {
 					AccountID: "123456789012",
 					Region:    "us-west-2",
 				},
-				OverlayManagement: tt.config,
+				Overlays: tt.config,
 			}
 
 			err := cfg.Validate()
