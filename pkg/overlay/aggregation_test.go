@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/nextdoor/karve/internal/testutil"
 	"github.com/nextdoor/karve/pkg/config"
 	"github.com/nextdoor/karve/pkg/overlay"
@@ -67,7 +68,7 @@ func TestMultipleSavingsPlansAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -171,7 +172,7 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -271,7 +272,7 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 		t.Errorf("expected c5 Count=1, got %d", c5Agg.Count)
 	}
 
-	expectedC5Capacity := 25.0
+	expectedC5Capacity := 7.0 // Based on LuminaMetricsWithMultipleSPs fixture
 	if c5Agg.TotalRemainingCapacity != expectedC5Capacity {
 		t.Errorf("expected c5 TotalRemainingCapacity=%.2f, got %.2f", expectedC5Capacity, c5Agg.TotalRemainingCapacity)
 	}
@@ -308,7 +309,7 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}

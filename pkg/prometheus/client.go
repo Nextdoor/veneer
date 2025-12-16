@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-logr/logr"
 	luminametrics "github.com/nextdoor/lumina/pkg/metrics"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -69,8 +70,9 @@ const (
 // creating NodeOverlays for capacity that won't apply to this cluster.
 type Client struct {
 	api       v1.API
-	accountID string // AWS account ID to filter queries (prevents cross-account queries)
-	region    string // AWS region to filter queries (prevents cross-region queries)
+	accountID string      // AWS account ID to filter queries (prevents cross-account queries)
+	region    string      // AWS region to filter queries (prevents cross-region queries)
+	logger    logr.Logger // Logger for debugging query execution
 }
 
 // NewClient creates a new Prometheus client scoped to a specific AWS account and region.
@@ -78,13 +80,14 @@ type Client struct {
 // The url parameter should be the base URL of the Prometheus server (e.g., "http://prometheus:9090").
 // The accountID and region parameters are used to filter all queries to only return metrics
 // for capacity in this cluster's account and region.
+// The logger parameter is used for debugging query execution (pass logr.Discard() to disable).
 //
 // Why scoping is critical:
 // Lumina monitors multiple AWS accounts and regions, but this Karve instance runs in ONE cluster
 // in ONE account and ONE region. Without filtering, we would create NodeOverlays for RIs/SPs from
 // other accounts/regions, causing Karpenter to launch on-demand instances that won't actually
 // receive the pre-paid discount.
-func NewClient(url, accountID, region string) (*Client, error) {
+func NewClient(url, accountID, region string, logger logr.Logger) (*Client, error) {
 	promClient, err := api.NewClient(api.Config{
 		Address: url,
 	})
@@ -96,6 +99,7 @@ func NewClient(url, accountID, region string) (*Client, error) {
 		api:       v1.NewAPI(promClient),
 		accountID: accountID,
 		region:    region,
+		logger:    logger,
 	}, nil
 }
 
@@ -161,43 +165,69 @@ type ReservedInstance struct {
 // instance_family and region labels, while savings_plan_remaining_capacity does not.
 // We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
 //
-// Filtering behavior:
-// - EC2 Instance SPs: Filtered by account_id AND region (e.g., region="us-west-2")
-// - Compute SPs: Filtered by account_id only (they have region="all" in Lumina)
+// Filtering behavior (see https://github.com/Nextdoor/lumina/blob/main/ALGORITHM.md):
+// - Compute SPs: GLOBAL - apply to ANY instance family in ANY region. NOT filtered by account_id or region.
+// - EC2 Instance SPs: REGIONAL - apply to specific instance family in specific region. Filtered by account_id AND region.
 //
-// The client is scoped to a specific account and region. When instanceFamily is specified,
-// we filter to that family + this region. When empty, we get both EC2 Instance SPs for this
-// region AND Compute SPs (which have region="all").
+// When instanceFamily is specified: Only EC2 Instance SPs for that family+account+region are returned.
+// When instanceFamily is empty: Both Compute SPs (global) and EC2 Instance SPs (account+region) are returned.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
 	// Capture query time once at the start to ensure consistency across both queries
 	queryTime := time.Now()
 
-	// Build queries for both metrics with account/region filtering
+	// Build queries for both metrics
+	// IMPORTANT: Compute Savings Plans are GLOBAL and should NOT be filtered by account_id or region.
+	// EC2 Instance Savings Plans are scoped to account+region and should be filtered.
+	//
 	// Note: Only the commitment metric has instance_family and region labels.
 	// The remaining capacity metric only has account_id and type labels.
 	var commitmentQuery, remainingQuery string
 
-	// Build commitment query (has all labels we need)
-	// Use regex to match both this cluster's region AND "all" (for Compute SPs)
 	if instanceFamily != "" {
 		// Specific family: get EC2 Instance SPs for this region in this family
-		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s"}`,
+		// This is a regional/family-based savings plan, so we SHOULD filter by account_id and region
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s", %s="%s"}`,
 			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeEC2Instance,
 			labelAccountID, c.accountID,
 			labelRegion, c.region,
 			labelInstanceFamily, instanceFamily)
+
+		// For remaining capacity, filter to EC2 Instance SPs for this account+region
+		remainingQuery = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID)
 	} else {
-		// All families: get EC2 Instance SPs for this region + Compute SPs (region="all")
-		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s=~"%s|all"}`,
+		// All families: get BOTH Compute SPs (global, no filters) AND EC2 Instance SPs (account+region)
+		// We use sum() to aggregate multiple queries with the 'or' operator
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s"} or %s{%s="%s", %s="%s", %s="%s"}`,
+			// Compute SPs: global, no account/region filters
 			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeCompute,
+			// EC2 Instance SPs: filtered by account+region
+			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeEC2Instance,
 			labelAccountID, c.accountID,
 			labelRegion, c.region)
+
+		// For remaining capacity: get both types (no filters for Compute, account filter for EC2)
+		remainingQuery = fmt.Sprintf(`%s{%s="%s"} or %s{%s="%s", %s="%s"}`,
+			// Compute SPs: global, no filters
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeCompute,
+			// EC2 Instance SPs: filter by account
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID)
 	}
 
-	// Build remaining capacity query (only has account_id, not region or family)
-	remainingQuery = fmt.Sprintf(`%s{%s="%s"}`,
-		metricSavingsPlanRemainingCapacity,
-		labelAccountID, c.accountID)
+	// Log the queries for debugging
+	c.logger.V(1).Info("Executing Prometheus queries for Savings Plan capacity",
+		"commitment_query", commitmentQuery,
+		"remaining_query", remainingQuery,
+		"account_id", c.accountID,
+		"region", c.region)
 
 	// Execute hourly commitment query first (this is our PRIMARY data source)
 	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
@@ -278,6 +308,12 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 			labelAccountID, c.accountID,
 			labelRegion, c.region)
 	}
+
+	// Log the query for debugging
+	c.logger.V(1).Info("Executing Prometheus query for Reserved Instances",
+		"query", query,
+		"account_id", c.accountID,
+		"region", c.region)
 
 	// Execute query
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
@@ -513,6 +549,11 @@ func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string)
 			metricSavingsPlanUtilizationPercent,
 			labelAccountID, c.accountID)
 	}
+
+	// Log the query for debugging
+	c.logger.V(1).Info("Executing Prometheus query for Savings Plan utilization",
+		"query", query,
+		"account_id", c.accountID)
 
 	// Execute query
 	result, warnings, err := c.api.Query(ctx, query, time.Now())

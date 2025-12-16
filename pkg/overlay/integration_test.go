@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/nextdoor/karve/internal/testutil"
 	"github.com/nextdoor/karve/pkg/config"
 	"github.com/nextdoor/karve/pkg/overlay"
@@ -63,7 +64,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 	defer mockServer.Close()
 
 	// Create Prometheus client pointing to mock server
-	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}
@@ -280,7 +281,7 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2")
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("failed to create Prometheus client: %v", err)
 	}

@@ -322,6 +322,101 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 			}
 		}`,
 
+		// NEW QUERY FORMAT: savings_plan_hourly_commitment with 'or' operator for Compute + EC2 Instance SPs
+		// This is the new query format that doesn't filter Compute SPs by account/region
+		`savings_plan_hourly_commitment{type="compute"} or savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-67890",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "150.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: savings_plan_remaining_capacity with 'or' operator
+		`savings_plan_remaining_capacity{type="compute"} or savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-67890",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "30.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP with specific family (includes type filter)
+		`savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2", instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP remaining capacity with type filter
+		`savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
+					}
+				]
+			}
+		}`,
+
 		// Query: savings_plan_hourly_commitment (all)
 		`savings_plan_hourly_commitment`: `{
 			"status": "success",
@@ -371,6 +466,44 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 
 		// Query: ec2_reserved_instance{instance_type="m5.xlarge"}
 		`ec2_reserved_instance{instance_type="m5.xlarge"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "1"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: ec2_reserved_instance with account_id and region filters (all instance types)
+		`ec2_reserved_instance{account_id="123456789012", region="us-west-2"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"account_id": "123456789012",
+							"region": "us-west-2",
+							"instance_type": "m5.xlarge",
+							"availability_zone": "us-west-2a"
+						},
+						"value": [1640000000, "1"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: ec2_reserved_instance with all filters (account_id, region, instance_type)
+		`ec2_reserved_instance{account_id="123456789012", region="us-west-2", instance_type="m5.xlarge"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
@@ -474,6 +607,44 @@ func LuminaMetricsWithNoCapacity() MetricFixture {
 							"account_id": "123456789012"
 						},
 						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP with specific family+type+account+region
+		`savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2", instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP remaining capacity with type filter
+		`savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "0.00"]
 					}
 				]
 			}
@@ -1099,6 +1270,198 @@ func LuminaMetricsWithMultipleSPs() MetricFixture {
 				]
 			}
 		}`,
+
+		// NEW QUERY FORMAT: Compute + EC2 Instance SPs with 'or' operator (all families)
+		`savings_plan_hourly_commitment{type="compute"} or savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "150.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-003",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "200.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "80.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "120.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "c5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: Remaining capacity with 'or' operator
+		`savings_plan_remaining_capacity{type="compute"} or savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "10.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-003",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "15.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "8.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "12.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "7.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP with specific family (m5)
+		`savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2", instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "80.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "120.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP remaining capacity
+		`savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "8.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "12.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "7.00"]
+					}
+				]
+			}
+		}`,
 	}
 }
 
@@ -1190,6 +1553,36 @@ func LuminaMetricsWithSPUtilization() MetricFixture {
 
 		// Query: savings_plan_utilization_percent (all types)
 		`savings_plan_utilization_percent`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "87.5"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "96.2"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: savings_plan_utilization_percent with account_id filter only (all types)
+		`savings_plan_utilization_percent{account_id="123456789012"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
@@ -1451,6 +1844,100 @@ func LuminaMetricsWithSPUtilization() MetricFixture {
 							"account_id": "123456789012"
 						},
 						"value": [1640000000, "131.58"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: Compute + EC2 Instance SPs with 'or' operator (all families)
+		`savings_plan_hourly_commitment{type="compute"} or savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "131.58"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP with specific family (m5)
+		`savings_plan_hourly_commitment{type="ec2_instance", account_id="123456789012", region="us-west-2", instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "131.58"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: Remaining capacity with 'or' operator
+		`savings_plan_remaining_capacity{type="compute"} or savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "compute",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-compute-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "12.50"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
+					}
+				]
+			}
+		}`,
+
+		// NEW QUERY FORMAT: EC2 Instance SP remaining capacity
+		`savings_plan_remaining_capacity{type="ec2_instance", account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "5.00"]
 					}
 				]
 			}
