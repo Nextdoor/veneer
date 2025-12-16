@@ -167,8 +167,10 @@ type ReservedInstance struct {
 // We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
 //
 // Filtering behavior (see https://github.com/Nextdoor/lumina/blob/main/ALGORITHM.md):
-// - Compute SPs: GLOBAL - apply to ANY instance family in ANY region. NOT filtered by account_id or region.
-// - EC2 Instance SPs: REGIONAL - apply to specific instance family in specific region. Filtered by account_id AND region.
+//   - Compute SPs: GLOBAL - apply to ANY instance family in ANY region.
+//     NOT filtered by account_id or region.
+//   - EC2 Instance SPs: REGIONAL - apply to specific instance family in specific region.
+//     Filtered by account_id AND region.
 //
 // When instanceFamily is specified: Only EC2 Instance SPs for that family+account+region are returned.
 // When instanceFamily is empty: Both Compute SPs (global) and EC2 Instance SPs (account+region) are returned.
