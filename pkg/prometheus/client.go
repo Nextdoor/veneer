@@ -53,10 +53,11 @@ const (
 	labelAccountID        = luminametrics.LabelAccountID
 	labelRegion           = luminametrics.LabelRegion
 	labelAvailabilityZone = luminametrics.LabelAvailabilityZone
-	labelOperatingSystem  = "operating_system" // Not exported by Lumina yet
 )
 
 // Savings Plan type constants.
+// These match the "type" label values used in Lumina metrics but are not currently
+// exported by the Lumina package, so we define them here.
 const (
 	SavingsPlanTypeCompute     = "compute"
 	SavingsPlanTypeEC2Instance = "ec2_instance"
@@ -431,9 +432,6 @@ type OnDemandPrice struct {
 	// Region is the AWS region
 	Region string
 
-	// OperatingSystem is the OS (e.g., "Linux", "Windows")
-	OperatingSystem string
-
 	// Price is the on-demand price in $/hour
 	Price float64
 
@@ -456,11 +454,10 @@ func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([
 	prices := make([]OnDemandPrice, 0, len(vector))
 	for _, sample := range vector {
 		price := OnDemandPrice{
-			InstanceType:    string(sample.Metric["instance_type"]),
-			Region:          string(sample.Metric["region"]),
-			OperatingSystem: string(sample.Metric["operating_system"]),
-			Price:           float64(sample.Value),
-			Timestamp:       sample.Timestamp.Time(),
+			InstanceType: string(sample.Metric["instance_type"]),
+			Region:       string(sample.Metric["region"]),
+			Price:        float64(sample.Value),
+			Timestamp:    sample.Timestamp.Time(),
 		}
 		prices = append(prices, price)
 	}

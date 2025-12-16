@@ -257,10 +257,6 @@ func TestQueryOnDemandPrice(t *testing.T) {
 	if prices[0].Price != 0.192 {
 		t.Errorf("expected price 0.192, got %f", prices[0].Price)
 	}
-
-	if prices[0].OperatingSystem != "Linux" {
-		t.Errorf("expected OS Linux, got %s", prices[0].OperatingSystem)
-	}
 }
 
 func TestDataFreshness(t *testing.T) {
