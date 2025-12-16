@@ -187,6 +187,34 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 			}
 		}`,
 
+		// Query with account_id selector
+		`savings_plan_remaining_capacity{account_id="123456789012"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "c5",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-67890",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "30.00"]
+					}
+				]
+			}
+		}`,
+
 		// Old query format (kept for backwards compat)
 		`savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`: `{
 			"status": "success",
@@ -239,6 +267,56 @@ func LuminaMetricsWithSPCapacity() MetricFixture {
 							"account_id": "123456789012"
 						},
 						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_hourly_commitment{account_id="123456789012", region="us-west-2", instance_family="m5"}
+		`savings_plan_hourly_commitment{account_id="123456789012", region="us-west-2", instance_family="m5"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					}
+				]
+			}
+		}`,
+
+		// Query: savings_plan_hourly_commitment{account_id="123456789012", region=~"us-west-2|all"}
+		`savings_plan_hourly_commitment{account_id="123456789012", region=~"us-west-2|all"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-12345",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "100.00"]
+					},
+					{
+						"metric": {
+							"type": "compute",
+							"instance_family": "",
+							"region": "all",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-67890",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "150.00"]
 					}
 				]
 			}
@@ -922,6 +1000,36 @@ func LuminaMetricsWithMultipleSPs() MetricFixture {
 							"account_id": "123456789012"
 						},
 						"value": [1640000000, "75.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "42.11"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "m5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-m5-002",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "60.00"]
+					},
+					{
+						"metric": {
+							"type": "ec2_instance",
+							"instance_family": "c5",
+							"region": "us-west-2",
+							"savings_plan_arn": "arn:aws:savingsplans::123456789012:savingsplan/sp-ec2-c5-001",
+							"account_id": "123456789012"
+						},
+						"value": [1640000000, "50.00"]
 					}
 				]
 			}

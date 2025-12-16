@@ -115,8 +115,11 @@ type AggregatedSavingsPlan struct {
 	// TotalRemainingCapacity is the sum of all remaining capacities in $/hour
 	TotalRemainingCapacity float64
 
-	// AverageUtilization is the weighted average utilization across all SPs
-	AverageUtilization float64
+	// TotalHourlyCommitment is the sum of all hourly commitments in $/hour
+	TotalHourlyCommitment float64
+
+	// UtilizationPercent is calculated as (1 - remaining/commitment) * 100
+	UtilizationPercent float64
 
 	// Count is the number of SPs aggregated
 	Count int
@@ -125,55 +128,32 @@ type AggregatedSavingsPlan struct {
 // AggregateComputeSavingsPlans aggregates multiple Compute Savings Plans into a single decision.
 //
 // This is necessary because multiple Compute SPs of the same type would otherwise create
-// duplicate overlay names. We sum capacities and calculate weighted average utilization.
+// duplicate overlay names. We simply sum up the remaining capacities.
+//
+// Phase 2 logic: If there's ANY remaining capacity > 0, create the overlay.
 func AggregateComputeSavingsPlans(
 	utilizations []prometheus.SavingsPlanUtilization,
 	capacities []prometheus.SavingsPlanCapacity,
 ) AggregatedSavingsPlan {
-	if len(utilizations) == 0 {
+	if len(capacities) == 0 {
 		return AggregatedSavingsPlan{}
-	}
-
-	// Build capacity lookup by ARN
-	capacityByARN := make(map[string]prometheus.SavingsPlanCapacity)
-	for _, cap := range capacities {
-		capacityByARN[cap.SavingsPlanARN] = cap
 	}
 
 	agg := AggregatedSavingsPlan{
 		Type:      prometheus.SavingsPlanTypeCompute,
-		AccountID: utilizations[0].AccountID,
+		AccountID: capacities[0].AccountID,
 	}
 
-	var totalCommitment float64
-
-	for _, util := range utilizations {
-		cap, ok := capacityByARN[util.SavingsPlanARN]
-		if !ok {
-			// No matching capacity - check if this is a single-item case where we should
-			// match by position instead of ARN (for test cases with empty ARNs)
-			if len(utilizations) == 1 && len(capacities) == 1 {
-				cap = capacities[0]
-			} else {
-				continue
-			}
-		}
-
-		// Sum remaining capacities and hourly commitments
+	// Sum up both remaining capacity and hourly commitment
+	for _, cap := range capacities {
 		agg.TotalRemainingCapacity += cap.RemainingCapacity
-		totalCommitment += cap.HourlyCommitment
-
+		agg.TotalHourlyCommitment += cap.HourlyCommitment
 		agg.Count++
 	}
 
-	// Calculate weighted average utilization
-	// For single SPs, use the reported utilization to preserve Lumina's exact value
-	// For multiple SPs, calculate weighted average using real commitment values
-	if agg.Count == 1 && len(utilizations) == 1 {
-		agg.AverageUtilization = utilizations[0].UtilizationPercent
-	} else if totalCommitment > 0 {
-		// Weighted average: (total used capacity / total commitment) * 100
-		agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
+	// Calculate utilization: (1 - remaining/commitment) * 100
+	if agg.TotalHourlyCommitment > 0 {
+		agg.UtilizationPercent = (1 - (agg.TotalRemainingCapacity / agg.TotalHourlyCommitment)) * 100
 	}
 
 	return agg
@@ -186,71 +166,44 @@ func AggregateComputeSavingsPlans(
 //
 // EC2 Instance SPs are scoped to ONE family + ONE region, so we must group by both dimensions.
 // Example keys: "m5:us-west-2", "c5:us-east-1"
+//
+// Phase 2 logic: Just sum up remaining capacity per family+region.
 func AggregateEC2InstanceSavingsPlans(
 	utilizations []prometheus.SavingsPlanUtilization,
 	capacities []prometheus.SavingsPlanCapacity,
 ) map[string]AggregatedSavingsPlan {
-	// Build capacity lookup by ARN
-	capacityByARN := make(map[string]prometheus.SavingsPlanCapacity)
-	for _, cap := range capacities {
-		capacityByARN[cap.SavingsPlanARN] = cap
-	}
-
-	// Group by instance family AND region (composite key)
+	// Group capacities by instance family AND region (composite key)
 	// EC2 Instance SPs are scoped to one family + one region, so we must group by both
-	byFamilyRegion := make(map[string][]prometheus.SavingsPlanUtilization)
-	for _, util := range utilizations {
-		// Create composite key: "family:region"
-		key := util.InstanceFamily + ":" + util.Region
-		byFamilyRegion[key] = append(byFamilyRegion[key], util)
-	}
-
-	// Aggregate each family+region combination
 	result := make(map[string]AggregatedSavingsPlan)
-	for key, utils := range byFamilyRegion {
-		if len(utils) == 0 {
-			continue
-		}
 
-		agg := AggregatedSavingsPlan{
-			Type:           prometheus.SavingsPlanTypeEC2Instance,
-			InstanceFamily: utils[0].InstanceFamily,
-			Region:         utils[0].Region,
-			AccountID:      utils[0].AccountID,
-		}
+	for _, cap := range capacities {
+		// Create composite key: "family:region"
+		key := cap.InstanceFamily + ":" + cap.Region
 
-		var totalCommitment float64
-
-		for _, util := range utils {
-			cap, ok := capacityByARN[util.SavingsPlanARN]
-			if !ok {
-				// No matching capacity - check if this is a single-item case where we should
-				// match by position instead of ARN (for test cases with empty ARNs)
-				if len(utils) == 1 && len(capacities) == 1 {
-					cap = capacities[0]
-				} else {
-					continue
-				}
+		agg, exists := result[key]
+		if !exists {
+			agg = AggregatedSavingsPlan{
+				Type:           prometheus.SavingsPlanTypeEC2Instance,
+				InstanceFamily: cap.InstanceFamily,
+				Region:         cap.Region,
+				AccountID:      cap.AccountID,
 			}
-
-			// Sum remaining capacities and hourly commitments
-			agg.TotalRemainingCapacity += cap.RemainingCapacity
-			totalCommitment += cap.HourlyCommitment
-
-			agg.Count++
 		}
 
-		// Calculate weighted average utilization
-		// For single SPs, use the reported utilization to preserve Lumina's exact value
-		// For multiple SPs, calculate weighted average using real commitment values
-		if agg.Count == 1 && len(utils) == 1 {
-			agg.AverageUtilization = utils[0].UtilizationPercent
-		} else if totalCommitment > 0 {
-			// Weighted average: (total used capacity / total commitment) * 100
-			agg.AverageUtilization = ((totalCommitment - agg.TotalRemainingCapacity) / totalCommitment) * 100
-		}
+		// Sum up both remaining capacity and hourly commitment
+		agg.TotalRemainingCapacity += cap.RemainingCapacity
+		agg.TotalHourlyCommitment += cap.HourlyCommitment
+		agg.Count++
 
 		result[key] = agg
+	}
+
+	// Calculate utilization for each aggregated family: (1 - remaining/commitment) * 100
+	for key, agg := range result {
+		if agg.TotalHourlyCommitment > 0 {
+			agg.UtilizationPercent = (1 - (agg.TotalRemainingCapacity / agg.TotalHourlyCommitment)) * 100
+			result[key] = agg
+		}
 	}
 
 	return result
@@ -325,25 +278,25 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 		Weight:             e.Config.Overlays.Weights.ComputeSavingsPlan,
 		Price:              "0.00", // 100% discount for Phase 2
 		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
-		UtilizationPercent: agg.AverageUtilization,
+		UtilizationPercent: agg.UtilizationPercent,
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
-	// Decision logic: overlay exists if BOTH conditions are true
+	// Decision logic: overlay exists if BOTH conditions are true:
 	// 1. Utilization below threshold
 	// 2. Remaining capacity available
 	threshold := e.Config.Overlays.UtilizationThreshold
 
-	if agg.AverageUtilization >= threshold {
+	if agg.UtilizationPercent >= threshold {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.AverageUtilization, threshold)
+		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.UtilizationPercent, threshold)
 	} else if agg.TotalRemainingCapacity <= 0 {
 		decision.ShouldExist = false
 		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", agg.TotalRemainingCapacity)
 	} else {
 		decision.ShouldExist = true
 		decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
-			agg.AverageUtilization, threshold, agg.TotalRemainingCapacity)
+			agg.UtilizationPercent, threshold, agg.TotalRemainingCapacity)
 	}
 
 	return decision
@@ -374,22 +327,22 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 			"karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]",
 			agg.InstanceFamily,
 		),
-		UtilizationPercent: agg.AverageUtilization,
+		UtilizationPercent: agg.UtilizationPercent,
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
 	threshold := e.Config.Overlays.UtilizationThreshold
 
-	if agg.AverageUtilization >= threshold {
+	if agg.UtilizationPercent >= threshold {
 		decision.ShouldExist = false
-		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.AverageUtilization, threshold)
+		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.UtilizationPercent, threshold)
 	} else if agg.TotalRemainingCapacity <= 0 {
 		decision.ShouldExist = false
 		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", agg.TotalRemainingCapacity)
 	} else {
 		decision.ShouldExist = true
 		decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
-			agg.AverageUtilization, threshold, agg.TotalRemainingCapacity)
+			agg.UtilizationPercent, threshold, agg.TotalRemainingCapacity)
 	}
 
 	return decision

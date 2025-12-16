@@ -56,11 +56,12 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 			name: "below threshold with capacity - should exist",
 			utilization: prometheus.SavingsPlanUtilization{
 				Type:               prometheus.SavingsPlanTypeCompute,
-				UtilizationPercent: 85.0,
+				UtilizationPercent: 85.0, // Ignored - we calculate from capacity
 			},
 			capacity: prometheus.SavingsPlanCapacity{
 				Type:              prometheus.SavingsPlanTypeCompute,
 				RemainingCapacity: 50.00,
+				HourlyCommitment:  333.3333333333, // 85% util = (1 - 50/333.333...) * 100
 			},
 			wantShouldExist:    true,
 			wantReasonContains: "below threshold",
@@ -74,6 +75,7 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 			capacity: prometheus.SavingsPlanCapacity{
 				Type:              prometheus.SavingsPlanTypeCompute,
 				RemainingCapacity: 10.00,
+				HourlyCommitment:  200.00, // 95% util = (1 - 10/200) * 100
 			},
 			wantShouldExist:    false,
 			wantReasonContains: "at/above threshold",
@@ -87,6 +89,7 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 			capacity: prometheus.SavingsPlanCapacity{
 				Type:              prometheus.SavingsPlanTypeCompute,
 				RemainingCapacity: -5.00,
+				HourlyCommitment:  50.00, // Negative capacity means over-utilized
 			},
 			wantShouldExist:    false,
 			wantReasonContains: "at/above threshold",
@@ -95,11 +98,12 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 			name: "below threshold but no capacity - should not exist",
 			utilization: prometheus.SavingsPlanUtilization{
 				Type:               prometheus.SavingsPlanTypeCompute,
-				UtilizationPercent: 80.0,
+				UtilizationPercent: 0.0, // Ignored - we calculate from capacity
 			},
 			capacity: prometheus.SavingsPlanCapacity{
 				Type:              prometheus.SavingsPlanTypeCompute,
 				RemainingCapacity: 0.00,
+				HourlyCommitment:  0.00, // No commitment = 0% util
 			},
 			wantShouldExist:    false,
 			wantReasonContains: "no remaining capacity",
@@ -113,6 +117,7 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 			capacity: prometheus.SavingsPlanCapacity{
 				Type:              prometheus.SavingsPlanTypeCompute,
 				RemainingCapacity: 100.00,
+				HourlyCommitment:  100.00, // 0% util = (1 - 100/100) * 100
 			},
 			wantShouldExist:    true,
 			wantReasonContains: "below threshold",
@@ -201,6 +206,7 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 				InstanceFamily:    "m5",
 				Region:            "us-west-2",
 				RemainingCapacity: 25.00,
+				HourlyCommitment:  100.00, // 75% util = (1 - 25/100) * 100
 			},
 			wantName:           "cost-aware-ec2-sp-m5-us-west-2",
 			wantShouldExist:    true,
@@ -219,6 +225,7 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 				InstanceFamily:    "c5",
 				Region:            "us-east-1",
 				RemainingCapacity: 5.00,
+				HourlyCommitment:  100.00, // 95% util = (1 - 5/100) * 100
 			},
 			wantName:           "cost-aware-ec2-sp-c5-us-east-1",
 			wantShouldExist:    false,
@@ -237,6 +244,7 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 				InstanceFamily:    "r6i",
 				Region:            "eu-west-1",
 				RemainingCapacity: 0.00,
+				HourlyCommitment:  0.00, // No commitment = 0% util
 			},
 			wantName:           "cost-aware-ec2-sp-r6i-eu-west-1",
 			wantShouldExist:    false,
@@ -364,6 +372,7 @@ func TestDecisionEngineWithCustomThreshold(t *testing.T) {
 	capacity := prometheus.SavingsPlanCapacity{
 		Type:              prometheus.SavingsPlanTypeCompute,
 		RemainingCapacity: 10.00,
+		HourlyCommitment:  125.00, // 92% util = (1 - 10/125) * 100
 	}
 
 	decision := engine.AnalyzeComputeSavingsPlanSingle(utilization, capacity)
@@ -404,6 +413,7 @@ func TestDecisionEngineWithCustomWeights(t *testing.T) {
 		Type:              prometheus.SavingsPlanTypeEC2Instance,
 		InstanceFamily:    "m5",
 		RemainingCapacity: 20.00,
+		HourlyCommitment:  100.00, // 80% util = (1 - 20/100) * 100
 	}
 	ec2SPDecision := engine.AnalyzeEC2InstanceSavingsPlanSingle(ec2SPUtil, ec2SPCap)
 	if ec2SPDecision.Weight != 50 {
@@ -418,6 +428,7 @@ func TestDecisionEngineWithCustomWeights(t *testing.T) {
 	computeSPCap := prometheus.SavingsPlanCapacity{
 		Type:              prometheus.SavingsPlanTypeCompute,
 		RemainingCapacity: 50.00,
+		HourlyCommitment:  250.00, // 80% util = (1 - 50/250) * 100
 	}
 	computeSPDecision := engine.AnalyzeComputeSavingsPlanSingle(computeSPUtil, computeSPCap)
 	if computeSPDecision.Weight != 25 {

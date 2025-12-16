@@ -224,7 +224,11 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	m5Key := "m5:us-west-2"
 	m5Agg, ok := aggByFamily[m5Key]
 	if !ok {
-		t.Fatalf("expected %s in aggregation, got keys: %v", m5Key, aggByFamily)
+		keys := make([]string, 0, len(aggByFamily))
+		for k := range aggByFamily {
+			keys = append(keys, k)
+		}
+		t.Fatalf("expected %s in aggregation, got keys: %v", m5Key, keys)
 	}
 
 	if m5Agg.Count != 2 {
@@ -240,7 +244,6 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	// Create decision from aggregated m5 data
 	m5Decision := engine.AnalyzeEC2InstanceSavingsPlan(m5Agg)
 
-	// Name now includes region
 	if m5Decision.Name != "cost-aware-ec2-sp-m5-us-west-2" {
 		t.Errorf("expected Name='cost-aware-ec2-sp-m5-us-west-2', got '%s'", m5Decision.Name)
 	}
@@ -257,7 +260,11 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 	c5Key := "c5:us-west-2"
 	c5Agg, ok := aggByFamily[c5Key]
 	if !ok {
-		t.Fatalf("expected %s in aggregation, got keys: %v", c5Key, aggByFamily)
+		keys := make([]string, 0, len(aggByFamily))
+		for k := range aggByFamily {
+			keys = append(keys, k)
+		}
+		t.Fatalf("expected %s in aggregation, got keys: %v", c5Key, keys)
 	}
 
 	if c5Agg.Count != 1 {
@@ -337,11 +344,15 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 		t.Fatalf("expected 1 instance type, got %d", len(aggByType))
 	}
 
-	// Test m5.xlarge aggregation (2 RIs in different AZs) - now keyed by "type:region"
-	m5XlargeKey := "m5.xlarge:us-west-2"
-	m5XlargeAgg, ok := aggByType[m5XlargeKey]
+	// Test m5.xlarge aggregation (2 RIs in different AZs) - now keyed by "instanceType:region"
+	riKey := "m5.xlarge:us-west-2"
+	m5XlargeAgg, ok := aggByType[riKey]
 	if !ok {
-		t.Fatalf("expected %s in aggregation, got keys: %v", m5XlargeKey, aggByType)
+		keys := make([]string, 0, len(aggByType))
+		for k := range aggByType {
+			keys = append(keys, k)
+		}
+		t.Fatalf("expected %s in aggregation, got keys: %v", riKey, keys)
 	}
 
 	// Expected total count: 3 (us-west-2a) + 2 (us-west-2b) = 5 RIs
@@ -353,7 +364,6 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 	// Create ONE decision from aggregated data
 	decision := engine.AnalyzeReservedInstance(m5XlargeAgg)
 
-	// Name now includes region
 	if decision.Name != "cost-aware-ri-m5.xlarge-us-west-2" {
 		t.Errorf("expected Name='cost-aware-ri-m5.xlarge-us-west-2', got '%s'", decision.Name)
 	}

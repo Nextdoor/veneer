@@ -178,7 +178,6 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		decision := engine.AnalyzeEC2InstanceSavingsPlanSingle(utilizations[0], m5Capacity)
 
 		// Validate decision
-		// Name now includes region
 		if decision.Name != "cost-aware-ec2-sp-m5-us-west-2" {
 			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ec2-sp-m5-us-west-2")
 		}
@@ -197,8 +196,10 @@ func TestDecisionEngineIntegration(t *testing.T) {
 				utilizations[0].UtilizationPercent, cfg.Overlays.UtilizationThreshold)
 		}
 
-		if decision.UtilizationPercent != 96.2 {
-			t.Errorf("UtilizationPercent = %f, want 96.2", decision.UtilizationPercent)
+		// Use epsilon comparison for floating point
+		const epsilon = 0.01
+		if diff := decision.UtilizationPercent - 96.2; diff < -epsilon || diff > epsilon {
+			t.Errorf("UtilizationPercent = %f, want 96.2 (diff: %e)", decision.UtilizationPercent, diff)
 		}
 
 		// Verify selector targets m5 family with on-demand capacity
@@ -222,7 +223,7 @@ func TestDecisionEngineIntegration(t *testing.T) {
 		// Analyze and make decision
 		decision := engine.AnalyzeReservedInstanceSingle(ris[0])
 
-		// Validate decision (name now includes region)
+		// Validate decision
 		if decision.Name != "cost-aware-ri-m5.xlarge-us-west-2" {
 			t.Errorf("Name = %q, want %q", decision.Name, "cost-aware-ri-m5.xlarge-us-west-2")
 		}
