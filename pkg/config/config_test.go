@@ -36,6 +36,9 @@ prometheusUrl: "http://prometheus:9090"
 logLevel: "debug"
 metricsBindAddress: ":8080"
 healthProbeBindAddress: ":8081"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
 `,
 			wantErr: false,
 			validate: func(t *testing.T, c *Config) {
@@ -45,12 +48,21 @@ healthProbeBindAddress: ":8081"
 				if c.LogLevel != "debug" {
 					t.Errorf("LogLevel = %q, want %q", c.LogLevel, "debug")
 				}
+				if c.AWS.AccountID != "123456789012" {
+					t.Errorf("AWS.AccountID = %q, want %q", c.AWS.AccountID, "123456789012")
+				}
+				if c.AWS.Region != "us-west-2" {
+					t.Errorf("AWS.Region = %q, want %q", c.AWS.Region, "us-west-2")
+				}
 			},
 		},
 		{
 			name: "minimal valid config",
 			configYAML: `
 prometheusUrl: "http://prom:9090"
+aws:
+  accountId: "123456789012"
+  region: "us-east-1"
 `,
 			wantErr: false,
 			validate: func(t *testing.T, c *Config) {
@@ -68,6 +80,47 @@ prometheusUrl: "http://prom:9090"
 			configYAML: `
 prometheusUrl: "http://prom:9090"
 logLevel: "invalid"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing AWS account ID",
+			configYAML: `
+prometheusUrl: "http://prom:9090"
+aws:
+  region: "us-west-2"
+`,
+			wantErr: true,
+		},
+		{
+			name: "missing AWS region",
+			configYAML: `
+prometheusUrl: "http://prom:9090"
+aws:
+  accountId: "123456789012"
+`,
+			wantErr: true,
+		},
+		{
+			name: "invalid AWS account ID - not 12 digits",
+			configYAML: `
+prometheusUrl: "http://prom:9090"
+aws:
+  accountId: "12345"
+  region: "us-west-2"
+`,
+			wantErr: true,
+		},
+		{
+			name: "invalid AWS account ID - contains letters",
+			configYAML: `
+prometheusUrl: "http://prom:9090"
+aws:
+  accountId: "12345678901a"
+  region: "us-west-2"
 `,
 			wantErr: true,
 		},
@@ -75,6 +128,9 @@ logLevel: "invalid"
 			name: "missing prometheus URL uses default",
 			configYAML: `
 logLevel: "info"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
 `,
 			wantErr: false,
 			validate: func(t *testing.T, c *Config) {
@@ -119,6 +175,10 @@ func TestValidate(t *testing.T) {
 			config: Config{
 				PrometheusURL: "http://prometheus:9090",
 				LogLevel:      "info",
+				AWS: AWSConfig{
+					AccountID: "123456789012",
+					Region:    "us-west-2",
+				},
 			},
 			wantErr: false,
 		},
@@ -127,6 +187,10 @@ func TestValidate(t *testing.T) {
 			config: Config{
 				PrometheusURL: "http://prometheus:9090",
 				LogLevel:      "trace",
+				AWS: AWSConfig{
+					AccountID: "123456789012",
+					Region:    "us-west-2",
+				},
 			},
 			wantErr: true,
 		},
@@ -135,6 +199,10 @@ func TestValidate(t *testing.T) {
 			config: Config{
 				PrometheusURL: "http://prometheus:9090",
 				LogLevel:      "debug",
+				AWS: AWSConfig{
+					AccountID: "123456789012",
+					Region:    "us-west-2",
+				},
 			},
 			wantErr: false,
 		},
@@ -161,6 +229,10 @@ func TestValidateEmptyPrometheusURL(t *testing.T) {
 	config := Config{
 		PrometheusURL: "",
 		LogLevel:      "info",
+		AWS: AWSConfig{
+			AccountID: "123456789012",
+			Region:    "us-west-2",
+		},
 	}
 	err := config.Validate()
 	if err == nil {
@@ -172,14 +244,25 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 	// Create a temporary config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	configYAML := `prometheusUrl: "http://default:9090"`
+	configYAML := `
+prometheusUrl: "http://default:9090"
+aws:
+  accountId: "111111111111"
+  region: "us-east-1"
+`
 	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
 		t.Fatalf("failed to write temp config: %v", err)
 	}
 
-	// Set environment variable
+	// Set environment variables
 	_ = os.Setenv("KARVE_PROMETHEUS_URL", "http://override:9090")
-	defer func() { _ = os.Unsetenv("KARVE_PROMETHEUS_URL") }()
+	_ = os.Setenv("KARVE_AWS_ACCOUNT_ID", "222222222222")
+	_ = os.Setenv("KARVE_AWS_REGION", "us-west-2")
+	defer func() {
+		_ = os.Unsetenv("KARVE_PROMETHEUS_URL")
+		_ = os.Unsetenv("KARVE_AWS_ACCOUNT_ID")
+		_ = os.Unsetenv("KARVE_AWS_REGION")
+	}()
 
 	// Load config
 	cfg, err := Load(configPath)
@@ -187,8 +270,181 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	// Environment variable should override file value
+	// Environment variables should override file values
 	if cfg.PrometheusURL != "http://override:9090" {
 		t.Errorf("PrometheusURL = %q, want %q (env var override)", cfg.PrometheusURL, "http://override:9090")
+	}
+	if cfg.AWS.AccountID != "222222222222" {
+		t.Errorf("AWS.AccountID = %q, want %q (env var override)", cfg.AWS.AccountID, "222222222222")
+	}
+	if cfg.AWS.Region != "us-west-2" {
+		t.Errorf("AWS.Region = %q, want %q (env var override)", cfg.AWS.Region, "us-west-2")
+	}
+}
+
+func TestOverlayManagementDefaults(t *testing.T) {
+	// Create minimal config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `
+prometheusUrl: "http://prometheus:9090"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Load config
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify defaults are applied
+	if cfg.Overlays.UtilizationThreshold != DefaultOverlayUtilizationThreshold {
+		t.Errorf(
+			"UtilizationThreshold = %f, want %f",
+			cfg.Overlays.UtilizationThreshold,
+			DefaultOverlayUtilizationThreshold,
+		)
+	}
+	if cfg.Overlays.Weights.ReservedInstance != DefaultOverlayWeightReservedInstance {
+		t.Errorf(
+			"ReservedInstance weight = %d, want %d",
+			cfg.Overlays.Weights.ReservedInstance,
+			DefaultOverlayWeightReservedInstance,
+		)
+	}
+	if cfg.Overlays.Weights.EC2InstanceSavingsPlan != DefaultOverlayWeightEC2InstanceSavingsPlan {
+		t.Errorf(
+			"EC2InstanceSavingsPlan weight = %d, want %d",
+			cfg.Overlays.Weights.EC2InstanceSavingsPlan,
+			DefaultOverlayWeightEC2InstanceSavingsPlan,
+		)
+	}
+	if cfg.Overlays.Weights.ComputeSavingsPlan != DefaultOverlayWeightComputeSavingsPlan {
+		t.Errorf(
+			"ComputeSavingsPlan weight = %d, want %d",
+			cfg.Overlays.Weights.ComputeSavingsPlan,
+			DefaultOverlayWeightComputeSavingsPlan,
+		)
+	}
+}
+
+func TestOverlayManagementCustomValues(t *testing.T) {
+	// Create config with custom overlay values
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `
+prometheusUrl: "http://prometheus:9090"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+overlays:
+  utilizationThreshold: 90.0
+  weights:
+    reservedInstance: 100
+    ec2InstanceSavingsPlan: 50
+    computeSavingsPlan: 25
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0600); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Load config
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify custom values are loaded
+	if cfg.Overlays.UtilizationThreshold != 90.0 {
+		t.Errorf("UtilizationThreshold = %f, want 90.0", cfg.Overlays.UtilizationThreshold)
+	}
+	if cfg.Overlays.Weights.ReservedInstance != 100 {
+		t.Errorf("ReservedInstance weight = %d, want 100", cfg.Overlays.Weights.ReservedInstance)
+	}
+	if cfg.Overlays.Weights.EC2InstanceSavingsPlan != 50 {
+		t.Errorf("EC2InstanceSavingsPlan weight = %d, want 50", cfg.Overlays.Weights.EC2InstanceSavingsPlan)
+	}
+	if cfg.Overlays.Weights.ComputeSavingsPlan != 25 {
+		t.Errorf("ComputeSavingsPlan weight = %d, want 25", cfg.Overlays.Weights.ComputeSavingsPlan)
+	}
+}
+
+func TestValidateOverlayManagement(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  OverlayManagementConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance:       30,
+					EC2InstanceSavingsPlan: 20,
+					ComputeSavingsPlan:     10,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "threshold too high",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 150.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "threshold negative",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: -10.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative RI weight",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance: -1,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero weights are valid",
+			config: OverlayManagementConfig{
+				UtilizationThreshold: 95.0,
+				Weights: OverlayWeightsConfig{
+					ReservedInstance:       0,
+					EC2InstanceSavingsPlan: 0,
+					ComputeSavingsPlan:     0,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				PrometheusURL: "http://prometheus:9090",
+				AWS: AWSConfig{
+					AccountID: "123456789012",
+					Region:    "us-west-2",
+				},
+				Overlays: tt.config,
+			}
+
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }

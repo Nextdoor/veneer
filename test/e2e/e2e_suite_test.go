@@ -248,7 +248,12 @@ scrape_configs:
 
 	By("creating Karve ConfigMap")
 	karveConfig := map[string]string{
-		"config.yaml": fmt.Sprintf("prometheusURL: \"http://prometheus.%s.svc.cluster.local:9090\"\nlogLevel: \"debug\"\n", namespace),
+		"config.yaml": fmt.Sprintf(`prometheusURL: "http://prometheus.%s.svc.cluster.local:9090"
+logLevel: "debug"
+aws:
+  accountID: "123456789012"
+  region: "us-west-2"
+`, namespace),
 	}
 	err = client.CreateConfigMapFromYAML(ctx, "karve-config", karveConfig)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Karve ConfigMap")

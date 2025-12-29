@@ -115,7 +115,12 @@ func main() {
 	// +kubebuilder:scaffold:builder
 
 	// Create Prometheus client for querying Lumina metrics
-	promClient, err := prometheus.NewClient(cfg.PrometheusURL)
+	promClient, err := prometheus.NewClient(
+		cfg.PrometheusURL,
+		cfg.AWS.AccountID,
+		cfg.AWS.Region,
+		setupLog.WithName("prometheus-client"),
+	)
 	if err != nil {
 		setupLog.Error(err, "unable to create Prometheus client", "url", cfg.PrometheusURL)
 		os.Exit(1)

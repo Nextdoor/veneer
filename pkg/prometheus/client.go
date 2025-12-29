@@ -26,22 +26,73 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-logr/logr"
+	luminametrics "github.com/nextdoor/lumina/pkg/metrics"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 )
 
+// Re-export Lumina metric and label constants for convenience.
+// These constants provide type-safe, compile-time checked access to
+// Lumina metric names and labels. See github.com/nextdoor/lumina/pkg/metrics
+// for full documentation.
+const (
+	// Metric names
+	metricSavingsPlanRemainingCapacity  = luminametrics.MetricSavingsPlanRemainingCapacity
+	metricSavingsPlanUtilizationPercent = luminametrics.MetricSavingsPlanUtilizationPercent
+	metricSavingsPlanHourlyCommitment   = luminametrics.MetricSavingsPlanHourlyCommitment
+	metricEC2ReservedInstance           = luminametrics.MetricEC2ReservedInstance
+	metricLuminaDataFreshnessSeconds    = luminametrics.MetricLuminaDataFreshnessSeconds
+
+	// Label names
+	labelInstanceFamily   = luminametrics.LabelInstanceFamily
+	labelInstanceType     = luminametrics.LabelInstanceType
+	labelType             = luminametrics.LabelType
+	labelSavingsPlanARN   = luminametrics.LabelSavingsPlanARN
+	labelAccountID        = luminametrics.LabelAccountID
+	labelRegion           = luminametrics.LabelRegion
+	labelAvailabilityZone = luminametrics.LabelAvailabilityZone
+)
+
+// Savings Plan type constants.
+// These match the "type" label values used in Lumina metrics but are not currently
+// exported by the Lumina package, so we define them here.
+const (
+	SavingsPlanTypeCompute     = "compute"
+	SavingsPlanTypeEC2Instance = "ec2_instance"
+)
+
 // Client is a Prometheus client for querying Lumina metrics.
 // It wraps the official Prometheus Go client and provides typed methods
 // for the specific metrics Karve needs.
+//
+// The client is scoped to a specific AWS account and region to ensure we only
+// query for region-specific discounts (Reserved Instances and EC2 Instance Savings Plans)
+// that apply to this cluster. Compute Savings Plans are intentionally NOT filtered by
+// region since they apply globally across all regions.
 type Client struct {
-	api v1.API
+	api       v1.API
+	accountID string      // AWS account ID for filtering account-scoped discounts (RIs, EC2 Instance SPs)
+	region    string      // AWS region for filtering region-scoped discounts (RIs, EC2 Instance SPs)
+	logger    logr.Logger // Logger for debugging query execution
 }
 
-// NewClient creates a new Prometheus client.
-// The url parameter should be the base URL of the Prometheus server
-// (e.g., "http://prometheus:9090").
-func NewClient(url string) (*Client, error) {
+// NewClient creates a new Prometheus client scoped to a specific AWS account and region.
+//
+// The url parameter should be the base URL of the Prometheus server (e.g., "http://prometheus:9090").
+// The accountID and region parameters are used to filter queries for region-specific discounts
+// (Reserved Instances and EC2 Instance Savings Plans) that apply to this cluster.
+// Compute Savings Plans are NOT filtered by region since they apply globally.
+// The logger parameter is used for debugging query execution (pass logr.Discard() to disable).
+//
+// Why scoping is critical:
+// Lumina monitors multiple AWS accounts and regions, but this Karve instance runs in ONE cluster
+// in ONE account and ONE region. Reserved Instances and EC2 Instance Savings Plans are region-specific,
+// so we must filter by account+region to avoid creating NodeOverlays for discounts that won't apply
+// to instances launched in this cluster. Compute Savings Plans are intentionally not filtered by
+// region because they apply globally across all regions within the account.
+func NewClient(url, accountID, region string, logger logr.Logger) (*Client, error) {
 	promClient, err := api.NewClient(api.Config{
 		Address: url,
 	})
@@ -50,7 +101,10 @@ func NewClient(url string) (*Client, error) {
 	}
 
 	return &Client{
-		api: v1.NewAPI(promClient),
+		api:       v1.NewAPI(promClient),
+		accountID: accountID,
+		region:    region,
+		logger:    logger,
 	}, nil
 }
 
@@ -59,8 +113,15 @@ type SavingsPlanCapacity struct {
 	// Type is the Savings Plan type ("ec2_instance" or "compute")
 	Type string
 
-	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5")
+	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5").
+	// Optional: empty string for Compute SPs (which apply globally to all families).
+	// Only populated for EC2 Instance SPs.
 	InstanceFamily string
+
+	// Region is the AWS region.
+	// Optional: "all" for Compute SPs (which apply globally to all regions).
+	// Only populated with specific region for EC2 Instance SPs.
+	Region string
 
 	// SavingsPlanARN is the ARN of the Savings Plan
 	SavingsPlanARN string
@@ -70,6 +131,9 @@ type SavingsPlanCapacity struct {
 
 	// RemainingCapacity is the remaining capacity in $/hour
 	RemainingCapacity float64
+
+	// HourlyCommitment is the total hourly commitment in $/hour
+	HourlyCommitment float64
 
 	// Timestamp is when this metric was recorded
 	Timestamp time.Time
@@ -96,47 +160,132 @@ type ReservedInstance struct {
 	Timestamp time.Time
 }
 
-// QuerySavingsPlanCapacity queries Prometheus for Savings Plan remaining capacity.
+// QuerySavingsPlanCapacity queries Prometheus for Savings Plan remaining capacity and hourly commitment.
 // The instanceFamily parameter filters results (e.g., "m5", "c5").
-// Pass empty string to get all instance families.
+// Pass empty string to get all instance families (includes both EC2 Instance and Compute SPs).
 //
-// This queries: savings_plan_remaining_capacity{instance_family="$family"}
+// This queries both savings_plan_remaining_capacity and savings_plan_hourly_commitment metrics.
+//
+// Important: We use savings_plan_hourly_commitment as the PRIMARY source because it has
+// instance_family and region labels, while savings_plan_remaining_capacity does not.
+// We then join in the remaining capacity data using the Savings Plan ARN as the correlation key.
+//
+// Filtering behavior (see https://github.com/Nextdoor/lumina/blob/main/ALGORITHM.md):
+//   - Compute SPs: GLOBAL - apply to ANY instance family in ANY region.
+//     NOT filtered by account_id or region.
+//   - EC2 Instance SPs: REGIONAL - apply to specific instance family in specific region.
+//     Filtered by account_id AND region.
+//
+// When instanceFamily is specified: Only EC2 Instance SPs for that family+account+region are returned.
+// When instanceFamily is empty: Both Compute SPs (global) and EC2 Instance SPs (account+region) are returned.
 func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily string) ([]SavingsPlanCapacity, error) {
-	// Build query
-	var query string
+	// Capture query time once at the start to ensure consistency across both queries
+	queryTime := time.Now()
+
+	// Build queries for both metrics
+	// IMPORTANT: Compute Savings Plans are GLOBAL and should NOT be filtered by account_id or region.
+	// EC2 Instance Savings Plans are scoped to account+region and should be filtered.
+	//
+	// Note: Only the commitment metric has instance_family and region labels.
+	// The remaining capacity metric only has account_id and type labels.
+	var commitmentQuery, remainingQuery string
+
 	if instanceFamily != "" {
-		query = fmt.Sprintf(`savings_plan_remaining_capacity{instance_family="%s"}`, instanceFamily)
+		// Specific family: get EC2 Instance SPs for this region in this family
+		// This is a regional/family-based savings plan, so we SHOULD filter by account_id and region
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s", %s="%s"}`,
+			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region,
+			labelInstanceFamily, instanceFamily)
+
+		// For remaining capacity, filter to EC2 Instance SPs for this account+region
+		remainingQuery = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID)
 	} else {
-		query = `savings_plan_remaining_capacity`
+		// All families: get BOTH Compute SPs (global, no filters) AND EC2 Instance SPs (account+region)
+		// We use sum() to aggregate multiple queries with the 'or' operator
+		commitmentQuery = fmt.Sprintf(`%s{%s="%s"} or %s{%s="%s", %s="%s", %s="%s"}`,
+			// Compute SPs: global, no account/region filters
+			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeCompute,
+			// EC2 Instance SPs: filtered by account+region
+			metricSavingsPlanHourlyCommitment,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region)
+
+		// For remaining capacity: get both types (no filters for Compute, account filter for EC2)
+		remainingQuery = fmt.Sprintf(`%s{%s="%s"} or %s{%s="%s", %s="%s"}`,
+			// Compute SPs: global, no filters
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeCompute,
+			// EC2 Instance SPs: filter by account
+			metricSavingsPlanRemainingCapacity,
+			labelType, SavingsPlanTypeEC2Instance,
+			labelAccountID, c.accountID)
 	}
 
-	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	// Log the queries for debugging
+	c.logger.V(1).Info("Executing Prometheus queries for Savings Plan capacity",
+		"commitment_query", commitmentQuery,
+		"remaining_query", remainingQuery,
+		"account_id", c.accountID,
+		"region", c.region)
+
+	// Execute hourly commitment query first (this is our PRIMARY data source)
+	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
 	if err != nil {
-		return nil, fmt.Errorf("prometheus query failed: %w", err)
+		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
 	}
-
-	// Log warnings if any
 	if len(warnings) > 0 {
-		// In production code, use a proper logger here
-		// For now, warnings are silently ignored
 		_ = warnings
 	}
 
-	// Parse results
-	vector, ok := result.(model.Vector)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type: %T", result)
+	// Execute remaining capacity query
+	remainingResult, warnings, err := c.api.Query(ctx, remainingQuery, queryTime)
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query for remaining capacity failed: %w", err)
+	}
+	if len(warnings) > 0 {
+		_ = warnings
 	}
 
-	capacities := make([]SavingsPlanCapacity, 0, len(vector))
-	for _, sample := range vector {
+	// Parse hourly commitment results (PRIMARY source)
+	commitmentVector, ok := commitmentResult.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected hourly commitment result type: %T", commitmentResult)
+	}
+
+	// Parse remaining capacity results
+	remainingVector, ok := remainingResult.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected remaining capacity result type: %T", remainingResult)
+	}
+
+	// Build a map of ARN -> remaining capacity for fast lookup
+	remainingByARN := make(map[string]float64, len(remainingVector))
+	for _, sample := range remainingVector {
+		arn := string(sample.Metric[labelSavingsPlanARN])
+		remainingByARN[arn] = float64(sample.Value)
+	}
+
+	// Combine the data using hourly commitment as the primary source
+	// This ensures we get the correct instance_family and region labels from the commitment metric
+	capacities := make([]SavingsPlanCapacity, 0, len(commitmentVector))
+	for _, sample := range commitmentVector {
+		arn := string(sample.Metric[labelSavingsPlanARN])
 		capacity := SavingsPlanCapacity{
-			Type:              string(sample.Metric["type"]),
-			InstanceFamily:    string(sample.Metric["instance_family"]),
-			SavingsPlanARN:    string(sample.Metric["savings_plan_arn"]),
-			AccountID:         string(sample.Metric["account_id"]),
-			RemainingCapacity: float64(sample.Value),
+			Type:              string(sample.Metric[labelType]),
+			InstanceFamily:    string(sample.Metric[labelInstanceFamily]),
+			Region:            string(sample.Metric[labelRegion]),
+			SavingsPlanARN:    arn,
+			AccountID:         string(sample.Metric[labelAccountID]),
+			RemainingCapacity: remainingByARN[arn], // Lookup remaining capacity by ARN
+			HourlyCommitment:  float64(sample.Value),
 			Timestamp:         sample.Timestamp.Time(),
 		}
 		capacities = append(capacities, capacity)
@@ -149,15 +298,29 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 // The instanceType parameter filters results (e.g., "m5.xlarge").
 // Pass empty string to get all instance types.
 //
-// This queries: ec2_reserved_instance{instance_type="$type"}
+// The client is scoped to a specific account and region, so only RIs from this cluster's
+// account/region are returned.
 func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string) ([]ReservedInstance, error) {
-	// Build query
+	// Build query with account/region filtering
 	var query string
 	if instanceType != "" {
-		query = fmt.Sprintf(`ec2_reserved_instance{instance_type="%s"}`, instanceType)
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s", %s="%s"}`,
+			metricEC2ReservedInstance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region,
+			labelInstanceType, instanceType)
 	} else {
-		query = `ec2_reserved_instance`
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricEC2ReservedInstance,
+			labelAccountID, c.accountID,
+			labelRegion, c.region)
 	}
+
+	// Log the query for debugging
+	c.logger.V(1).Info("Executing Prometheus query for Reserved Instances",
+		"query", query,
+		"account_id", c.accountID,
+		"region", c.region)
 
 	// Execute query
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
@@ -182,10 +345,10 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 		count := int(sample.Value)
 
 		ri := ReservedInstance{
-			AccountID:        string(sample.Metric["account_id"]),
-			Region:           string(sample.Metric["region"]),
-			InstanceType:     string(sample.Metric["instance_type"]),
-			AvailabilityZone: string(sample.Metric["availability_zone"]),
+			AccountID:        string(sample.Metric[labelAccountID]),
+			Region:           string(sample.Metric[labelRegion]),
+			InstanceType:     string(sample.Metric[labelInstanceType]),
+			AvailabilityZone: string(sample.Metric[labelAvailabilityZone]),
 			Count:            count,
 			Timestamp:        sample.Timestamp.Time(),
 		}
@@ -275,9 +438,6 @@ type OnDemandPrice struct {
 	// Region is the AWS region
 	Region string
 
-	// OperatingSystem is the OS (e.g., "Linux", "Windows")
-	OperatingSystem string
-
 	// Price is the on-demand price in $/hour
 	Price float64
 
@@ -300,11 +460,10 @@ func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([
 	prices := make([]OnDemandPrice, 0, len(vector))
 	for _, sample := range vector {
 		price := OnDemandPrice{
-			InstanceType:    string(sample.Metric["instance_type"]),
-			Region:          string(sample.Metric["region"]),
-			OperatingSystem: string(sample.Metric["operating_system"]),
-			Price:           float64(sample.Value),
-			Timestamp:       sample.Timestamp.Time(),
+			InstanceType: string(sample.Metric["instance_type"]),
+			Region:       string(sample.Metric["region"]),
+			Price:        float64(sample.Value),
+			Timestamp:    sample.Timestamp.Time(),
 		}
 		prices = append(prices, price)
 	}
@@ -318,7 +477,7 @@ func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([
 // This is useful for determining if Lumina's data is stale and cost decisions
 // should be delayed until fresh data is available.
 func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
-	query := `lumina_data_freshness_seconds`
+	query := metricLuminaDataFreshnessSeconds
 
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
@@ -340,6 +499,96 @@ func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
 
 	// Return the first sample (should only be one)
 	return float64(vector[0].Value), nil
+}
+
+// SavingsPlanUtilization represents current utilization of a Savings Plan.
+// This is critical for overlay lifecycle decisions (create/delete based on capacity thresholds).
+type SavingsPlanUtilization struct {
+	// Type is the Savings Plan type ("ec2_instance" or "compute")
+	Type string
+
+	// InstanceFamily is the EC2 instance family (e.g., "m5", "c5").
+	// Optional: empty string for Compute SPs (which apply globally to all families).
+	// Only populated for EC2 Instance SPs.
+	InstanceFamily string
+
+	// Region is the AWS region.
+	// Optional: empty string for Compute SPs (which apply globally to all regions).
+	// Only populated for EC2 Instance SPs.
+	Region string
+
+	// SavingsPlanARN is the ARN of the Savings Plan
+	SavingsPlanARN string
+
+	// AccountID is the AWS account ID
+	AccountID string
+
+	// UtilizationPercent is the current utilization percentage (0-100+).
+	// Can exceed 100% if over-committed (spillover to on-demand rates).
+	UtilizationPercent float64
+
+	// Timestamp is when this metric was recorded
+	Timestamp time.Time
+}
+
+// QuerySavingsPlanUtilization queries Prometheus for Savings Plan utilization percentages.
+// This is critical for determining when to create/delete NodeOverlays based on capacity thresholds.
+//
+// The spType parameter filters by Savings Plan type ("compute" or "ec2_instance").
+// Pass empty string to get all types.
+//
+// The client is scoped to a specific account, so only SPs from this cluster's account are returned.
+// Note: We don't filter by region here because utilization metrics don't have region labels.
+func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string) ([]SavingsPlanUtilization, error) {
+	// Build query with account filtering (utilization metric doesn't have region label)
+	var query string
+	if spType != "" {
+		query = fmt.Sprintf(`%s{%s="%s", %s="%s"}`,
+			metricSavingsPlanUtilizationPercent,
+			labelAccountID, c.accountID,
+			labelType, spType)
+	} else {
+		query = fmt.Sprintf(`%s{%s="%s"}`,
+			metricSavingsPlanUtilizationPercent,
+			labelAccountID, c.accountID)
+	}
+
+	// Log the query for debugging
+	c.logger.V(1).Info("Executing Prometheus query for Savings Plan utilization",
+		"query", query,
+		"account_id", c.accountID)
+
+	// Execute query
+	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("prometheus query failed: %w", err)
+	}
+
+	if len(warnings) > 0 {
+		_ = warnings
+	}
+
+	// Parse results
+	vector, ok := result.(model.Vector)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type: %T", result)
+	}
+
+	utilizations := make([]SavingsPlanUtilization, 0, len(vector))
+	for _, sample := range vector {
+		util := SavingsPlanUtilization{
+			Type:               string(sample.Metric[labelType]),
+			InstanceFamily:     string(sample.Metric[labelInstanceFamily]),
+			Region:             string(sample.Metric[labelRegion]),
+			SavingsPlanARN:     string(sample.Metric[labelSavingsPlanARN]),
+			AccountID:          string(sample.Metric[labelAccountID]),
+			UtilizationPercent: float64(sample.Value),
+			Timestamp:          sample.Timestamp.Time(),
+		}
+		utilizations = append(utilizations, util)
+	}
+
+	return utilizations, nil
 }
 
 // QueryRaw executes a raw PromQL query and returns the result as a string.

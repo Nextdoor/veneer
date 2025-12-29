@@ -29,6 +29,15 @@ Karpenter → Uses adjusted pricing for provisioning decisions
 
 ## Development
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide including:
+- Local setup and prerequisites
+- Running Karve locally with kubectl port-forward
+- Testing strategies (unit, integration, E2E)
+- Debugging tips and troubleshooting
+- Code style guidelines and contribution workflow
+
+### Quick Start
+
 ```bash
 # Build
 make build
@@ -36,29 +45,46 @@ make build
 # Run tests
 make test
 
-# Run locally (requires kubeconfig)
-make run
+# Lint
+make lint
 ```
+
+### Running Locally
+
+To run Karve locally against a Kubernetes cluster:
+
+1. **Port-forward to Prometheus/Lumina:**
+   ```bash
+   kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
+   ```
+
+2. **Run the controller:**
+   ```bash
+   make run
+   ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed instructions, troubleshooting, and advanced topics
 
 ## Configuration
 
-Create `config.yaml`:
+See [config.example.yaml](config.example.yaml) for all configuration options.
+
+Local development uses `config.local.yaml`:
 
 ```yaml
-prometheusUrl: "http://prometheus:9090"
-logLevel: "info"
+prometheusUrl: "http://localhost:9090"  # Via port-forward
+logLevel: "debug"                        # Verbose logging for development
 ```
-
-See [config.example.yaml](config.example.yaml) for all options.
 
 ## Contributing
 
-This project will be open-sourced. See [CLAUDE.md](CLAUDE.md) for development guidelines.
+This project will be open-sourced. See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide and [CLAUDE.md](CLAUDE.md) for code style guidelines.
 
-**Requirements:**
-- 100% code coverage
-- Integration tests for all functionality
-- No internal references
+**Key Requirements:**
+- Comprehensive test coverage with focus on integration tests
+- All code must be open-source ready (no internal references)
+- Follow conventional commit format
+- Run `make lint` and `make test` before committing
 
 ## License
 

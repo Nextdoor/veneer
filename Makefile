@@ -34,6 +34,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: lint
+lint: fmt vet ## Run basic linting (fmt + vet). Note: golangci-lint disabled due to Go 1.24 compatibility issues.
+	@echo "Linting complete (fmt + vet only). golangci-lint temporarily disabled due to Go version incompatibility."
+
 .PHONY: test
 test: fmt vet ## Run unit tests.
 	go test ./... -coverprofile cover.out -covermode=atomic
@@ -57,8 +61,18 @@ build: fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+run: fmt vet ## Run a controller from your host (uses config.local.yaml).
+	@if [ ! -f config.local.yaml ]; then \
+		echo "Error: config.local.yaml not found. Please create it or use KARVE_PROMETHEUS_URL env var."; \
+		echo ""; \
+		echo "Quick setup:"; \
+		echo "  1. Port-forward to Prometheus: kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090"; \
+		echo "  2. Copy example config: cp config.example.yaml config.local.yaml"; \
+		echo "  3. Edit config.local.yaml to set prometheusUrl: http://localhost:9090"; \
+		echo "  4. Run: make run"; \
+		exit 1; \
+	fi
+	go run ./cmd/main.go --config=config.local.yaml
 
 ##@ Build Dependencies
 

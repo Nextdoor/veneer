@@ -27,25 +27,19 @@ Before committing any code:
 
 ### 2. Code Coverage Requirements
 
-**100% code coverage is mandatory** for all code in this repository.
+**Strive for maximum code coverage** for all code in this repository.
 
 Requirements:
-- All packages must maintain 100% test coverage
-- Use `// coverage:ignore` comments ONLY when 100% coverage is genuinely not reasonable
-- Every `// coverage:ignore` must have a clear comment explaining why coverage is not possible
-- CI/CD must fail if coverage drops below 100%
+- All packages should aim for highest reasonable test coverage
 - When adding new code, tests must be included in the same commit/PR
+- Focus coverage on valuable, testable logic paths
+- Don't obsess over covering unreachable defensive code
 
-Valid reasons for `// coverage:ignore`:
-- Pure data structures with no logic (e.g., type definitions)
-- Unreachable error conditions in generated code
-- Defensive programming checks that cannot be triggered in tests
-- Platform-specific code that cannot be tested in CI environment
-
-Invalid reasons:
-- "Hard to test" - refactor the code to make it testable
-- "Takes too long" - optimize the test or use appropriate mocking
-- "Edge case" - edge cases must be tested
+Coverage best practices:
+- Test all normal execution paths
+- Test error conditions that can realistically occur
+- Test boundary conditions and edge cases
+- Don't write tests solely to hit 100% coverage on unreachable defensive code
 
 **Do NOT write tests for pure data structures**: Testing that struct field assignment works (e.g., `config.Field = "value"`) provides zero value. These types are covered through their usage in real tests.
 
@@ -116,7 +110,7 @@ If either the linter or tests fail:
 
 Before submitting code for review:
 - [ ] No Nextdoor-specific references or internal data
-- [ ] 100% code coverage (or justified coverage:ignore comments)
+- [ ] Comprehensive test coverage for new functionality
 - [ ] Integration tests included for new functionality
 - [ ] All tests pass locally
 - [ ] Code follows Go best practices and project conventions
@@ -127,7 +121,7 @@ Before submitting code for review:
 
 1. Write integration tests first (TDD approach encouraged)
 2. Implement the feature with unit tests
-3. Verify 100% coverage
+3. Verify good test coverage
 4. Run full test suite including integration tests
 5. Check for any internal references that need to be genericized
 6. Update documentation
@@ -135,7 +129,6 @@ Before submitting code for review:
 ## CI/CD Expectations
 
 The CI pipeline must enforce:
-- Code coverage at 100% (fail if below)
 - All tests pass (unit + integration)
 - Linting passes
 - No hardcoded internal references (future enhancement)

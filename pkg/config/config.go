@@ -28,10 +28,19 @@ import (
 
 // Configuration key constants for viper SetDefault and BindEnv calls.
 const (
-	KeyPrometheusURL          = "prometheusUrl"
-	KeyLogLevel               = "logLevel"
-	KeyMetricsBindAddress     = "metricsBindAddress"
-	KeyHealthProbeBindAddress = "healthProbeBindAddress"
+	KeyPrometheusURL                       = "prometheusUrl"
+	KeyLogLevel                            = "logLevel"
+	KeyMetricsBindAddress                  = "metricsBindAddress"
+	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
+	KeyAWSAccountID                        = "aws.accountId"
+	KeyAWSRegion                           = "aws.region"
+	KeyOverlayUtilizationThreshold         = "overlays.utilizationThreshold"
+	KeyOverlayWeightReservedInstance       = "overlays.weights.reservedInstance"
+	KeyOverlayWeightEC2InstanceSavingsPlan = "overlays.weights.ec2InstanceSavingsPlan"
+	KeyOverlayWeightComputeSavingsPlan     = "overlays.weights.computeSavingsPlan"
+	KeyOverlayNamingReservedInstancePrefix = "overlays.naming.reservedInstancePrefix"
+	KeyOverlayNamingEC2InstanceSPPrefix    = "overlays.naming.ec2InstanceSavingsPlanPrefix"
+	KeyOverlayNamingComputeSPPrefix        = "overlays.naming.computeSavingsPlanPrefix"
 )
 
 // Environment variable name constants.
@@ -40,15 +49,24 @@ const (
 	EnvLogLevel               = "KARVE_LOG_LEVEL"
 	EnvMetricsBindAddress     = "KARVE_METRICS_BIND_ADDRESS"
 	EnvHealthProbeBindAddress = "KARVE_HEALTH_PROBE_BIND_ADDRESS"
+	EnvAWSAccountID           = "KARVE_AWS_ACCOUNT_ID"
+	EnvAWSRegion              = "KARVE_AWS_REGION"
 	EnvPrefix                 = "KARVE"
 )
 
 // Default configuration values.
 const (
-	DefaultPrometheusURL          = "http://prometheus:9090"
-	DefaultLogLevel               = "info"
-	DefaultMetricsBindAddress     = ":8080"
-	DefaultHealthProbeBindAddress = ":8081"
+	DefaultPrometheusURL                       = "http://prometheus:9090"
+	DefaultLogLevel                            = "info"
+	DefaultMetricsBindAddress                  = ":8080"
+	DefaultHealthProbeBindAddress              = ":8081"
+	DefaultOverlayUtilizationThreshold         = 95.0                    // Delete overlays at 95% utilization
+	DefaultOverlayWeightReservedInstance       = 30                      // Highest priority (most specific)
+	DefaultOverlayWeightEC2InstanceSavingsPlan = 20                      // Medium priority (family-specific)
+	DefaultOverlayWeightComputeSavingsPlan     = 10                      // Lowest priority (global)
+	DefaultOverlayNamingReservedInstancePrefix = "cost-aware-ri"         // RI overlay name prefix
+	DefaultOverlayNamingEC2InstanceSPPrefix    = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
+	DefaultOverlayNamingComputeSPPrefix        = "cost-aware-compute-sp" // Compute SP overlay name prefix
 )
 
 // Config represents the complete controller configuration.
@@ -65,6 +83,99 @@ type Config struct {
 
 	// HealthProbeBindAddress is the address the health probe endpoint binds to.
 	HealthProbeBindAddress string `yaml:"healthProbeBindAddress,omitempty"`
+
+	// AWS contains AWS-specific configuration for the cluster context.
+	AWS AWSConfig `yaml:"aws,omitempty"`
+
+	// Overlays configures NodeOverlay lifecycle behavior.
+	Overlays OverlayManagementConfig `yaml:"overlays,omitempty"`
+}
+
+// AWSConfig contains AWS-specific configuration for scoping Savings Plans and Reserved Instances.
+//
+// Lumina typically monitors multiple AWS accounts and regions. Karve needs to know which
+// account and region THIS cluster runs in so it only creates NodeOverlays for capacity that
+// will actually apply to instances launched in this cluster.
+type AWSConfig struct {
+	// AccountID is the AWS account ID where this Kubernetes cluster runs.
+	// This is used to filter Prometheus queries to only return RIs and SPs from this account.
+	//
+	// REQUIRED: Must be set via config file or KARVE_AWS_ACCOUNT_ID env var.
+	//
+	// Example: "123456789012"
+	AccountID string `yaml:"accountId,omitempty"`
+
+	// Region is the AWS region where this Kubernetes cluster runs.
+	// This is used to filter Prometheus queries and NodeOverlay selectors to only
+	// target capacity in this region.
+	//
+	// REQUIRED: Must be set via config file or KARVE_AWS_REGION env var.
+	//
+	// Example: "us-west-2"
+	Region string `yaml:"region,omitempty"`
+}
+
+// OverlayManagementConfig controls when overlays are created/deleted based on capacity utilization.
+//
+// Overlays are created when Savings Plans or Reserved Instances have available capacity,
+// making Karpenter prefer on-demand instances that will receive pre-paid coverage.
+// Overlays are deleted when capacity is exhausted (at utilization threshold).
+type OverlayManagementConfig struct {
+	// UtilizationThreshold is the SP/RI utilization percentage at which overlays are deleted.
+	// When utilization reaches this threshold, overlays are removed to prevent over-provisioning
+	// beyond available pre-paid capacity.
+	//
+	// Default: 95.0 (delete overlays at 95% utilization)
+	// Valid range: 0-100
+	UtilizationThreshold float64 `yaml:"utilizationThreshold,omitempty"`
+
+	// Weights controls overlay precedence when multiple overlays target the same instances.
+	// Higher weights win. Reserved Instances (most specific) should have highest weight,
+	// followed by EC2 Instance SPs (family-specific), then Compute SPs (global).
+	Weights OverlayWeightsConfig `yaml:"weights,omitempty"`
+
+	// Naming controls overlay naming conventions.
+	Naming OverlayNamingConfig `yaml:"naming,omitempty"`
+}
+
+// OverlayWeightsConfig defines precedence for different capacity types.
+//
+// Weight determines which overlay takes effect when multiple overlays target the same instances.
+// The overlay with the highest weight wins. This ensures more specific capacity (RIs) takes
+// precedence over less specific capacity (global Compute SPs).
+type OverlayWeightsConfig struct {
+	// ReservedInstance weight for RI-backed overlays (instance-type specific).
+	// Default: 30 (highest priority)
+	ReservedInstance int `yaml:"reservedInstance,omitempty"`
+
+	// EC2InstanceSavingsPlan weight for EC2 Instance SP overlays (family-specific).
+	// Default: 20 (medium priority)
+	EC2InstanceSavingsPlan int `yaml:"ec2InstanceSavingsPlan,omitempty"`
+
+	// ComputeSavingsPlan weight for Compute SP overlays (global, all families).
+	// Default: 10 (lowest priority)
+	ComputeSavingsPlan int `yaml:"computeSavingsPlan,omitempty"`
+}
+
+// OverlayNamingConfig controls overlay naming conventions.
+//
+// This allows customization of overlay names to avoid conflicts with other systems
+// or to match organizational naming standards.
+type OverlayNamingConfig struct {
+	// ReservedInstancePrefix is the prefix for RI-backed overlay names.
+	// Default: "cost-aware-ri"
+	// Example with default: "cost-aware-ri-m5-xlarge-us-west-2"
+	ReservedInstancePrefix string `yaml:"reservedInstancePrefix,omitempty"`
+
+	// EC2InstanceSavingsPlanPrefix is the prefix for EC2 Instance SP overlay names.
+	// Default: "cost-aware-ec2-sp"
+	// Example with default: "cost-aware-ec2-sp-m5-us-west-2"
+	EC2InstanceSavingsPlanPrefix string `yaml:"ec2InstanceSavingsPlanPrefix,omitempty"`
+
+	// ComputeSavingsPlanPrefix is the prefix for Compute SP overlay names.
+	// Default: "cost-aware-compute-sp"
+	// Example with default: "cost-aware-compute-sp-global"
+	ComputeSavingsPlanPrefix string `yaml:"computeSavingsPlanPrefix,omitempty"`
 }
 
 // Load loads configuration from a YAML file and validates it.
@@ -84,6 +195,13 @@ func Load(path string) (*Config, error) {
 	v.SetDefault(KeyLogLevel, DefaultLogLevel)
 	v.SetDefault(KeyMetricsBindAddress, DefaultMetricsBindAddress)
 	v.SetDefault(KeyHealthProbeBindAddress, DefaultHealthProbeBindAddress)
+	v.SetDefault(KeyOverlayUtilizationThreshold, DefaultOverlayUtilizationThreshold)
+	v.SetDefault(KeyOverlayWeightReservedInstance, DefaultOverlayWeightReservedInstance)
+	v.SetDefault(KeyOverlayWeightEC2InstanceSavingsPlan, DefaultOverlayWeightEC2InstanceSavingsPlan)
+	v.SetDefault(KeyOverlayWeightComputeSavingsPlan, DefaultOverlayWeightComputeSavingsPlan)
+	v.SetDefault(KeyOverlayNamingReservedInstancePrefix, DefaultOverlayNamingReservedInstancePrefix)
+	v.SetDefault(KeyOverlayNamingEC2InstanceSPPrefix, DefaultOverlayNamingEC2InstanceSPPrefix)
+	v.SetDefault(KeyOverlayNamingComputeSPPrefix, DefaultOverlayNamingComputeSPPrefix)
 
 	// Enable environment variable overrides with KARVE_ prefix
 	v.SetEnvPrefix(EnvPrefix)
@@ -91,6 +209,8 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv(KeyLogLevel, EnvLogLevel)
 	_ = v.BindEnv(KeyMetricsBindAddress, EnvMetricsBindAddress)
 	_ = v.BindEnv(KeyHealthProbeBindAddress, EnvHealthProbeBindAddress)
+	_ = v.BindEnv(KeyAWSAccountID, EnvAWSAccountID)
+	_ = v.BindEnv(KeyAWSRegion, EnvAWSRegion)
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
@@ -118,6 +238,24 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("prometheus URL is required")
 	}
 
+	// Validate AWS configuration (required)
+	if c.AWS.AccountID == "" {
+		return fmt.Errorf("aws.accountId is required - set via config file or KARVE_AWS_ACCOUNT_ID env var")
+	}
+	if c.AWS.Region == "" {
+		return fmt.Errorf("aws.region is required - set via config file or KARVE_AWS_REGION env var")
+	}
+
+	// Validate AWS account ID format (12 digits)
+	if len(c.AWS.AccountID) != 12 {
+		return fmt.Errorf("aws.accountId must be exactly 12 digits, got %q", c.AWS.AccountID)
+	}
+	for _, ch := range c.AWS.AccountID {
+		if ch < '0' || ch > '9' {
+			return fmt.Errorf("aws.accountId must contain only digits, got %q", c.AWS.AccountID)
+		}
+	}
+
 	// Validate log level
 	validLogLevels := map[string]bool{
 		"debug": true,
@@ -127,6 +265,34 @@ func (c *Config) Validate() error {
 	}
 	if c.LogLevel != "" && !validLogLevels[c.LogLevel] {
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.LogLevel)
+	}
+
+	// Validate overlay configuration
+	if c.Overlays.UtilizationThreshold < 0 || c.Overlays.UtilizationThreshold > 100 {
+		return fmt.Errorf(
+			"overlay utilization threshold must be between 0 and 100, got %f",
+			c.Overlays.UtilizationThreshold,
+		)
+	}
+
+	// Validate weights are positive
+	if c.Overlays.Weights.ReservedInstance < 0 {
+		return fmt.Errorf(
+			"reserved instance weight must be non-negative, got %d",
+			c.Overlays.Weights.ReservedInstance,
+		)
+	}
+	if c.Overlays.Weights.EC2InstanceSavingsPlan < 0 {
+		return fmt.Errorf(
+			"ec2 instance savings plan weight must be non-negative, got %d",
+			c.Overlays.Weights.EC2InstanceSavingsPlan,
+		)
+	}
+	if c.Overlays.Weights.ComputeSavingsPlan < 0 {
+		return fmt.Errorf(
+			"compute savings plan weight must be non-negative, got %d",
+			c.Overlays.Weights.ComputeSavingsPlan,
+		)
 	}
 
 	return nil

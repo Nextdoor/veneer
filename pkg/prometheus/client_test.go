@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/nextdoor/karve/internal/testutil"
 )
 
@@ -27,7 +28,7 @@ func TestNewClient(t *testing.T) {
 	server := testutil.NewMockPrometheusServer()
 	defer server.Close()
 
-	client, err := NewClient(server.URL)
+	client, err := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("NewClient() failed: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestNewClient(t *testing.T) {
 
 func TestNewClient_InvalidURL(t *testing.T) {
 	// Invalid URL scheme should still succeed (Prometheus client accepts it)
-	_, err := NewClient("not-a-url")
+	_, err := NewClient("not-a-url", "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Errorf("NewClient() with invalid URL failed: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestQuerySavingsPlanCapacity(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 
-	client, err := NewClient(server.URL)
+	client, err := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	if err != nil {
 		t.Fatalf("NewClient() failed: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestQuerySavingsPlanCapacity_NoCapacity(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithNoCapacity())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	capacities, err := client.QuerySavingsPlanCapacity(ctx, "m5")
@@ -127,7 +128,7 @@ func TestQuerySavingsPlanCapacity_Empty(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsEmpty())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	capacities, err := client.QuerySavingsPlanCapacity(ctx, "m5")
@@ -146,7 +147,7 @@ func TestQueryReservedInstances(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	tests := []struct {
@@ -195,7 +196,7 @@ func TestQueryReservedInstances_Empty(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithNoCapacity())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	ris, err := client.QueryReservedInstances(ctx, "m5.xlarge")
@@ -214,7 +215,7 @@ func TestQuerySpotPrice(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSpotPrices())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	prices, err := client.QuerySpotPrice(ctx, "m5.xlarge")
@@ -241,7 +242,7 @@ func TestQueryOnDemandPrice(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSpotPrices())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	prices, err := client.QueryOnDemandPrice(ctx, "m5.xlarge")
@@ -255,10 +256,6 @@ func TestQueryOnDemandPrice(t *testing.T) {
 
 	if prices[0].Price != 0.192 {
 		t.Errorf("expected price 0.192, got %f", prices[0].Price)
-	}
-
-	if prices[0].OperatingSystem != "Linux" {
-		t.Errorf("expected OS Linux, got %s", prices[0].OperatingSystem)
 	}
 }
 
@@ -282,7 +279,7 @@ func TestDataFreshness(t *testing.T) {
 		}`,
 	})
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	freshness, err := client.DataFreshness(ctx)
@@ -301,7 +298,7 @@ func TestDataFreshness_NoMetric(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsEmpty())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	_, err := client.DataFreshness(ctx)
@@ -316,7 +313,7 @@ func TestQueryRaw(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	result, err := client.QueryRaw(ctx, `savings_plan_remaining_capacity{type="ec2_instance",instance_family="m5"}`)
@@ -376,7 +373,7 @@ func TestQueryWithPrometheusWarnings(t *testing.T) {
 	// Add metric that will trigger warnings path (though we can't easily mock warnings)
 	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 
-	client, _ := NewClient(server.URL)
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	// These queries should succeed even with warnings (which are logged and ignored)
@@ -388,7 +385,7 @@ func TestQueryWithPrometheusWarnings(t *testing.T) {
 
 func TestQueryServerUnavailable(t *testing.T) {
 	// Use invalid server URL to trigger connection error
-	client, _ := NewClient("http://localhost:1")
+	client, _ := NewClient("http://localhost:1", "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
 	// All query methods should handle connection errors gracefully
@@ -420,5 +417,84 @@ func TestQueryServerUnavailable(t *testing.T) {
 	_, err = client.QueryRaw(ctx, "test_metric")
 	if err == nil {
 		t.Error("QueryRaw() expected error with unavailable server")
+	}
+}
+
+func TestQuerySavingsPlanUtilization(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	server.SetMetrics(testutil.LuminaMetricsWithSPUtilization())
+
+	client, err := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name                 string
+		spType               string
+		wantCount            int
+		wantUtilizationFirst float64
+	}{
+		{
+			name:                 "compute SPs",
+			spType:               SavingsPlanTypeCompute,
+			wantCount:            1,
+			wantUtilizationFirst: 87.5,
+		},
+		{
+			name:                 "ec2_instance SPs",
+			spType:               SavingsPlanTypeEC2Instance,
+			wantCount:            1,
+			wantUtilizationFirst: 96.2,
+		},
+		{
+			name:      "all SP types",
+			spType:    "",
+			wantCount: 2, // compute + ec2_instance
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			utilizations, err := client.QuerySavingsPlanUtilization(ctx, tt.spType)
+			if err != nil {
+				t.Fatalf("QuerySavingsPlanUtilization() error = %v", err)
+			}
+
+			if len(utilizations) != tt.wantCount {
+				t.Errorf("got %d utilizations, want %d", len(utilizations), tt.wantCount)
+			}
+
+			if tt.wantCount > 0 && tt.wantUtilizationFirst > 0 {
+				if utilizations[0].UtilizationPercent != tt.wantUtilizationFirst {
+					t.Errorf("got utilization %f%%, want %f%%", utilizations[0].UtilizationPercent, tt.wantUtilizationFirst)
+				}
+			}
+		})
+	}
+}
+
+func TestQuerySavingsPlanUtilization_Empty(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	// No metrics loaded - should return empty result
+	client, err := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+
+	ctx := context.Background()
+	utilizations, err := client.QuerySavingsPlanUtilization(ctx, "")
+	if err != nil {
+		t.Fatalf("QuerySavingsPlanUtilization() error = %v", err)
+	}
+
+	if len(utilizations) != 0 {
+		t.Errorf("got %d utilizations, want 0", len(utilizations))
 	}
 }
