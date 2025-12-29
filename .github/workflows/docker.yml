@@ -23,12 +23,6 @@ on:
       image-version:
         description: 'Version extracted from git tag (empty if not a tag)'
         value: ${{ jobs.manifest.outputs.image-version }}
-  push:
-    branches:
-      - main
-      - 'feature/**'
-    tags:
-      - 'v*'
   pull_request:
     branches:
       - main
