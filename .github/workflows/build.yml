@@ -7,8 +7,9 @@ on:
       - main
 
 jobs:
-  build:
-    name: Build
+  # Build Go binary on PRs and main
+  build-binary:
+    name: Build Binary
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -22,3 +23,10 @@ jobs:
 
       - name: Build binary
         run: make build
+
+  # Build and publish Docker images ONLY on main branch pushes
+  build-docker:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/docker.yml
+    with:
+      publish: true
