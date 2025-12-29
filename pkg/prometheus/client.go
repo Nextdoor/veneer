@@ -67,27 +67,31 @@ const (
 // It wraps the official Prometheus Go client and provides typed methods
 // for the specific metrics Karve needs.
 //
-// The client is scoped to a specific AWS account and region to prevent
-// creating NodeOverlays for capacity that won't apply to this cluster.
+// The client is scoped to a specific AWS account and region to ensure we only
+// query for region-specific discounts (Reserved Instances and EC2 Instance Savings Plans)
+// that apply to this cluster. Compute Savings Plans are intentionally NOT filtered by
+// region since they apply globally across all regions.
 type Client struct {
 	api       v1.API
-	accountID string      // AWS account ID to filter queries (prevents cross-account queries)
-	region    string      // AWS region to filter queries (prevents cross-region queries)
+	accountID string      // AWS account ID for filtering account-scoped discounts (RIs, EC2 Instance SPs)
+	region    string      // AWS region for filtering region-scoped discounts (RIs, EC2 Instance SPs)
 	logger    logr.Logger // Logger for debugging query execution
 }
 
 // NewClient creates a new Prometheus client scoped to a specific AWS account and region.
 //
 // The url parameter should be the base URL of the Prometheus server (e.g., "http://prometheus:9090").
-// The accountID and region parameters are used to filter all queries to only return metrics
-// for capacity in this cluster's account and region.
+// The accountID and region parameters are used to filter queries for region-specific discounts
+// (Reserved Instances and EC2 Instance Savings Plans) that apply to this cluster.
+// Compute Savings Plans are NOT filtered by region since they apply globally.
 // The logger parameter is used for debugging query execution (pass logr.Discard() to disable).
 //
 // Why scoping is critical:
 // Lumina monitors multiple AWS accounts and regions, but this Karve instance runs in ONE cluster
-// in ONE account and ONE region. Without filtering, we would create NodeOverlays for RIs/SPs from
-// other accounts/regions, causing Karpenter to launch on-demand instances that won't actually
-// receive the pre-paid discount.
+// in ONE account and ONE region. Reserved Instances and EC2 Instance Savings Plans are region-specific,
+// so we must filter by account+region to avoid creating NodeOverlays for discounts that won't apply
+// to instances launched in this cluster. Compute Savings Plans are intentionally not filtered by
+// region because they apply globally across all regions within the account.
 func NewClient(url, accountID, region string, logger logr.Logger) (*Client, error) {
 	promClient, err := api.NewClient(api.Config{
 		Address: url,
