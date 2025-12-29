@@ -23,7 +23,6 @@ on:
       image-version:
         description: 'Version extracted from git tag (empty if not a tag)'
         value: ${{ jobs.manifest.outputs.image-version }}
-  pull_request: {}
 
 env:
   IMAGE_REGISTRY: ghcr.io
