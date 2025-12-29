@@ -1,0 +1,175 @@
+# CI-specific values for testing the Karve Helm chart
+# This file enables the Lumina subchart with mock data for E2E testing
+
+# Single replica for CI
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: karve
+
+# Karve configuration for CI
+config:
+  # Point to Lumina's metrics service
+  prometheusUrl: "http://karve-test-lumina-metrics-service:8080"
+
+  logLevel: "debug"
+
+  # Mock AWS configuration for CI
+  aws:
+    accountId: "123456789012"
+    region: "us-west-2"
+
+  overlays:
+    utilizationThreshold: 95.0
+    weights:
+      reservedInstance: 30
+      ec2InstanceSavingsPlan: 20
+      computeSavingsPlan: 10
+    naming:
+      reservedInstancePrefix: "cost-aware-ri"
+      ec2InstanceSavingsPlanPrefix: "cost-aware-ec2-sp"
+      computeSavingsPlanPrefix: "cost-aware-compute-sp"
+
+# Always pull latest image for CI
+image:
+  pullPolicy: Always
+
+# Reduced resources for CI
+resources:
+  limits:
+    cpu: "500m"
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Enable Lumina subchart for CI testing
+lumina:
+  enabled: true
+
+  # Single replica for CI
+  replicaCount: 1
+
+  # Mock AWS account configuration pointing to LocalStack
+  # LocalStack uses account ID 000000000000 by default
+  # Uses testData for APIs not supported by LocalStack free tier (Pricing, Savings Plans)
+  config:
+    defaultRegion: us-west-2
+    logLevel: debug
+    accountValidationInterval: "1h"
+    awsAccounts:
+      - accountId: "000000000000"
+        name: "LocalStack"
+        assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-controller"
+
+    # TestData provides mock data for APIs not supported by LocalStack free tier
+    testData:
+      # Mock Savings Plans data
+      savingsPlans:
+        "000000000000":
+          - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/test-sp-1"
+            savingsPlanType: "Compute"
+            state: "active"
+            commitment: 10.0
+            start: "2024-01-01T00:00:00Z"
+            end: "2027-01-01T00:00:00Z"
+
+      # Mock Savings Plan rates
+      savingsPlanRates:
+        "test-sp-1":
+          - rate: 0.0537
+            currency: "USD"
+            unit: "Hrs"
+            productType: "Linux/UNIX"
+            serviceCode: "AmazonEC2"
+            usageType: "BoxUsage:m5.xlarge"
+            operation: "RunInstances"
+            instanceType: "m5.xlarge"
+            region: "us-west-2"
+            tenancy: "shared"
+
+      # Mock pricing data (on-demand prices)
+      pricing:
+        "us-west-2:m5.xlarge:linux": 0.192
+        "us-west-2:m5.large:linux": 0.096
+        "us-west-2:c5.large:linux": 0.085
+
+  # Always pull latest image for CI
+  image:
+    pullPolicy: Always
+
+  # Reduced resources for CI
+  resources:
+    limits:
+      cpu: "500m"
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Enable LocalStack for mocking AWS services in CI
+  # LocalStack provides fake AWS endpoints so credential checks pass
+  # Combined with testData, this allows full Lumina functionality without real AWS
+  localstack:
+    enabled: true
+    service:
+      type: ClusterIP
+    # Seed LocalStack with test data (mirrors Lumina's CI setup)
+    startupScriptContent: |
+      #!/bin/bash
+      set -e
+      echo "Seeding LocalStack with test data..."
+
+      # Create IAM policy for Lumina
+      awslocal iam create-policy \
+        --policy-name LuminaReadOnlyPolicy \
+        --description "Read-only access to EC2 and Savings Plans" \
+        --policy-document '{
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Action": [
+              "ec2:DescribeInstances",
+              "ec2:DescribeReservedInstances",
+              "ec2:DescribeSpotPriceHistory",
+              "savingsplans:DescribeSavingsPlans",
+              "pricing:GetProducts"
+            ],
+            "Resource": "*"
+          }]
+        }'
+
+      # Create IAM role for Lumina controller
+      awslocal iam create-role \
+        --role-name lumina-controller \
+        --assume-role-policy-document '{
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": "ec2.amazonaws.com"},
+            "Action": "sts:AssumeRole"
+          }]
+        }'
+
+      # Attach policy to role
+      awslocal iam attach-role-policy \
+        --role-name lumina-controller \
+        --policy-arn arn:aws:iam::000000000000:policy/LuminaReadOnlyPolicy
+
+      # Create test EC2 instances
+      awslocal ec2 run-instances \
+        --image-id ami-12345678 \
+        --instance-type m5.xlarge \
+        --count 2 \
+        --region us-west-2 \
+        --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=karve-test-1},{Key=Environment,Value=test}]'
+
+      awslocal ec2 run-instances \
+        --image-id ami-12345678 \
+        --instance-type c5.large \
+        --count 1 \
+        --region us-west-2 \
+        --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=karve-test-2},{Key=Environment,Value=production}]'
+
+      echo "LocalStack seeding complete!"

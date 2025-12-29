@@ -32,7 +32,7 @@ jobs:
   # Build AMD64 image natively on x64 runner
   build-amd64:
     name: Build AMD64
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}
@@ -41,6 +41,9 @@ jobs:
       packages: write
 
     steps:
+      - name: Setup RunsOn magic cache
+        uses: runs-on/action@v2
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -89,7 +92,7 @@ jobs:
   # Build ARM64 image natively on arm64 runner
   build-arm64:
     name: Build ARM64
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-arm64/cache=/var/cache/magic/extras=magic-cache
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}
@@ -98,6 +101,9 @@ jobs:
       packages: write
 
     steps:
+      - name: Setup RunsOn magic cache
+        uses: runs-on/action@v2
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -147,7 +153,7 @@ jobs:
   manifest:
     name: Create Manifest
     needs: [build-amd64, build-arm64]
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
     outputs:
       image-version: ${{ steps.version.outputs.version }}
     permissions:

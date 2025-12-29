@@ -1,0 +1,25 @@
+apiVersion: v2
+name: karve
+version: 0.1.0
+appVersion: "main"
+description: Karve - Cost-Aware Karpenter Provisioning Controller
+type: application
+keywords:
+  - kubernetes
+  - karpenter
+  - cost-optimization
+  - aws
+  - savings-plans
+  - reserved-instances
+home: https://github.com/Nextdoor/karve
+sources:
+  - https://github.com/Nextdoor/karve
+maintainers:
+  - name: Karve Maintainers
+    url: https://github.com/Nextdoor/karve
+dependencies:
+  # Lumina for cost visibility (optional - can use external Lumina instance)
+  - name: lumina
+    version: "^0.4.0"
+    condition: lumina.enabled
+    repository: "https://oss.nextdoor.com/lumina"

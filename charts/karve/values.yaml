@@ -1,0 +1,225 @@
+# Default values for karve.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- Number of controller replicas (leader election handles HA)
+replicaCount: 2
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/nextdoor/karve
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- Override the name of the chart
+nameOverride: ""
+
+# -- Override the full name of the release
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Automatically mount a ServiceAccount's API credentials
+  automount: true
+  # -- Annotations to add to the service account (e.g., eks.amazonaws.com/role-arn for IRSA)
+  annotations: {}
+  # -- The name of the service account to use. If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- Annotations to add to the pod
+podAnnotations: {}
+
+# -- Labels to add to the pod
+podLabels: {}
+
+podSecurityContext:
+  # -- Run as non-root user
+  runAsNonRoot: true
+  # -- User ID to run the container as
+  runAsUser: 65532
+  # -- Group ID for filesystem access
+  fsGroup: 65532
+  seccompProfile:
+    # -- Seccomp profile type
+    type: RuntimeDefault
+
+securityContext:
+  # -- Prevent privilege escalation
+  allowPrivilegeEscalation: false
+  capabilities:
+    # -- Drop all capabilities
+    drop:
+    - ALL
+  # -- Read-only root filesystem
+  readOnlyRootFilesystem: true
+  # -- Run as non-root user
+  runAsNonRoot: true
+  # -- User ID to run the container as
+  runAsUser: 65532
+  seccompProfile:
+    # -- Seccomp profile type
+    type: RuntimeDefault
+
+# -- Controller configuration passed directly to config.yaml
+# -- All fields map directly to the Config struct in pkg/config/config.go
+# -- See config.example.yaml in the repository root for full documentation
+config:
+  # -- Prometheus URL for querying Lumina metrics
+  prometheusUrl: "http://prometheus:9090"
+
+  # -- Log level (debug, info, warn, error)
+  logLevel: "info"
+
+  # -- Metrics endpoint bind address
+  metricsBindAddress: ":8080"
+
+  # -- Health probe endpoint bind address
+  healthProbeBindAddress: ":8081"
+
+  # -- AWS configuration for scoping capacity queries
+  aws:
+    # -- AWS account ID where this cluster runs
+    accountId: ""
+    # -- AWS region where this cluster runs
+    region: ""
+
+  # -- NodeOverlay lifecycle configuration
+  overlays:
+    # -- Utilization threshold percentage for deleting overlays (0-100)
+    utilizationThreshold: 95.0
+
+    # -- Weights for overlay priority (higher = higher priority)
+    weights:
+      # -- Reserved Instance overlay weight
+      reservedInstance: 30
+      # -- EC2 Instance Savings Plan overlay weight
+      ec2InstanceSavingsPlan: 20
+      # -- Compute Savings Plan overlay weight
+      computeSavingsPlan: 10
+
+    # -- Naming prefixes for different overlay types
+    naming:
+      # -- Reserved Instance overlay name prefix
+      reservedInstancePrefix: "cost-aware-ri"
+      # -- EC2 Instance Savings Plan overlay name prefix
+      ec2InstanceSavingsPlanPrefix: "cost-aware-ec2-sp"
+      # -- Compute Savings Plan overlay name prefix
+      computeSavingsPlanPrefix: "cost-aware-compute-sp"
+
+controllerManager:
+  leaderElection:
+    # -- Enable leader election for high availability
+    enabled: true
+
+  # -- Extra command-line arguments to pass to the controller
+  extraArgs: []
+
+metricsService:
+  # -- Metrics service type
+  type: ClusterIP
+  # -- Metrics service port
+  port: 8080
+  # -- Annotations to add to the metrics service
+  annotations: {}
+
+# -- Resource limits and requests for the controller
+resources:
+  limits:
+    cpu: "1"
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 128Mi
+
+livenessProbe:
+  # -- Liveness probe configuration
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+readinessProbe:
+  # -- Readiness probe configuration
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+  failureThreshold: 3
+
+# -- Additional volumes for the deployment
+volumes: []
+  # - name: custom-config
+  #   secret:
+  #     secretName: mysecret
+  #     optional: false
+
+# -- Additional volume mounts for the deployment
+volumeMounts: []
+  # - name: custom-config
+  #   mountPath: "/etc/config"
+  #   readOnly: true
+
+# -- Node selector for pod assignment
+nodeSelector: {}
+
+# -- Tolerations for pod assignment
+tolerations: []
+
+# -- Affinity rules for pod assignment
+affinity: {}
+
+rbac:
+  # -- Create RBAC resources (ClusterRole, ClusterRoleBinding)
+  create: true
+
+serviceMonitor:
+  # -- Create ServiceMonitor resource for Prometheus Operator
+  enabled: true
+  # -- Scrape interval for Prometheus
+  interval: 30s
+  # -- Scrape timeout for Prometheus
+  scrapeTimeout: 10s
+  # -- Additional labels for the ServiceMonitor
+  labels: {}
+  # -- Additional annotations for the ServiceMonitor
+  annotations: {}
+  # -- RelabelConfigs to apply to samples before scraping
+  # -- Ref: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
+  relabelings: []
+    # - sourceLabels: [__meta_kubernetes_pod_node_name]
+    #   separator: ;
+    #   regex: ^(.*)$
+    #   targetLabel: nodename
+    #   replacement: $1
+    #   action: replace
+  # -- MetricRelabelConfigs to apply to samples before ingestion
+  # -- Ref: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs
+  metricRelabelings: []
+    # - sourceLabels: [__name__]
+    #   separator: ;
+    #   regex: ^fluentd_output_status_buffer_(.*)|fluentd_output_status_retry_count$
+    #   replacement: $1
+    #   action: drop
+
+# -- Lumina subchart configuration
+# -- When enabled, deploys Lumina alongside Karve for a complete cost optimization stack
+# -- See https://github.com/Nextdoor/lumina for Lumina documentation
+lumina:
+  # -- Enable Lumina as a subchart
+  enabled: false
+  # -- Lumina chart values (see Lumina chart documentation for all options)
+  # replicaCount: 2
+  # config:
+  #   defaultRegion: us-west-2
+  #   awsAccounts: []
