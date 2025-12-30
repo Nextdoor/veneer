@@ -1,0 +1,7 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>nextdoor/renovate:defaults",
+    "github>nextdoor/renovate:gentle-onboarding"
+  ]
+}
