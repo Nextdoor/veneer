@@ -1,0 +1,48 @@
+# CI-specific values for testing the Karve Helm chart
+
+# Single replica for CI
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: karve
+
+# Karve configuration for CI
+config:
+  # Configure Prometheus URL - users should point this to their own Prometheus/Lumina instance
+  prometheusUrl: "http://prometheus-server:9090"
+
+  logLevel: "debug"
+
+  # AWS configuration
+  aws:
+    accountId: "123456789012"
+    region: "us-west-2"
+
+  overlays:
+    utilizationThreshold: 95.0
+    weights:
+      reservedInstance: 30
+      ec2InstanceSavingsPlan: 20
+      computeSavingsPlan: 10
+    naming:
+      reservedInstancePrefix: "cost-aware-ri"
+      ec2InstanceSavingsPlanPrefix: "cost-aware-ec2-sp"
+      computeSavingsPlanPrefix: "cost-aware-compute-sp"
+
+# Always pull latest image for CI
+image:
+  pullPolicy: Always
+
+# Reduced resources for CI
+resources:
+  limits:
+    cpu: "500m"
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Disable Lumina subchart - users should deploy their own Lumina or Prometheus instance
+lumina:
+  enabled: false
