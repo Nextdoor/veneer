@@ -84,10 +84,10 @@ config:
 
   # -- AWS configuration for scoping capacity queries
   aws:
-    # -- AWS account ID where this cluster runs
-    accountId: ""
-    # -- AWS region where this cluster runs
-    region: ""
+    # -- AWS account ID where this cluster runs (REQUIRED)
+    accountId: "123456789012"
+    # -- AWS region where this cluster runs (REQUIRED)
+    region: "us-west-2"
 
   # -- NodeOverlay lifecycle configuration
   overlays:
