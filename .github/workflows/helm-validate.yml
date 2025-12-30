@@ -1,0 +1,72 @@
+name: Helm Chart Validation
+
+on:
+  pull_request:
+    paths:
+      - 'charts/karve/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/karve/**'
+
+jobs:
+  validate:
+    name: Validate Helm Chart
+    runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64/cache=/var/cache/magic/extras=magic-cache
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.16.3
+
+      - name: Helm Lint
+        run: |
+          helm lint charts/karve
+
+      - name: Build chart dependencies
+        run: |
+          helm dependency update charts/karve
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1
+        with:
+          version: v0.26.0
+          kubectl_version: v1.31.0
+
+      - name: Install chart
+        run: |
+          helm install karve-test charts/karve \
+            --namespace karve-system \
+            --create-namespace \
+            --values charts/karve/ci/ci-values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n karve-system
+          kubectl get deployment -n karve-system
+          kubectl rollout status deployment/karve-test-controller-manager -n karve-system --timeout=5m
+
+      - name: Check service endpoints
+        run: |
+          kubectl get svc -n karve-system
+          kubectl get endpoints -n karve-system
+
+      - name: Get pod logs
+        if: failure()
+        run: |
+          kubectl logs -n karve-system -l app.kubernetes.io/name=karve --tail=100
+
+      - name: Uninstall chart
+        if: always()
+        run: |
+          helm uninstall karve-test -n karve-system || true

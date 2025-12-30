@@ -10,10 +10,9 @@ jobs:
     with:
       publish: true
 
-  # Future: Add Helm chart publishing here
-  # publish-helm:
-  #   needs: publish-docker
-  #   uses: ./.github/workflows/helm-release.yml
-  #   with:
-  #     version: ${{ needs.publish-docker.outputs.image-version }}
-  #     image-tag: ${{ needs.publish-docker.outputs.image-version }}
+  publish-helm:
+    needs: publish-docker
+    uses: ./.github/workflows/helm-release.yml
+    with:
+      version: ${{ needs.publish-docker.outputs.image-version }}
+      image-tag: ${{ needs.publish-docker.outputs.image-version }}
