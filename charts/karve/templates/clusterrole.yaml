@@ -49,4 +49,12 @@ rules:
   - update
   - patch
   - delete
+# Event permissions for controller-runtime event recording
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 {{- end }}
