@@ -57,6 +57,85 @@ data:
                 start: "2024-06-01T00:00:00Z"
                 end: "2027-06-01T00:00:00Z"
 
+          # Mock Savings Plan rates - prevents API calls to LocalStack
+          # Keys are SP IDs (last segment of ARN), not full ARNs
+          savingsPlanRates:
+            "dev-compute-sp-001":
+              - rate: 0.0537
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.xlarge"
+                operation: "RunInstances"
+                instanceType: "m5.xlarge"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0269
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.large"
+                operation: "RunInstances"
+                instanceType: "m5.large"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0420
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:c5.large"
+                operation: "RunInstances"
+                instanceType: "c5.large"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0350
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:r5.large"
+                operation: "RunInstances"
+                instanceType: "r5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
+            "dev-ec2-sp-001":
+              - rate: 0.0480
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.xlarge"
+                operation: "RunInstances"
+                instanceType: "m5.xlarge"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0240
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.large"
+                operation: "RunInstances"
+                instanceType: "m5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
+            "dev-ec2-sp-002":
+              - rate: 0.0400
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:c5.large"
+                operation: "RunInstances"
+                instanceType: "c5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
           # On-demand pricing for cost calculations
           pricing:
             "us-west-2:m5.xlarge:linux": 0.192
