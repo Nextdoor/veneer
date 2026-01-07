@@ -168,3 +168,75 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+##@ Development Environment
+
+DEV_ENV_DIR := hack/dev-env
+
+.PHONY: dev-env-up
+dev-env-up: kind-create ## Deploy full dev environment (LocalStack, Lumina, Prometheus, mock nodes)
+	@echo "Deploying development environment..."
+	@echo ""
+	@echo "Step 1/4: Deploying LocalStack..."
+	kubectl apply -k $(DEV_ENV_DIR)/localstack
+	@echo ""
+	@echo "Step 2/4: Waiting for LocalStack to be ready..."
+	kubectl wait --for=condition=available --timeout=120s deployment/localstack -n localstack
+	@echo "Waiting for LocalStack to seed data (30s)..."
+	@sleep 30
+	@echo ""
+	@echo "Step 3/4: Deploying Lumina and Prometheus..."
+	kubectl apply -k $(DEV_ENV_DIR)/lumina
+	kubectl apply -k $(DEV_ENV_DIR)/prometheus
+	@echo ""
+	@echo "Step 4/4: Creating mock Kubernetes nodes..."
+	kubectl apply -k $(DEV_ENV_DIR)/nodes
+	@echo ""
+	@echo "Waiting for deployments to be ready..."
+	kubectl wait --for=condition=available --timeout=120s deployment/lumina-controller -n lumina-system || true
+	kubectl wait --for=condition=available --timeout=60s deployment/prometheus -n prometheus
+	@echo ""
+	@echo "============================================"
+	@echo "Development environment is ready!"
+	@echo ""
+	@echo "To access Prometheus (for Veneer to query):"
+	@echo "  kubectl port-forward -n prometheus svc/prometheus 9090:9090"
+	@echo ""
+	@echo "To access Lumina metrics directly:"
+	@echo "  kubectl port-forward -n lumina-system svc/lumina-metrics 8080:8080"
+	@echo ""
+	@echo "To run Veneer against this environment:"
+	@echo "  1. Start port-forward: kubectl port-forward -n prometheus svc/prometheus 9090:9090"
+	@echo "  2. Run Veneer: make run"
+	@echo "============================================"
+
+.PHONY: dev-env-down
+dev-env-down: ## Tear down the dev environment (keeps Kind cluster)
+	@echo "Tearing down development environment..."
+	kubectl delete -k $(DEV_ENV_DIR)/nodes --ignore-not-found
+	kubectl delete -k $(DEV_ENV_DIR)/prometheus --ignore-not-found
+	kubectl delete -k $(DEV_ENV_DIR)/lumina --ignore-not-found
+	kubectl delete -k $(DEV_ENV_DIR)/localstack --ignore-not-found
+	@echo "Development environment torn down."
+	@echo "Note: Kind cluster '$(KIND_CLUSTER_NAME)' still exists. Use 'make kind-delete' to remove it."
+
+.PHONY: dev-env-restart
+dev-env-restart: dev-env-down dev-env-up ## Restart the dev environment
+
+.PHONY: dev-env-status
+dev-env-status: ## Show status of dev environment components
+	@echo "=== LocalStack ==="
+	@kubectl get pods -n localstack 2>/dev/null || echo "Not deployed"
+	@echo ""
+	@echo "=== Lumina ==="
+	@kubectl get pods -n lumina-system 2>/dev/null || echo "Not deployed"
+	@echo ""
+	@echo "=== Prometheus ==="
+	@kubectl get pods -n prometheus 2>/dev/null || echo "Not deployed"
+	@echo ""
+	@echo "=== Mock Nodes ==="
+	@kubectl get nodes -l topology.kubernetes.io/region=us-west-2 2>/dev/null || echo "Not created"
+
+.PHONY: dev-env-logs
+dev-env-logs: ## Show logs from Lumina controller
+	kubectl logs -n lumina-system -l app=lumina-controller --tail=100 -f
