@@ -1,5 +1,5 @@
 ---
-# This workflow is responsible for building, tagging, and publishing Docker images for Karve.
+# This workflow is responsible for building, tagging, and publishing Docker images for Veneer.
 # It builds multi-architecture images (AMD64 and ARM64) natively on respective runners for optimal performance.
 #
 # Image Tagging Strategy:
@@ -21,12 +21,12 @@ on:
         default: false
     outputs:
       image-version:
-        description: 'Version extracted from git tag (empty if not a tag)'
+        description: "Version extracted from git tag (empty if not a tag)"
         value: ${{ jobs.manifest.outputs.image-version }}
 
 env:
   IMAGE_REGISTRY: ghcr.io
-  IMAGE_NAME: nextdoor/karve
+  IMAGE_NAME: nextdoor/veneer
 
 jobs:
   # Build AMD64 image natively on x64 runner

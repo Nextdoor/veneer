@@ -1,4 +1,4 @@
-# Default values for karve.
+# Default values for veneer.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
@@ -7,7 +7,7 @@ replicaCount: 2
 
 image:
   # -- Container image repository
-  repository: ghcr.io/nextdoor/karve
+  repository: ghcr.io/nextdoor/veneer
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion
@@ -55,7 +55,7 @@ securityContext:
   capabilities:
     # -- Drop all capabilities
     drop:
-    - ALL
+      - ALL
   # -- Read-only root filesystem
   readOnlyRootFilesystem: true
   # -- Run as non-root user
@@ -213,7 +213,7 @@ serviceMonitor:
     #   action: drop
 
 # -- Lumina subchart configuration
-# -- When enabled, deploys Lumina alongside Karve for a complete cost optimization stack
+# -- When enabled, deploys Lumina alongside Veneer for a complete cost optimization stack
 # -- See https://github.com/Nextdoor/lumina for Lumina documentation
 lumina:
   # -- Enable Lumina as a subchart

@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "karve.fullname" . }}-controller-manager
+  name: {{ include "veneer.fullname" . }}-controller-manager
   labels:
-    {{- include "karve.labels" . | nindent 4 }}
+    {{- include "veneer.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "karve.selectorLabels" . | nindent 6 }}
+      {{- include "veneer.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -18,7 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "karve.labels" . | nindent 8 }}
+        {{- include "veneer.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -27,7 +27,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "karve.serviceAccountName" . }}
+      serviceAccountName: {{ include "veneer.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -39,7 +39,7 @@ spec:
         command:
         - /manager
         args:
-        - --config=/etc/karve/config/config.yaml
+        - --config=/etc/veneer/config/config.yaml
         {{- if .Values.controllerManager.leaderElection.enabled }}
         - --leader-elect
         {{- end }}
@@ -61,7 +61,7 @@ spec:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
         - name: config
-          mountPath: /etc/karve/config
+          mountPath: /etc/veneer/config
           readOnly: true
         {{- with .Values.volumeMounts }}
           {{- toYaml . | nindent 12 }}
@@ -69,7 +69,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: {{ include "karve.fullname" . }}-config
+          name: {{ include "veneer.fullname" . }}-config
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

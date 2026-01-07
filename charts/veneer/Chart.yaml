@@ -1,8 +1,8 @@
 apiVersion: v2
-name: karve
+name: veneer
 version: 0.1.0
 appVersion: "main"
-description: Karve - Cost-Aware Karpenter Provisioning Controller
+description: Veneer - Cost-Aware Karpenter Provisioning Controller
 type: application
 keywords:
   - kubernetes
@@ -11,12 +11,12 @@ keywords:
   - aws
   - savings-plans
   - reserved-instances
-home: https://github.com/Nextdoor/karve
+home: https://github.com/Nextdoor/veneer
 sources:
-  - https://github.com/Nextdoor/karve
+  - https://github.com/Nextdoor/veneer
 maintainers:
-  - name: Karve Maintainers
-    url: https://github.com/Nextdoor/karve
+  - name: Veneer Maintainers
+    url: https://github.com/Nextdoor/veneer
 dependencies:
   # Lumina for cost visibility (optional - can use external Lumina instance)
   - name: lumina

@@ -37,5 +37,5 @@ config.yaml
 # Helm chart artifacts
 *.tgz
 .deploy/
-charts/karve/Chart.lock
-charts/karve/charts/
+charts/veneer/Chart.lock
+charts/veneer/charts/

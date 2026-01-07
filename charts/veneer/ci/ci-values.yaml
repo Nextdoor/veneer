@@ -1,13 +1,13 @@
-# CI-specific values for testing the Karve Helm chart
+# CI-specific values for testing the Veneer Helm chart
 
 # Single replica for CI
 replicaCount: 1
 
 serviceAccount:
   create: true
-  name: karve
+  name: veneer
 
-# Karve configuration for CI
+# Veneer configuration for CI
 config:
   # Configure Prometheus URL - users should point this to their own Prometheus/Lumina instance
   prometheusUrl: "http://prometheus-server:9090"

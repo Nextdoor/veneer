@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,10 +23,10 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
-	"github.com/nextdoor/karve/internal/testutil"
-	"github.com/nextdoor/karve/pkg/config"
-	"github.com/nextdoor/karve/pkg/overlay"
-	"github.com/nextdoor/karve/pkg/prometheus"
+	"github.com/nextdoor/veneer/internal/testutil"
+	"github.com/nextdoor/veneer/pkg/config"
+	"github.com/nextdoor/veneer/pkg/overlay"
+	"github.com/nextdoor/veneer/pkg/prometheus"
 )
 
 // TestDecisionEngineIntegration tests the full flow from Prometheus queries to overlay decisions.

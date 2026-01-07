@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -255,13 +255,13 @@ aws:
 	}
 
 	// Set environment variables
-	_ = os.Setenv("KARVE_PROMETHEUS_URL", "http://override:9090")
-	_ = os.Setenv("KARVE_AWS_ACCOUNT_ID", "222222222222")
-	_ = os.Setenv("KARVE_AWS_REGION", "us-west-2")
+	_ = os.Setenv("VENEER_PROMETHEUS_URL", "http://override:9090")
+	_ = os.Setenv("VENEER_AWS_ACCOUNT_ID", "222222222222")
+	_ = os.Setenv("VENEER_AWS_REGION", "us-west-2")
 	defer func() {
-		_ = os.Unsetenv("KARVE_PROMETHEUS_URL")
-		_ = os.Unsetenv("KARVE_AWS_ACCOUNT_ID")
-		_ = os.Unsetenv("KARVE_AWS_REGION")
+		_ = os.Unsetenv("VENEER_PROMETHEUS_URL")
+		_ = os.Unsetenv("VENEER_AWS_ACCOUNT_ID")
+		_ = os.Unsetenv("VENEER_AWS_REGION")
 	}()
 
 	// Load config

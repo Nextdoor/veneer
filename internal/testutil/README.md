@@ -1,10 +1,10 @@
 # Test Utilities
 
-This package provides testing utilities for Karve, including mock Prometheus servers and test fixtures for Lumina metrics.
+This package provides testing utilities for Veneer, including mock Prometheus servers and test fixtures for Lumina metrics.
 
 ## Mock Prometheus Server
 
-The `MockPrometheusServer` allows testing Karve's Prometheus client without running actual Lumina or Prometheus instances.
+The `MockPrometheusServer` allows testing Veneer's Prometheus client without running actual Lumina or Prometheus instances.
 
 ### Basic Usage
 
@@ -13,7 +13,7 @@ package mypackage
 
 import (
     "testing"
-    "github.com/nextdoor/karve/internal/testutil"
+    "github.com/nextdoor/veneer/internal/testutil"
 )
 
 func TestMyFunction(t *testing.T) {
@@ -154,7 +154,7 @@ func TestE2E_NodeOverlayCreation(t *testing.T) {
     defer server.Close()
     server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 
-    // Deploy Karve with mock Prometheus URL
+    // Deploy Veneer with mock Prometheus URL
     helmArgs := fmt.Sprintf(
         "--set prometheusUrl=%s",
         server.URL,

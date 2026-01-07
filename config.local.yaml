@@ -1,4 +1,4 @@
-# Karve Controller - Local Development Configuration
+# Veneer Controller - Local Development Configuration
 #
 # This file is used for local development with `make run`.
 # It expects you to port-forward to a Prometheus instance:
@@ -24,6 +24,6 @@ overlayManagement:
 
   # Overlay weights (higher = higher priority)
   weights:
-    reservedInstance: 30        # Highest priority (instance-type specific)
-    ec2InstanceSavingsPlan: 20  # Medium priority (family-specific)
-    computeSavingsPlan: 10      # Lowest priority (global)
+    reservedInstance: 30 # Highest priority (instance-type specific)
+    ec2InstanceSavingsPlan: 20 # Medium priority (family-specific)
+    computeSavingsPlan: 10 # Lowest priority (global)
