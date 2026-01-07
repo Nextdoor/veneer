@@ -39,7 +39,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide includi
 ### Quick Start
 
 ```bash
-# Build
+# Build (auto-installs Go into ./bin/go/)
 make build
 
 # Run tests
@@ -48,6 +48,8 @@ make test
 # Lint
 make lint
 ```
+
+No Go installation required - `make` handles it automatically.
 
 ### Running Locally
 

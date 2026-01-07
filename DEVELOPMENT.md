@@ -6,10 +6,12 @@ This guide covers local development, testing, and contribution workflows for Ven
 
 ### Required Tools
 
-- **Go 1.24+**: [Install Go](https://go.dev/doc/install)
-- **kubectl**: Kubernetes CLI configured with access to a cluster
 - **make**: Build automation (usually pre-installed on macOS/Linux)
+- **curl**: For downloading Go (usually pre-installed)
+- **kubectl**: Kubernetes CLI configured with access to a cluster
 - **git**: Version control
+
+Go is installed automatically by `make` targets - no manual installation required.
 
 ### Optional Tools
 
@@ -32,15 +34,19 @@ Veneer requires:
 git clone https://github.com/Nextdoor/veneer.git
 cd veneer
 
-# Install dependencies
-go mod download
-
-# Verify everything builds
+# Build (automatically installs Go and downloads dependencies)
 make build
 
 # Run tests
 make test
 ```
+
+The first run of `make build` or `make test` will:
+1. Download and install Go into `./bin/go/` (version from `go.mod`)
+2. Download Go module dependencies
+3. Build or test the project
+
+Subsequent runs skip the download if Go is already installed.
 
 ### 2. Configure Kubernetes Access
 
@@ -154,8 +160,8 @@ Before committing, **always** run:
 # 1. Lint the code
 make lint
 
-# 2. Run all tests with race detection
-go test -race ./...
+# 2. Run all tests
+make test
 
 # 3. If both pass, commit
 git add <files>
@@ -174,18 +180,17 @@ Veneer requires comprehensive test coverage. When adding new code, include tests
 # Run all tests
 make test
 
-# Run tests with coverage report
-go test ./... -coverprofile=cover.out
-go tool cover -html=cover.out
+# View coverage report
+make cover
 
-# Run tests for a specific package
-go test ./pkg/overlay/... -v
+# Run tests for a specific package (use local Go)
+./bin/go/bin/go test ./pkg/overlay/... -v
 
 # Run a specific test
-go test ./pkg/overlay/... -run TestAnalyzeComputeSavingsPlan -v
+./bin/go/bin/go test ./pkg/overlay/... -run TestAnalyzeComputeSavingsPlan -v
 
 # Run with race detection
-go test -race ./...
+./bin/go/bin/go test -race ./pkg/... ./cmd/... ./internal/...
 ```
 
 ### Integration Tests
@@ -194,10 +199,10 @@ Integration tests validate end-to-end behavior with real Prometheus queries and 
 
 ```bash
 # Run all integration tests
-go test ./pkg/overlay/... -run Integration -v
+./bin/go/bin/go test ./pkg/overlay/... -run Integration -v
 
 # Run specific integration test
-go test ./pkg/overlay/... -run TestDecisionEngineIntegration -v
+./bin/go/bin/go test ./pkg/overlay/... -run TestDecisionEngineIntegration -v
 ```
 
 Integration tests use mock Prometheus servers and test fixtures, so they don't require a real cluster.
@@ -398,7 +403,7 @@ helm install veneer ./charts/veneer \
 1. **Create a feature branch**: `git checkout -b feature/description`
 2. **Make changes** following guidelines in [CLAUDE.md](CLAUDE.md)
 3. **Add tests** for all new functionality
-4. **Run pre-commit checks**: `make lint && go test -race ./...`
+4. **Run pre-commit checks**: `make lint && make test`
 5. **Commit** with conventional commit format
 6. **Push branch**: `git push origin feature/description`
 7. **Open Pull Request** in **draft mode** initially
@@ -513,7 +518,7 @@ If you need to debug controller-runtime behavior:
 export LOG_LEVEL=debug
 
 # Run with additional flags
-go run ./cmd/main.go \
+./bin/go/bin/go run ./cmd/main.go \
   --config=config.local.yaml \
   --zap-log-level=debug \
   --zap-devel=true
