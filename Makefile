@@ -1,19 +1,46 @@
 # Image URL to use all building/pushing image targets
 IMG ?= veneer:latest
 
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-
 # CONTAINER_TOOL defines the container tool to be used for building images.
 CONTAINER_TOOL ?= docker
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+
+## Go installation settings
+## Extracts version from toolchain directive in go.mod (e.g., "toolchain go1.24.11" -> "1.24.11")
+GO_VERSION ?= $(shell grep '^toolchain' go.mod | sed 's/toolchain go//')
+GO_INSTALL_DIR ?= $(LOCALBIN)/go
+GO ?= $(GO_INSTALL_DIR)/bin/go
+
+# Detect OS and architecture for Go download
+GOOS_LOCAL ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
+GOARCH_RAW := $(shell uname -m)
+ifeq ($(GOARCH_RAW),x86_64)
+	GOARCH_LOCAL := amd64
+else ifeq ($(GOARCH_RAW),aarch64)
+	GOARCH_LOCAL := arm64
+else ifeq ($(GOARCH_RAW),arm64)
+	GOARCH_LOCAL := arm64
+else
+	GOARCH_LOCAL := $(GOARCH_RAW)
+endif
+
+GO_TARBALL := go$(GO_VERSION).$(GOOS_LOCAL)-$(GOARCH_LOCAL).tar.gz
+GO_DOWNLOAD_URL := https://go.dev/dl/$(GO_TARBALL)
+
+## Kind settings
+KIND_VERSION ?= 0.27.0
+KIND ?= $(LOCALBIN)/kind
+KIND_CLUSTER_NAME ?= veneer
+KIND_DOWNLOAD_URL := https://kind.sigs.k8s.io/dl/v$(KIND_VERSION)/kind-$(GOOS_LOCAL)-$(GOARCH_LOCAL)
+
+# Package paths for Go commands (avoid ./... which scans into ./bin/go/src)
+GO_PACKAGES := ./cmd/... ./pkg/... ./internal/... ./test/...
 
 .PHONY: all
 all: build
@@ -27,41 +54,41 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./...
+fmt: install-go ## Run go fmt against code.
+	$(GO) fmt $(GO_PACKAGES)
 
 .PHONY: vet
-vet: ## Run go vet against code.
-	go vet ./...
+vet: install-go ## Run go vet against code.
+	$(GO) vet $(GO_PACKAGES)
 
 .PHONY: lint
 lint: fmt vet ## Run basic linting (fmt + vet). Note: golangci-lint disabled due to Go 1.24 compatibility issues.
 	@echo "Linting complete (fmt + vet only). golangci-lint temporarily disabled due to Go version incompatibility."
 
 .PHONY: test
-test: fmt vet ## Run unit tests.
-	go test ./... -coverprofile cover.out -covermode=atomic
+test: deps fmt vet ## Run unit tests.
+	$(GO) test $(GO_PACKAGES) -coverprofile cover.out -covermode=atomic
 
 .PHONY: test-e2e
-test-e2e: ## Run E2E tests (requires Kind cluster).
-	go test -v -tags=e2e -timeout=20m ./test/e2e/...
+test-e2e: deps ## Run E2E tests (requires Kind cluster).
+	$(GO) test -v -tags=e2e -timeout=20m ./test/e2e/...
 
 .PHONY: cover
-cover: ## Display test coverage report
-	go tool cover -func cover.out
+cover: install-go ## Display test coverage report
+	$(GO) tool cover -func cover.out
 
 .PHONY: coverhtml
-coverhtml: ## Generate and open HTML coverage report
-	go tool cover -html cover.out
+coverhtml: install-go ## Generate and open HTML coverage report
+	$(GO) tool cover -html cover.out
 
 ##@ Build
 
 .PHONY: build
-build: fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+build: deps fmt vet ## Build manager binary.
+	$(GO) build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: fmt vet ## Run a controller from your host (uses config.local.yaml).
+run: deps fmt vet ## Run a controller from your host (uses config.local.yaml).
 	@if [ ! -f config.local.yaml ]; then \
 		echo "Error: config.local.yaml not found. Please create it or use VENEER_PROMETHEUS_URL env var."; \
 		echo ""; \
@@ -72,14 +99,67 @@ run: fmt vet ## Run a controller from your host (uses config.local.yaml).
 		echo "  4. Run: make run"; \
 		exit 1; \
 	fi
-	go run ./cmd/main.go --config=config.local.yaml
+	$(GO) run ./cmd/main.go --config=config.local.yaml
 
 ##@ Build Dependencies
 
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
+
+.PHONY: install-go
+install-go: $(LOCALBIN) ## Download and install Go locally into ./bin/go
+	@if [ -x "$(GO)" ] && "$(GO)" version | grep -q "go$(GO_VERSION)"; then \
+		echo "Go $(GO_VERSION) already installed at $(GO_INSTALL_DIR)"; \
+	else \
+		echo "Installing Go $(GO_VERSION) to $(GO_INSTALL_DIR)..."; \
+		rm -rf "$(GO_INSTALL_DIR)"; \
+		curl -fsSL "$(GO_DOWNLOAD_URL)" -o "$(LOCALBIN)/$(GO_TARBALL)"; \
+		tar -C "$(LOCALBIN)" -xzf "$(LOCALBIN)/$(GO_TARBALL)"; \
+		rm "$(LOCALBIN)/$(GO_TARBALL)"; \
+		echo "Go $(GO_VERSION) installed successfully."; \
+		echo ""; \
+		echo "Add to your shell:"; \
+		echo "  export PATH=$(GO_INSTALL_DIR)/bin:\$$PATH"; \
+	fi
+
+.PHONY: deps
+deps: install-go ## Download Go module dependencies
+	$(GO) mod download
+
+.PHONY: install-kind
+install-kind: $(LOCALBIN) ## Download and install Kind locally into ./bin/kind
+	@if [ -x "$(KIND)" ] && "$(KIND)" version | grep -q "$(KIND_VERSION)"; then \
+		echo "Kind $(KIND_VERSION) already installed at $(KIND)"; \
+	else \
+		echo "Installing Kind $(KIND_VERSION) to $(KIND)..."; \
+		curl -fsSL "$(KIND_DOWNLOAD_URL)" -o "$(KIND)"; \
+		chmod +x "$(KIND)"; \
+		echo "Kind $(KIND_VERSION) installed successfully."; \
+	fi
+
+.PHONY: kind-create
+kind-create: install-kind ## Create a Kind cluster for development/testing
+	@if "$(KIND)" get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$"; then \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' already exists"; \
+	else \
+		echo "Creating Kind cluster '$(KIND_CLUSTER_NAME)'..."; \
+		"$(KIND)" create cluster --name "$(KIND_CLUSTER_NAME)" --wait 5m; \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' created successfully."; \
+	fi
+
+.PHONY: kind-delete
+kind-delete: install-kind ## Delete the Kind cluster
+	@if "$(KIND)" get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$"; then \
+		echo "Deleting Kind cluster '$(KIND_CLUSTER_NAME)'..."; \
+		"$(KIND)" delete cluster --name "$(KIND_CLUSTER_NAME)"; \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' deleted."; \
+	else \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' does not exist"; \
+	fi
+
+.PHONY: kind-load
+kind-load: install-kind docker-build ## Load the docker image into Kind cluster
+	"$(KIND)" load docker-image "$(IMG)" --name "$(KIND_CLUSTER_NAME)"
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
