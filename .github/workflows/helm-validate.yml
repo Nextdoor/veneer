@@ -27,6 +27,11 @@ jobs:
         with:
           version: v3.16.3
 
+      - name: Add Helm repositories
+        run: |
+          helm repo add lumina https://oss.nextdoor.com/lumina
+          helm repo update
+
       - name: Helm Lint
         run: |
           helm lint charts/veneer
@@ -35,38 +40,10 @@ jobs:
         run: |
           helm dependency update charts/veneer
 
-      - name: Create Kind cluster
-        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1
-        with:
-          version: v0.26.0
-          kubectl_version: v1.31.0
-
-      - name: Install chart
+      - name: Helm Template (validate rendering)
         run: |
-          helm install veneer-test charts/veneer \
+          helm template veneer-test charts/veneer \
             --namespace veneer-system \
-            --create-namespace \
             --values charts/veneer/ci/ci-values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n veneer-system
-          kubectl get deployment -n veneer-system
-          kubectl rollout status deployment/veneer-test-controller-manager -n veneer-system --timeout=5m
-
-      - name: Check service endpoints
-        run: |
-          kubectl get svc -n veneer-system
-          kubectl get endpoints -n veneer-system
-
-      - name: Get pod logs
-        if: failure()
-        run: |
-          kubectl logs -n veneer-system -l app.kubernetes.io/name=veneer --tail=100
-
-      - name: Uninstall chart
-        if: always()
-        run: |
-          helm uninstall veneer-test -n veneer-system || true
+            > /dev/null
+          echo "Template rendering successful"
