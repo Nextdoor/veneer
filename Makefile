@@ -33,6 +33,12 @@ endif
 GO_TARBALL := go$(GO_VERSION).$(GOOS_LOCAL)-$(GOARCH_LOCAL).tar.gz
 GO_DOWNLOAD_URL := https://go.dev/dl/$(GO_TARBALL)
 
+## Kind settings
+KIND_VERSION ?= 0.27.0
+KIND ?= $(LOCALBIN)/kind
+KIND_CLUSTER_NAME ?= veneer
+KIND_DOWNLOAD_URL := https://kind.sigs.k8s.io/dl/v$(KIND_VERSION)/kind-$(GOOS_LOCAL)-$(GOARCH_LOCAL)
+
 # Package paths for Go commands (avoid ./... which scans into ./bin/go/src)
 GO_PACKAGES := ./cmd/... ./pkg/... ./internal/... ./test/...
 
@@ -119,6 +125,41 @@ install-go: $(LOCALBIN) ## Download and install Go locally into ./bin/go
 .PHONY: deps
 deps: install-go ## Download Go module dependencies
 	$(GO) mod download
+
+.PHONY: install-kind
+install-kind: $(LOCALBIN) ## Download and install Kind locally into ./bin/kind
+	@if [ -x "$(KIND)" ] && "$(KIND)" version | grep -q "$(KIND_VERSION)"; then \
+		echo "Kind $(KIND_VERSION) already installed at $(KIND)"; \
+	else \
+		echo "Installing Kind $(KIND_VERSION) to $(KIND)..."; \
+		curl -fsSL "$(KIND_DOWNLOAD_URL)" -o "$(KIND)"; \
+		chmod +x "$(KIND)"; \
+		echo "Kind $(KIND_VERSION) installed successfully."; \
+	fi
+
+.PHONY: kind-create
+kind-create: install-kind ## Create a Kind cluster for development/testing
+	@if "$(KIND)" get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$"; then \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' already exists"; \
+	else \
+		echo "Creating Kind cluster '$(KIND_CLUSTER_NAME)'..."; \
+		"$(KIND)" create cluster --name "$(KIND_CLUSTER_NAME)" --wait 5m; \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' created successfully."; \
+	fi
+
+.PHONY: kind-delete
+kind-delete: install-kind ## Delete the Kind cluster
+	@if "$(KIND)" get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$"; then \
+		echo "Deleting Kind cluster '$(KIND_CLUSTER_NAME)'..."; \
+		"$(KIND)" delete cluster --name "$(KIND_CLUSTER_NAME)"; \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' deleted."; \
+	else \
+		echo "Kind cluster '$(KIND_CLUSTER_NAME)' does not exist"; \
+	fi
+
+.PHONY: kind-load
+kind-load: install-kind docker-build ## Load the docker image into Kind cluster
+	"$(KIND)" load docker-image "$(IMG)" --name "$(KIND_CLUSTER_NAME)"
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
