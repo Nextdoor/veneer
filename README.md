@@ -1,8 +1,8 @@
-# Karve
+# Veneer
 
 > Cost-aware Karpenter provisioning via NodeOverlay management
 
-Karve is a Kubernetes controller that optimizes Karpenter provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from [Lumina](https://github.com/Nextdoor/lumina).
+Veneer is a Kubernetes controller that optimizes Karpenter provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from [Lumina](https://github.com/Nextdoor/lumina).
 
 ## Status
 
@@ -12,7 +12,7 @@ See [RFC-0003](https://github.com/Nextdoor/cloudeng/blob/main/rfcs/RFC-0003-karp
 
 ## Overview
 
-Karve watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay CRs to:
+Veneer watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay CRs to:
 - Prefer RI/SP-covered on-demand instances when cost-effective
 - Fall back to spot when RI/SP capacity exhausted
 - Avoid provisioning thrashing with smart debouncing
@@ -22,7 +22,7 @@ Karve watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay C
 ```
 Lumina (RFC-0002) → Exposes SP/RI metrics to Prometheus
       ↓
-Karve (RFC-0003) → Queries metrics, manages NodeOverlays  
+Veneer (RFC-0003) → Queries metrics, manages NodeOverlays  
       ↓
 Karpenter → Uses adjusted pricing for provisioning decisions
 ```
@@ -31,7 +31,7 @@ Karpenter → Uses adjusted pricing for provisioning decisions
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for comprehensive development guide including:
 - Local setup and prerequisites
-- Running Karve locally with kubectl port-forward
+- Running Veneer locally with kubectl port-forward
 - Testing strategies (unit, integration, E2E)
 - Debugging tips and troubleshooting
 - Code style guidelines and contribution workflow
@@ -51,7 +51,7 @@ make lint
 
 ### Running Locally
 
-To run Karve locally against a Kubernetes cluster:
+To run Veneer locally against a Kubernetes cluster:
 
 1. **Port-forward to Prometheus/Lumina:**
    ```bash

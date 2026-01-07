@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= karve:latest
+IMG ?= veneer:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -63,7 +63,7 @@ build: fmt vet ## Build manager binary.
 .PHONY: run
 run: fmt vet ## Run a controller from your host (uses config.local.yaml).
 	@if [ ! -f config.local.yaml ]; then \
-		echo "Error: config.local.yaml not found. Please create it or use KARVE_PROMETHEUS_URL env var."; \
+		echo "Error: config.local.yaml not found. Please create it or use VENEER_PROMETHEUS_URL env var."; \
 		echo ""; \
 		echo "Quick setup:"; \
 		echo "  1. Port-forward to Prometheus: kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090"; \

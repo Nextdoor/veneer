@@ -3,12 +3,12 @@ name: Helm Chart Validation
 on:
   pull_request:
     paths:
-      - 'charts/karve/**'
+      - "charts/veneer/**"
   push:
     branches:
       - main
     paths:
-      - 'charts/karve/**'
+      - "charts/veneer/**"
 
 jobs:
   validate:
@@ -29,11 +29,11 @@ jobs:
 
       - name: Helm Lint
         run: |
-          helm lint charts/karve
+          helm lint charts/veneer
 
       - name: Build chart dependencies
         run: |
-          helm dependency update charts/karve
+          helm dependency update charts/veneer
 
       - name: Create Kind cluster
         uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1
@@ -43,30 +43,30 @@ jobs:
 
       - name: Install chart
         run: |
-          helm install karve-test charts/karve \
-            --namespace karve-system \
+          helm install veneer-test charts/veneer \
+            --namespace veneer-system \
             --create-namespace \
-            --values charts/karve/ci/ci-values.yaml \
+            --values charts/veneer/ci/ci-values.yaml \
             --wait \
             --timeout 5m
 
       - name: Verify deployment
         run: |
-          kubectl get pods -n karve-system
-          kubectl get deployment -n karve-system
-          kubectl rollout status deployment/karve-test-controller-manager -n karve-system --timeout=5m
+          kubectl get pods -n veneer-system
+          kubectl get deployment -n veneer-system
+          kubectl rollout status deployment/veneer-test-controller-manager -n veneer-system --timeout=5m
 
       - name: Check service endpoints
         run: |
-          kubectl get svc -n karve-system
-          kubectl get endpoints -n karve-system
+          kubectl get svc -n veneer-system
+          kubectl get endpoints -n veneer-system
 
       - name: Get pod logs
         if: failure()
         run: |
-          kubectl logs -n karve-system -l app.kubernetes.io/name=karve --tail=100
+          kubectl logs -n veneer-system -l app.kubernetes.io/name=veneer --tail=100
 
       - name: Uninstall chart
         if: always()
         run: |
-          helm uninstall karve-test -n karve-system || true
+          helm uninstall veneer-test -n veneer-system || true

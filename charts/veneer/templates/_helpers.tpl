@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "karve.name" -}}
+{{- define "veneer.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "karve.fullname" -}}
+{{- define "veneer.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "karve.chart" -}}
+{{- define "veneer.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "karve.labels" -}}
-helm.sh/chart: {{ include "karve.chart" . }}
-{{ include "karve.selectorLabels" . }}
+{{- define "veneer.labels" -}}
+helm.sh/chart: {{ include "veneer.chart" . }}
+{{ include "veneer.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,8 +43,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "karve.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "karve.name" . }}
+{{- define "veneer.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "veneer.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 control-plane: controller-manager
 {{- end }}
@@ -52,9 +52,9 @@ control-plane: controller-manager
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "karve.serviceAccountName" -}}
+{{- define "veneer.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "karve.fullname" . ) .Values.serviceAccount.name }}
+{{- default (include "veneer.fullname" . ) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}

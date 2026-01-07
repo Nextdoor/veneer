@@ -2,15 +2,15 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "karve.fullname" . }}-manager-rolebinding
+  name: {{ include "veneer.fullname" . }}-manager-rolebinding
   labels:
-    {{- include "karve.labels" . | nindent 4 }}
+    {{- include "veneer.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "karve.fullname" . }}-manager-role
+  name: {{ include "veneer.fullname" . }}-manager-role
 subjects:
 - kind: ServiceAccount
-  name: {{ include "karve.serviceAccountName" . }}
+  name: {{ include "veneer.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
 {{- end }}

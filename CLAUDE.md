@@ -1,12 +1,12 @@
-# Claude Code Instructions for Karve
+# Claude Code Instructions for Veneer
 
-This file contains project-specific instructions for Claude Code when working on the Karve repository.
+This file contains project-specific instructions for Claude Code when working on the Veneer repository.
 
 ## Project Context
 
 This repository is currently in active internal development but will be released as a public open-source project. All code and documentation must be written with this future in mind.
 
-Karve is a Kubernetes controller that optimizes Karpenter provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from Lumina.
+Veneer is a Kubernetes controller that optimizes Karpenter provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from Lumina.
 
 ## Code Quality Standards
 
@@ -148,7 +148,7 @@ README files should be **concise and information-dense**:
 
 Bad README:
 ```markdown
-## How to Configure Karve
+## How to Configure Veneer
 
 First, you'll need to create a configuration file. Here's how...
 [10 paragraphs of explanation]
@@ -187,11 +187,11 @@ Key principles for code comments:
 - Explain **edge cases and gotchas**
 - Reference **RFC-0003 sections or external docs** when relevant
 
-## Karve-Specific Guidelines
+## Veneer-Specific Guidelines
 
 ### NodeOverlay Management
 
-- Always use label `managed-by: karve` on all NodeOverlays we create
+- Always use label `managed-by: veneer` on all NodeOverlays we create
 - Use naming convention: `cost-aware-{instance-family}`
 - Set weight to 10 (higher than default 0) for cost-aware overlays
 - Document decision logic clearly (why we created/updated/deleted overlay)

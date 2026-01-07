@@ -1,6 +1,6 @@
-# Karve Development Guide
+# Veneer Development Guide
 
-This guide covers local development, testing, and contribution workflows for Karve.
+This guide covers local development, testing, and contribution workflows for Veneer.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ This guide covers local development, testing, and contribution workflows for Kar
 
 ### Required Infrastructure
 
-Karve requires:
+Veneer requires:
 1. **Kubernetes cluster** with Karpenter installed
 2. **Lumina** deployed and exposing metrics via Prometheus
 3. **Prometheus** server scraping Lumina metrics
@@ -29,8 +29,8 @@ Karve requires:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Nextdoor/karve.git
-cd karve
+git clone https://github.com/Nextdoor/veneer.git
+cd veneer
 
 # Install dependencies
 go mod download
@@ -59,7 +59,7 @@ kubectl get pods -n lumina-system
 
 ### 3. Port-Forward to Prometheus
 
-Karve needs to query Prometheus for Lumina metrics. Set up port-forwarding:
+Veneer needs to query Prometheus for Lumina metrics. Set up port-forwarding:
 
 ```bash
 # Port-forward to Lumina's Prometheus instance
@@ -69,7 +69,7 @@ kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
 
 **Keep this running in a separate terminal** while developing.
 
-### 4. Run Karve Locally
+### 4. Run Veneer Locally
 
 ```bash
 # In a new terminal, run the controller
@@ -86,7 +86,7 @@ You should see output like:
 
 ### 5. Verify Operation
 
-In another terminal, check that Karve is working:
+In another terminal, check that Veneer is working:
 
 ```bash
 # Check health endpoint
@@ -95,7 +95,7 @@ curl http://localhost:8081/healthz
 # Check metrics endpoint
 curl http://localhost:8080/metrics
 
-# Watch Karve logs for reconciliation activity
+# Watch Veneer logs for reconciliation activity
 # (logs appear in the terminal where you ran `make run`)
 ```
 
@@ -168,7 +168,7 @@ git commit -m "your message"
 
 ### Unit Tests
 
-Karve requires comprehensive test coverage. When adding new code, include tests in the same commit.
+Veneer requires comprehensive test coverage. When adding new code, include tests in the same commit.
 
 ```bash
 # Run all tests
@@ -244,10 +244,10 @@ You can override configuration via environment variables:
 
 ```bash
 # Override Prometheus URL
-export KARVE_PROMETHEUS_URL="http://prometheus.example.com:9090"
+export VENEER_PROMETHEUS_URL="http://prometheus.example.com:9090"
 
 # Override log level
-export KARVE_LOG_LEVEL="info"
+export VENEER_LOG_LEVEL="info"
 
 # Run with overrides
 make run
@@ -308,7 +308,7 @@ curl http://localhost:9090/api/v1/targets
 
 #### "No Matching Capacity" Warnings
 
-If Karve can't match Savings Plans utilization with capacity data:
+If Veneer can't match Savings Plans utilization with capacity data:
 
 1. Check that Lumina is exposing both metrics
 2. Verify ARNs match between metrics
@@ -317,7 +317,7 @@ If Karve can't match Savings Plans utilization with capacity data:
 ## Project Structure
 
 ```
-karve/
+veneer/
 ├── cmd/
 │   └── main.go              # Controller entrypoint
 ├── pkg/
@@ -385,8 +385,8 @@ make docker-push
 
 ```bash
 # Install via Helm (adjust values as needed)
-helm install karve ./charts/karve \
-  --namespace karve-system \
+helm install veneer ./charts/veneer \
+  --namespace veneer-system \
   --create-namespace \
   --set prometheusUrl=http://lumina-prometheus.lumina-system.svc:9090
 ```
@@ -436,7 +436,7 @@ Note: golangci-lint is currently disabled due to Go 1.24 compatibility issues. T
 - **Project Documentation**: See [README.md](README.md)
 - **RFC-0003**: [Karpenter Cost-Aware Provisioning Design](https://github.com/Nextdoor/cloudeng/blob/main/rfcs/RFC-0003-karpenter-cost-aware-provisioning.md)
 - **Development Guidelines**: See [CLAUDE.md](CLAUDE.md)
-- **Issues**: [GitHub Issues](https://github.com/Nextdoor/karve/issues)
+- **Issues**: [GitHub Issues](https://github.com/Nextdoor/veneer/issues)
 
 ## Troubleshooting Tips
 
@@ -446,7 +446,7 @@ The file should exist in the repo root. If missing:
 
 ```bash
 # Verify you're in the repo root
-pwd  # Should show: .../karve
+pwd  # Should show: .../veneer
 
 # Create from example
 cp config.example.yaml config.local.yaml
@@ -465,7 +465,7 @@ Integration tests use mock servers and shouldn't require real infrastructure. If
 
 ### "Failed to Query Data Freshness"
 
-This means Karve can't reach Prometheus. Check:
+This means Veneer can't reach Prometheus. Check:
 
 1. Port-forward is running: `lsof -i:9090`
 2. Prometheus is healthy: `curl http://localhost:9090/-/healthy`
@@ -540,7 +540,7 @@ If Prometheus queries are slow:
 
 ### Memory Usage
 
-Karve's memory usage should be minimal (< 100MB typically). If higher:
+Veneer's memory usage should be minimal (< 100MB typically). If higher:
 
 1. Check for goroutine leaks: `curl http://localhost:8080/debug/pprof/goroutine`
 2. Profile memory: `curl http://localhost:8080/debug/pprof/heap > heap.prof`

@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ const (
 
 // Client is a Prometheus client for querying Lumina metrics.
 // It wraps the official Prometheus Go client and provides typed methods
-// for the specific metrics Karve needs.
+// for the specific metrics Veneer needs.
 //
 // The client is scoped to a specific AWS account and region to ensure we only
 // query for region-specific discounts (Reserved Instances and EC2 Instance Savings Plans)
@@ -87,7 +87,7 @@ type Client struct {
 // The logger parameter is used for debugging query execution (pass logr.Discard() to disable).
 //
 // Why scoping is critical:
-// Lumina monitors multiple AWS accounts and regions, but this Karve instance runs in ONE cluster
+// Lumina monitors multiple AWS accounts and regions, but this Veneer instance runs in ONE cluster
 // in ONE account and ONE region. Reserved Instances and EC2 Instance Savings Plans are region-specific,
 // so we must filter by account+region to avoid creating NodeOverlays for discounts that won't apply
 // to instances launched in this cluster. Compute Savings Plans are intentionally not filtered by

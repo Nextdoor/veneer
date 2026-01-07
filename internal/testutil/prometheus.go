@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package testutil provides testing utilities for Karve, including mock Prometheus servers
+// Package testutil provides testing utilities for Veneer, including mock Prometheus servers
 // and test fixtures for Lumina metrics.
 //
 // This package is designed to simulate Lumina's output without requiring a running Lumina
@@ -29,7 +29,7 @@ import (
 )
 
 // MockPrometheusServer creates an in-memory HTTP server that responds to Prometheus API queries
-// with predefined metric data. This allows testing Karve's Prometheus client without running
+// with predefined metric data. This allows testing Veneer's Prometheus client without running
 // actual Lumina or Prometheus instances.
 //
 // The server supports:
@@ -42,7 +42,7 @@ import (
 //	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 //	defer server.Close()
 //
-//	// Use server.URL in your Prometheus client
+//	// Use server.URL in your Veneer Prometheus client
 //	client := prometheus.NewClient(server.URL)
 type MockPrometheusServer struct {
 	Server  *httptest.Server

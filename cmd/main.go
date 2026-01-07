@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Main entrypoint for the Karve controller manager.
+// Main entrypoint for the Veneer controller manager.
 // This file is scaffolded from kubebuilder and will be tested through E2E tests, not unit tests.
 //
 // Coverage: Excluded - main entrypoints are tested via E2E tests
@@ -36,9 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/nextdoor/karve/pkg/config"
-	"github.com/nextdoor/karve/pkg/prometheus"
-	"github.com/nextdoor/karve/pkg/reconciler"
+	"github.com/nextdoor/veneer/pkg/config"
+	"github.com/nextdoor/veneer/pkg/prometheus"
+	"github.com/nextdoor/veneer/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -59,8 +59,8 @@ func main() {
 	var probeAddr string
 	var configFile string
 
-	flag.StringVar(&configFile, "config", "/etc/karve/config.yaml",
-		"Path to the controller configuration file. Can be overridden with KARVE_CONFIG_PATH environment variable.")
+	flag.StringVar(&configFile, "config", "/etc/veneer/config.yaml",
+		"Path to the controller configuration file. Can be overridden with VENEER_CONFIG_PATH environment variable.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080",
 		"The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
@@ -78,7 +78,7 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// Allow environment variable to override config file path
-	if envConfigPath := os.Getenv("KARVE_CONFIG_PATH"); envConfigPath != "" {
+	if envConfigPath := os.Getenv("VENEER_CONFIG_PATH"); envConfigPath != "" {
 		configFile = envConfigPath
 	}
 
@@ -105,7 +105,7 @@ func main() {
 		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "karve.nextdoor.com",
+		LeaderElectionID:       "veneer.nextdoor.com",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

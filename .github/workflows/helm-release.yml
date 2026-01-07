@@ -4,16 +4,16 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Release version (without v prefix, e.g., 1.2.3)'
+        description: "Release version (without v prefix, e.g., 1.2.3)"
         required: true
         type: string
       image-tag:
-        description: 'Docker image tag to reference in the chart'
+        description: "Docker image tag to reference in the chart"
         required: true
         type: string
 
 env:
-  HELM_REPO_URL: https://oss.nextdoor.com/karve
+  HELM_REPO_URL: https://oss.nextdoor.com/veneer
 
 jobs:
   release:
@@ -44,14 +44,14 @@ jobs:
       - name: Update Chart.yaml version and appVersion
         run: |
           VERSION="${{ inputs.version }}"
-          sed -i "s/^version:.*/version: ${VERSION}/" charts/karve/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/karve/Chart.yaml
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/veneer/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/veneer/Chart.yaml
           echo "Updated Chart.yaml:"
-          cat charts/karve/Chart.yaml
+          cat charts/veneer/Chart.yaml
 
       - name: Update Helm dependencies
         run: |
-          cd charts/karve
+          cd charts/veneer
           helm dependency update
 
       - name: Configure Git

@@ -1,4 +1,4 @@
-module github.com/nextdoor/karve
+module github.com/nextdoor/veneer
 
 go 1.24.6
 

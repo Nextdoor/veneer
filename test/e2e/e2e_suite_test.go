@@ -2,7 +2,7 @@
 // +build e2e
 
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,17 +34,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/nextdoor/karve/test/utils"
+	"github.com/nextdoor/veneer/test/utils"
 )
 
 const (
-	namespace = "karve-system"
+	namespace = "veneer-system"
 )
 
 var (
 	// projectImage is the name of the image which will be built and loaded
 	// with the code source changes to be tested.
-	projectImage = "example.com/karve:v0.0.1"
+	projectImage = "example.com/veneer:v0.0.1"
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project.
@@ -52,7 +52,7 @@ var (
 // project changes with the purpose of being used in CI jobs.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting Karve integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting Veneer integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
@@ -246,8 +246,8 @@ scrape_configs:
 	// Give Prometheus time to scrape the mock exporter (scrape interval is 5s, wait 15s to be safe)
 	time.Sleep(15 * time.Second)
 
-	By("creating Karve ConfigMap")
-	karveConfig := map[string]string{
+	By("creating Veneer ConfigMap")
+	veneerConfig := map[string]string{
 		"config.yaml": fmt.Sprintf(`prometheusURL: "http://prometheus.%s.svc.cluster.local:9090"
 logLevel: "debug"
 aws:
@@ -255,13 +255,13 @@ aws:
   region: "us-west-2"
 `, namespace),
 	}
-	err = client.CreateConfigMapFromYAML(ctx, "karve-config", karveConfig)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Karve ConfigMap")
+	err = client.CreateConfigMapFromYAML(ctx, "veneer-config", veneerConfig)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Veneer ConfigMap")
 
-	By("deploying the Karve controller-manager")
-	karveDeployment := &appsv1.Deployment{
+	By("deploying the Veneer controller-manager")
+	veneerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "karve-controller-manager",
+			Name:      "veneer-controller-manager",
 			Namespace: namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -280,11 +280,11 @@ aws:
 							Name:            "manager",
 							Image:           projectImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Args:            []string{"--config=/etc/karve/config.yaml", "--leader-elect=false"},
+							Args:            []string{"--config=/etc/veneer/config.yaml", "--leader-elect=false"},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "config",
-									MountPath: "/etc/karve",
+									MountPath: "/etc/veneer",
 								},
 							},
 						},
@@ -295,7 +295,7 @@ aws:
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "karve-config",
+										Name: "veneer-config",
 									},
 								},
 							},
@@ -305,12 +305,12 @@ aws:
 			},
 		},
 	}
-	err = client.CreateDeployment(ctx, karveDeployment)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Karve controller-manager deployment")
+	err = client.CreateDeployment(ctx, veneerDeployment)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Veneer controller-manager deployment")
 
 	By("waiting for controller-manager deployment to be ready")
 	Eventually(func(g Gomega) {
-		err := client.WaitForDeploymentReady(ctx, "karve-controller-manager")
+		err := client.WaitForDeploymentReady(ctx, "veneer-controller-manager")
 		g.Expect(err).NotTo(HaveOccurred())
 	}, 60*time.Second, 2*time.Second).Should(Succeed())
 })
@@ -330,12 +330,12 @@ var _ = AfterSuite(func() {
 	By("undeploying resources")
 	client, err := NewResourceClient(namespace)
 	if err == nil {
-		_ = client.DeleteDeployment(ctx, "karve-controller-manager")
+		_ = client.DeleteDeployment(ctx, "veneer-controller-manager")
 		_ = client.DeleteDeployment(ctx, "prometheus")
 		_ = client.DeleteDeployment(ctx, "mock-lumina-exporter")
 		_ = client.DeleteService(ctx, "prometheus")
 		_ = client.DeleteService(ctx, "mock-lumina-exporter")
-		_ = client.DeleteConfigMap(ctx, "karve-config")
+		_ = client.DeleteConfigMap(ctx, "veneer-config")
 		_ = client.DeleteConfigMap(ctx, "prometheus-config")
 	}
 

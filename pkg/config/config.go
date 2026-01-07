@@ -1,5 +1,5 @@
 /*
-Copyright 2025 Karve Contributors.
+Copyright 2025 Veneer Contributors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package config provides configuration management for the Karve controller.
+// Package config provides configuration management for the Veneer controller.
 //
 // Configuration can be loaded from YAML files or environment variables.
 // Uses Viper for robust configuration management with automatic env binding.
@@ -45,13 +45,13 @@ const (
 
 // Environment variable name constants.
 const (
-	EnvPrometheusURL          = "KARVE_PROMETHEUS_URL"
-	EnvLogLevel               = "KARVE_LOG_LEVEL"
-	EnvMetricsBindAddress     = "KARVE_METRICS_BIND_ADDRESS"
-	EnvHealthProbeBindAddress = "KARVE_HEALTH_PROBE_BIND_ADDRESS"
-	EnvAWSAccountID           = "KARVE_AWS_ACCOUNT_ID"
-	EnvAWSRegion              = "KARVE_AWS_REGION"
-	EnvPrefix                 = "KARVE"
+	EnvPrometheusURL          = "VENEER_PROMETHEUS_URL"
+	EnvLogLevel               = "VENEER_LOG_LEVEL"
+	EnvMetricsBindAddress     = "VENEER_METRICS_BIND_ADDRESS"
+	EnvHealthProbeBindAddress = "VENEER_HEALTH_PROBE_BIND_ADDRESS"
+	EnvAWSAccountID           = "VENEER_AWS_ACCOUNT_ID"
+	EnvAWSRegion              = "VENEER_AWS_REGION"
+	EnvPrefix                 = "VENEER"
 )
 
 // Default configuration values.
@@ -93,14 +93,14 @@ type Config struct {
 
 // AWSConfig contains AWS-specific configuration for scoping Savings Plans and Reserved Instances.
 //
-// Lumina typically monitors multiple AWS accounts and regions. Karve needs to know which
+// Lumina typically monitors multiple AWS accounts and regions. Veneer needs to know which
 // account and region THIS cluster runs in so it only creates NodeOverlays for capacity that
 // will actually apply to instances launched in this cluster.
 type AWSConfig struct {
 	// AccountID is the AWS account ID where this Kubernetes cluster runs.
 	// This is used to filter Prometheus queries to only return RIs and SPs from this account.
 	//
-	// REQUIRED: Must be set via config file or KARVE_AWS_ACCOUNT_ID env var.
+	// REQUIRED: Must be set via config file or VENEER_AWS_ACCOUNT_ID env var.
 	//
 	// Example: "123456789012"
 	AccountID string `yaml:"accountId,omitempty"`
@@ -109,7 +109,7 @@ type AWSConfig struct {
 	// This is used to filter Prometheus queries and NodeOverlay selectors to only
 	// target capacity in this region.
 	//
-	// REQUIRED: Must be set via config file or KARVE_AWS_REGION env var.
+	// REQUIRED: Must be set via config file or VENEER_AWS_REGION env var.
 	//
 	// Example: "us-west-2"
 	Region string `yaml:"region,omitempty"`
@@ -181,7 +181,7 @@ type OverlayNamingConfig struct {
 // Load loads configuration from a YAML file and validates it.
 //
 // Configuration precedence (highest to lowest):
-//  1. Environment variables (KARVE_* prefix)
+//  1. Environment variables (VENEER_* prefix)
 //  2. Configuration file values
 //  3. Default values
 func Load(path string) (*Config, error) {
@@ -203,7 +203,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault(KeyOverlayNamingEC2InstanceSPPrefix, DefaultOverlayNamingEC2InstanceSPPrefix)
 	v.SetDefault(KeyOverlayNamingComputeSPPrefix, DefaultOverlayNamingComputeSPPrefix)
 
-	// Enable environment variable overrides with KARVE_ prefix
+	// Enable environment variable overrides with VENEER_ prefix
 	v.SetEnvPrefix(EnvPrefix)
 	_ = v.BindEnv(KeyPrometheusURL, EnvPrometheusURL)
 	_ = v.BindEnv(KeyLogLevel, EnvLogLevel)
@@ -240,10 +240,10 @@ func (c *Config) Validate() error {
 
 	// Validate AWS configuration (required)
 	if c.AWS.AccountID == "" {
-		return fmt.Errorf("aws.accountId is required - set via config file or KARVE_AWS_ACCOUNT_ID env var")
+		return fmt.Errorf("aws.accountId is required - set via config file or VENEER_AWS_ACCOUNT_ID env var")
 	}
 	if c.AWS.Region == "" {
-		return fmt.Errorf("aws.region is required - set via config file or KARVE_AWS_REGION env var")
+		return fmt.Errorf("aws.region is required - set via config file or VENEER_AWS_REGION env var")
 	}
 
 	// Validate AWS account ID format (12 digits)

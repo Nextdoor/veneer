@@ -1,23 +1,23 @@
-# Karve Controller Configuration Example
+# Veneer Controller Configuration Example
 #
 # This file shows all available configuration options with their default values.
 # Copy this to config.yaml and modify as needed.
 
 # Prometheus URL for querying Lumina metrics
-# Can be overridden with KARVE_PROMETHEUS_URL environment variable
+# Can be overridden with VENEER_PROMETHEUS_URL environment variable
 prometheusUrl: "http://prometheus:9090"
 
 # Log level: debug, info, warn, or error
 # Default: info
-# Can be overridden with KARVE_LOG_LEVEL environment variable
+# Can be overridden with VENEER_LOG_LEVEL environment variable
 logLevel: "info"
 
 # Metrics endpoint bind address
 # Default: :8080
-# Can be overridden with KARVE_METRICS_BIND_ADDRESS environment variable
+# Can be overridden with VENEER_METRICS_BIND_ADDRESS environment variable
 metricsBindAddress: ":8080"
 
 # Health probe endpoint bind address
 # Default: :8081
-# Can be overridden with KARVE_HEALTH_PROBE_BIND_ADDRESS environment variable
+# Can be overridden with VENEER_HEALTH_PROBE_BIND_ADDRESS environment variable
 healthProbeBindAddress: ":8081"
