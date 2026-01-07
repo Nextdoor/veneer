@@ -29,4 +29,33 @@ entries:
     urls:
     - karve-0.0.1.tgz
     version: 0.0.1
-generated: "2025-12-30T05:04:24.958656865Z"
+  veneer:
+  - apiVersion: v2
+    appVersion: 0.0.2
+    created: "2026-01-07T15:49:58.49511876Z"
+    dependencies:
+    - condition: lumina.enabled
+      name: lumina
+      repository: https://oss.nextdoor.com/lumina
+      version: ^0.4.0
+    description: Veneer - Cost-Aware Karpenter Provisioning Controller
+    digest: 75fd7c97275104cb7320eefa0c0be55085e72b01c613841fba491a8d406578a3
+    home: https://github.com/Nextdoor/veneer
+    keywords:
+    - kubernetes
+    - karpenter
+    - cost-optimization
+    - aws
+    - savings-plans
+    - reserved-instances
+    maintainers:
+    - name: Veneer Maintainers
+      url: https://github.com/Nextdoor/veneer
+    name: veneer
+    sources:
+    - https://github.com/Nextdoor/veneer
+    type: application
+    urls:
+    - veneer-0.0.2.tgz
+    version: 0.0.2
+generated: "2026-01-07T15:49:58.495122769Z"
