@@ -1,0 +1,173 @@
+# Job that creates mock Kubernetes nodes with providerIDs matching LocalStack EC2 instances.
+# This runs after LocalStack is seeded and creates nodes that Lumina can correlate.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: node-creator
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: node-creator
+rules:
+    - apiGroups: [""]
+      resources: ["nodes"]
+      verbs: ["create", "get", "list", "delete", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    name: node-creator
+subjects:
+    - kind: ServiceAccount
+      name: node-creator
+      namespace: default
+roleRef:
+    kind: ClusterRole
+    name: node-creator
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: node-creator-script
+    namespace: default
+data:
+    create-nodes.sh: |
+        #!/bin/bash
+        set -e
+
+        echo "=== Creating mock Kubernetes nodes from LocalStack EC2 instances ==="
+
+        LOCALSTACK_URL="http://localstack.localstack.svc.cluster.local:4566"
+
+        # Install kubectl first
+        echo "Installing kubectl..."
+        curl -sLO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        mv kubectl /usr/local/bin/
+
+        # Wait for LocalStack to be ready
+        echo "Waiting for LocalStack to be ready..."
+        for i in {1..60}; do
+          if curl -s ${LOCALSTACK_URL}/_localstack/health | grep -q '"ec2"'; then
+            echo "LocalStack is ready!"
+            break
+          fi
+          echo "Waiting for LocalStack EC2 service... ($i/60)"
+          sleep 5
+        done
+
+        # Give the init script time to create instances
+        echo "Waiting for EC2 instances to be created..."
+        sleep 15
+
+        # Delete existing mock nodes (if any)
+        echo "Cleaning up existing mock nodes..."
+        kubectl delete nodes -l veneer.io/mock-node=true --ignore-not-found=true
+
+        # Query LocalStack using AWS CLI with JSON output
+        echo "Fetching EC2 instances from LocalStack..."
+
+        export AWS_ACCESS_KEY_ID=test
+        export AWS_SECRET_ACCESS_KEY=test
+        export AWS_DEFAULT_REGION=us-west-2
+
+        # Get instances as JSON, save to file
+        aws --endpoint-url=${LOCALSTACK_URL} ec2 describe-instances \
+          --filters "Name=instance-state-name,Values=running" \
+          --query 'Reservations[].Instances[].[InstanceId,InstanceType,Placement.AvailabilityZone,Tags[?Key==`Name`].Value|[0]]' \
+          --output json > /tmp/instances.json
+
+        echo "Found instances:"
+        cat /tmp/instances.json
+
+        # Parse JSON and create nodes using Python
+        python3 << 'PYTHON_SCRIPT'
+        import json
+        import subprocess
+
+        with open('/tmp/instances.json') as f:
+            instances = json.load(f)
+
+        print(f"Processing {len(instances)} instances...")
+
+        for instance in instances:
+            instance_id = instance[0]
+            instance_type = instance[1]
+            az = instance[2] or "us-west-2a"
+            name = instance[3] or "unknown"
+            region = az[:-1]  # Remove last char (a/b/c) to get region
+
+            # Determine capacity type
+            capacity_type = "spot" if "spot" in name.lower() else "on-demand"
+
+            # Get specs based on instance type
+            specs = {
+                "m5.xlarge": ("4", "16Gi"),
+                "m5.large": ("2", "8Gi"),
+                "c5.large": ("2", "4Gi"),
+                "r5.large": ("2", "16Gi"),
+            }
+            cpu, memory = specs.get(instance_type, ("2", "4Gi"))
+
+            node_name = f"veneer-mock-{instance_id}"
+            print(f"Creating node {node_name} (type={instance_type}, id={instance_id}, capacity={capacity_type})")
+
+            node_yaml = f"""apiVersion: v1
+        kind: Node
+        metadata:
+          name: {node_name}
+          labels:
+            kubernetes.io/os: linux
+            kubernetes.io/arch: amd64
+            node.kubernetes.io/instance-type: {instance_type}
+            topology.kubernetes.io/zone: {az}
+            topology.kubernetes.io/region: {region}
+            karpenter.sh/capacity-type: {capacity_type}
+            veneer.io/mock-node: "true"
+        spec:
+          providerID: aws:///{az}/{instance_id}
+        """
+            result = subprocess.run(["kubectl", "apply", "-f", "-"], input=node_yaml, text=True, capture_output=True)
+            if result.returncode != 0:
+                print(f"Error creating node: {result.stderr}")
+            else:
+                print(f"Created node {node_name}")
+
+        PYTHON_SCRIPT
+
+        echo ""
+        echo "=== Mock nodes created ==="
+        kubectl get nodes -l veneer.io/mock-node=true -o wide
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+    name: node-creator
+    namespace: default
+spec:
+    ttlSecondsAfterFinished: 300
+    template:
+        spec:
+            serviceAccountName: node-creator
+            restartPolicy: OnFailure
+            containers:
+                - name: node-creator
+                  # Use amazon/aws-cli which has aws cli and python3
+                  image: amazon/aws-cli:latest
+                  command: ["/bin/bash", "/scripts/create-nodes.sh"]
+                  env:
+                      - name: AWS_ACCESS_KEY_ID
+                        value: "test"
+                      - name: AWS_SECRET_ACCESS_KEY
+                        value: "test"
+                  volumeMounts:
+                      - name: script
+                        mountPath: /scripts
+            volumes:
+                - name: script
+                  configMap:
+                      name: node-creator-script
+                      defaultMode: 0755

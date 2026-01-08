@@ -1,97 +1,96 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: localstack-init
-  namespace: localstack
-  labels:
-    app.kubernetes.io/name: localstack
-    app.kubernetes.io/part-of: veneer-dev
+    name: localstack-init
+    namespace: localstack
+    labels:
+        app.kubernetes.io/name: localstack
+        app.kubernetes.io/part-of: veneer-dev
 data:
-  # This script runs when LocalStack is ready and seeds mock AWS data
-  # for Veneer development. It creates EC2 instances that Lumina will
-  # discover and expose as metrics.
-  seed-aws-data.sh: |
-    #!/bin/bash
-    set -e
+    # This script runs when LocalStack is ready and seeds mock AWS data
+    # for Veneer development. It creates EC2 instances that Lumina will
+    # discover and expose as metrics.
+    #
+    # NOTE: LocalStack doesn't have jq, so we use simple bash commands only.
+    seed-aws-data.sh: |
+        #!/bin/bash
+        set -e
 
-    echo "=== Seeding LocalStack with mock AWS data for Veneer development ==="
+        echo "=== Seeding LocalStack with mock AWS data for Veneer development ==="
 
-    export AWS_ACCESS_KEY_ID=test
-    export AWS_SECRET_ACCESS_KEY=test
-    export AWS_DEFAULT_REGION=us-west-2
-    export AWS_ENDPOINT_URL=http://localhost:4566
+        export AWS_ACCESS_KEY_ID=test
+        export AWS_SECRET_ACCESS_KEY=test
+        export AWS_DEFAULT_REGION=us-west-2
+        export AWS_ENDPOINT_URL=http://localhost:4566
 
-    # Create a VPC and subnet for our instances
-    echo "Creating VPC..."
-    VPC_ID=$(awslocal ec2 create-vpc --cidr-block 10.0.0.0/16 --query 'Vpc.VpcId' --output text)
-    echo "Created VPC: $VPC_ID"
+        # Create a VPC and subnet for our instances
+        echo "Creating VPC..."
+        VPC_ID=$(awslocal ec2 create-vpc --cidr-block 10.0.0.0/16 --query 'Vpc.VpcId' --output text)
+        echo "Created VPC: $VPC_ID"
 
-    echo "Creating subnet..."
-    SUBNET_ID=$(awslocal ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone us-west-2a --query 'Subnet.SubnetId' --output text)
-    echo "Created Subnet: $SUBNET_ID"
+        echo "Creating subnet..."
+        SUBNET_ID=$(awslocal ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone us-west-2a --query 'Subnet.SubnetId' --output text)
+        echo "Created Subnet: $SUBNET_ID"
 
-    # Create security group
-    echo "Creating security group..."
-    SG_ID=$(awslocal ec2 create-security-group --group-name veneer-dev-sg --description "Veneer dev security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
-    echo "Created Security Group: $SG_ID"
+        # Create security group
+        echo "Creating security group..."
+        SG_ID=$(awslocal ec2 create-security-group --group-name veneer-dev-sg --description "Veneer dev security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+        echo "Created Security Group: $SG_ID"
 
-    # Create EC2 instances with different instance types
-    # These will be discovered by Lumina and correlated with K8s nodes
+        echo "Creating EC2 instances..."
 
-    echo "Creating EC2 instances..."
+        # m5.xlarge instances (good for RI/SP coverage testing)
+        for i in 1 2 3; do
+          INSTANCE_ID=$(awslocal ec2 run-instances \
+            --image-id ami-12345678 \
+            --instance-type m5.xlarge \
+            --subnet-id $SUBNET_ID \
+            --security-group-ids $SG_ID \
+            --placement AvailabilityZone=us-west-2a \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-m5-$i},{Key=Environment,Value=dev}]" \
+            --query 'Instances[0].InstanceId' --output text)
+          echo "Created m5.xlarge instance: $INSTANCE_ID"
+        done
 
-    # m5.xlarge instances (good for RI/SP coverage testing)
-    for i in 1 2 3; do
-      INSTANCE_ID=$(awslocal ec2 run-instances \
-        --image-id ami-12345678 \
-        --instance-type m5.xlarge \
-        --subnet-id $SUBNET_ID \
-        --security-group-ids $SG_ID \
-        --placement AvailabilityZone=us-west-2a \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-m5-$i},{Key=Environment,Value=dev}]" \
-        --query 'Instances[0].InstanceId' --output text)
-      echo "Created m5.xlarge instance: $INSTANCE_ID"
-    done
+        # c5.large instances
+        for i in 1 2; do
+          INSTANCE_ID=$(awslocal ec2 run-instances \
+            --image-id ami-12345678 \
+            --instance-type c5.large \
+            --subnet-id $SUBNET_ID \
+            --security-group-ids $SG_ID \
+            --placement AvailabilityZone=us-west-2a \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-c5-$i},{Key=Environment,Value=dev}]" \
+            --query 'Instances[0].InstanceId' --output text)
+          echo "Created c5.large instance: $INSTANCE_ID"
+        done
 
-    # c5.large instances
-    for i in 1 2; do
-      INSTANCE_ID=$(awslocal ec2 run-instances \
-        --image-id ami-12345678 \
-        --instance-type c5.large \
-        --subnet-id $SUBNET_ID \
-        --security-group-ids $SG_ID \
-        --placement AvailabilityZone=us-west-2a \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-c5-$i},{Key=Environment,Value=dev}]" \
-        --query 'Instances[0].InstanceId' --output text)
-      echo "Created c5.large instance: $INSTANCE_ID"
-    done
+        # r5.large instances
+        for i in 1 2; do
+          INSTANCE_ID=$(awslocal ec2 run-instances \
+            --image-id ami-12345678 \
+            --instance-type r5.large \
+            --subnet-id $SUBNET_ID \
+            --security-group-ids $SG_ID \
+            --placement AvailabilityZone=us-west-2a \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-r5-$i},{Key=Environment,Value=dev}]" \
+            --query 'Instances[0].InstanceId' --output text)
+          echo "Created r5.large instance: $INSTANCE_ID"
+        done
 
-    # r5.large instances
-    for i in 1 2; do
-      INSTANCE_ID=$(awslocal ec2 run-instances \
-        --image-id ami-12345678 \
-        --instance-type r5.large \
-        --subnet-id $SUBNET_ID \
-        --security-group-ids $SG_ID \
-        --placement AvailabilityZone=us-west-2a \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-r5-$i},{Key=Environment,Value=dev}]" \
-        --query 'Instances[0].InstanceId' --output text)
-      echo "Created r5.large instance: $INSTANCE_ID"
-    done
+        # Spot instance (for spot pricing tests) - m5.large
+        INSTANCE_ID=$(awslocal ec2 run-instances \
+          --image-id ami-12345678 \
+          --instance-type m5.large \
+          --subnet-id $SUBNET_ID \
+          --security-group-ids $SG_ID \
+          --placement AvailabilityZone=us-west-2a \
+          --instance-market-options 'MarketType=spot' \
+          --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-spot-1},{Key=Environment,Value=dev}]" \
+          --query 'Instances[0].InstanceId' --output text)
+        echo "Created spot m5.large instance: $INSTANCE_ID"
 
-    # Spot instances (for spot pricing tests)
-    INSTANCE_ID=$(awslocal ec2 run-instances \
-      --image-id ami-12345678 \
-      --instance-type m5.large \
-      --subnet-id $SUBNET_ID \
-      --security-group-ids $SG_ID \
-      --placement AvailabilityZone=us-west-2a \
-      --instance-market-options 'MarketType=spot' \
-      --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=veneer-dev-spot-1},{Key=Environment,Value=dev}]" \
-      --query 'Instances[0].InstanceId' --output text)
-    echo "Created spot instance: $INSTANCE_ID"
-
-    echo ""
-    echo "=== LocalStack seeding complete ==="
-    echo "Created instances:"
-    awslocal ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,InstanceType,Tags[?Key==`Name`].Value|[0]]' --output table
+        echo ""
+        echo "=== LocalStack seeding complete ==="
+        echo "Created instances:"
+        awslocal ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,InstanceType,Tags[?Key==`Name`].Value|[0]]' --output table
