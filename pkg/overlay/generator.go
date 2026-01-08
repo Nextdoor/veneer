@@ -80,6 +80,15 @@ const (
 	LabelDisabledValue = "true"
 )
 
+// Action constants for GeneratedOverlay.
+const (
+	// ActionCreate indicates a new overlay should be created.
+	ActionCreate = "create"
+
+	// ActionDelete indicates an existing overlay should be deleted.
+	ActionDelete = "delete"
+)
+
 // Generator creates Karpenter NodeOverlay resources from Veneer decisions.
 //
 // The generator converts Decision structs (which represent whether an overlay should exist)
@@ -166,9 +175,9 @@ func (g *Generator) GenerateAll(decisions []Decision) []GeneratedOverlay {
 
 		if decision.ShouldExist {
 			overlay = g.Generate(decision)
-			action = "create" // Will be refined to "update" or "unchanged" when comparing to cluster state
+			action = ActionCreate // Will be refined to "update" or "unchanged" when comparing to cluster state
 		} else {
-			action = "delete"
+			action = ActionDelete
 		}
 
 		results = append(results, GeneratedOverlay{

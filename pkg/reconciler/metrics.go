@@ -223,7 +223,7 @@ func (r *MetricsReconciler) analyzeEC2InstanceSavingsPlans(ctx context.Context) 
 		return nil, nil
 	}
 
-	var decisions []overlay.Decision
+	decisions := make([]overlay.Decision, 0, len(aggByFamily))
 	for key, agg := range aggByFamily {
 		decision := r.DecisionEngine.AnalyzeEC2InstanceSavingsPlan(agg)
 
@@ -260,7 +260,7 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 		return nil, nil
 	}
 
-	var decisions []overlay.Decision
+	decisions := make([]overlay.Decision, 0, len(aggByType))
 	for key, agg := range aggByType {
 		decision := r.DecisionEngine.AnalyzeReservedInstance(agg)
 
@@ -286,7 +286,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 
 	for _, gen := range overlays {
 		switch gen.Action {
-		case "create":
+		case overlay.ActionCreate:
 			if gen.Overlay != nil {
 				// Validate the generated overlay
 				if validationErrors := overlay.ValidateOverlay(gen.Overlay); len(validationErrors) > 0 {
@@ -344,7 +344,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 				}
 			}
 
-		case "delete":
+		case overlay.ActionDelete:
 			// Check if overlay exists before deleting
 			existing := &karpenterv1alpha1.NodeOverlay{}
 			err := r.Client.Get(ctx, client.ObjectKey{Name: gen.Decision.Name}, existing)

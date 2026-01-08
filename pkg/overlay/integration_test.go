@@ -474,7 +474,8 @@ func TestNodeOverlayGeneratorIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Collect decisions from all capacity types
-	var decisions []overlay.Decision
+	// Pre-allocate with reasonable initial capacity
+	decisions := make([]overlay.Decision, 0, 10)
 
 	// Query Compute SPs
 	computeUtils, err := promClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeCompute)

@@ -60,8 +60,8 @@ func TestGenerator_Generate_ComputeSavingsPlan(t *testing.T) {
 	}
 
 	// Verify spec
-	if overlay.Spec.Price == nil || *overlay.Spec.Price != "0.00" {
-		t.Errorf("expected price %q, got %v", "0.00", overlay.Spec.Price)
+	if overlay.Spec.Price == nil || *overlay.Spec.Price != expectedTestPrice {
+		t.Errorf("expected price %q, got %v", expectedTestPrice, overlay.Spec.Price)
 	}
 	if overlay.Spec.Weight == nil || *overlay.Spec.Weight != 10 {
 		t.Errorf("expected weight %d, got %v", 10, overlay.Spec.Weight)
@@ -263,24 +263,24 @@ func TestGenerator_GenerateAll(t *testing.T) {
 	if results[0].Overlay == nil {
 		t.Error("expected first result to have overlay")
 	}
-	if results[0].Action != "create" {
-		t.Errorf("expected first result action %q, got %q", "create", results[0].Action)
+	if results[0].Action != ActionCreate {
+		t.Errorf("expected first result action %q, got %q", ActionCreate, results[0].Action)
 	}
 
 	// Second result: should have no overlay and action=delete
 	if results[1].Overlay != nil {
 		t.Error("expected second result to have nil overlay")
 	}
-	if results[1].Action != "delete" {
-		t.Errorf("expected second result action %q, got %q", "delete", results[1].Action)
+	if results[1].Action != ActionDelete {
+		t.Errorf("expected second result action %q, got %q", ActionDelete, results[1].Action)
 	}
 
 	// Third result: should have overlay and action=create
 	if results[2].Overlay == nil {
 		t.Error("expected third result to have overlay")
 	}
-	if results[2].Action != "create" {
-		t.Errorf("expected third result action %q, got %q", "create", results[2].Action)
+	if results[2].Action != ActionCreate {
+		t.Errorf("expected third result action %q, got %q", ActionCreate, results[2].Action)
 	}
 }
 
