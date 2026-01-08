@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: lumina-config
+    namespace: lumina-system
+    labels:
+        app.kubernetes.io/name: lumina
+        app.kubernetes.io/part-of: veneer-dev
+data:
+    # Lumina configuration for local development with LocalStack
+    # This exposes metrics that Veneer consumes to make NodeOverlay decisions
+    config.yaml: |
+        # Default region for AWS API calls (must match LocalStack seed data)
+        defaultRegion: us-west-2
+
+        # Logging
+        logLevel: debug
+
+        # AWS accounts to monitor - LocalStack simulates account 000000000000
+        awsAccounts:
+          - accountId: "000000000000"
+            name: "LocalStack Dev"
+            # LocalStack accepts any role ARN format
+            assumeRoleArn: "arn:aws:iam::000000000000:role/lumina-dev"
+            region: "us-west-2"
+
+        # Test data for Savings Plans - Lumina uses this for metrics exposure
+        # This allows Veneer to test its NodeOverlay decision logic
+        testData:
+          savingsPlans:
+            "000000000000":
+              # Compute Savings Plan - applies to any instance type
+              - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/dev-compute-sp-001"
+                savingsPlanType: "Compute"
+                state: "active"
+                commitment: 10.0
+                start: "2024-01-01T00:00:00Z"
+                end: "2027-01-01T00:00:00Z"
+
+              # EC2 Instance Savings Plan - specific to m5 family
+              - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/dev-ec2-sp-001"
+                savingsPlanType: "EC2Instance"
+                state: "active"
+                commitment: 5.0
+                region: "us-west-2"
+                instanceFamily: "m5"
+                start: "2024-06-01T00:00:00Z"
+                end: "2027-06-01T00:00:00Z"
+
+              # Another EC2 Instance SP for c5 family
+              - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/dev-ec2-sp-002"
+                savingsPlanType: "EC2Instance"
+                state: "active"
+                commitment: 3.0
+                region: "us-west-2"
+                instanceFamily: "c5"
+                start: "2024-06-01T00:00:00Z"
+                end: "2027-06-01T00:00:00Z"
+
+          # Mock Savings Plan rates - prevents API calls to LocalStack
+          # Keys are SP IDs (last segment of ARN), not full ARNs
+          savingsPlanRates:
+            "dev-compute-sp-001":
+              - rate: 0.0537
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.xlarge"
+                operation: "RunInstances"
+                instanceType: "m5.xlarge"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0269
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.large"
+                operation: "RunInstances"
+                instanceType: "m5.large"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0420
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:c5.large"
+                operation: "RunInstances"
+                instanceType: "c5.large"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0350
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:r5.large"
+                operation: "RunInstances"
+                instanceType: "r5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
+            "dev-ec2-sp-001":
+              - rate: 0.0480
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.xlarge"
+                operation: "RunInstances"
+                instanceType: "m5.xlarge"
+                region: "us-west-2"
+                tenancy: "default"
+              - rate: 0.0240
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:m5.large"
+                operation: "RunInstances"
+                instanceType: "m5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
+            "dev-ec2-sp-002":
+              - rate: 0.0400
+                currency: "USD"
+                unit: "Hrs"
+                productType: "Linux/UNIX"
+                serviceCode: "AmazonEC2"
+                usageType: "BoxUsage:c5.large"
+                operation: "RunInstances"
+                instanceType: "c5.large"
+                region: "us-west-2"
+                tenancy: "default"
+
+          # On-demand pricing for cost calculations
+          pricing:
+            "us-west-2:m5.xlarge:linux": 0.192
+            "us-west-2:m5.large:linux": 0.096
+            "us-west-2:c5.large:linux": 0.085
+            "us-west-2:r5.large:linux": 0.126

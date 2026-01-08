@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: lumina-controller
+    namespace: lumina-system
+    labels:
+        app.kubernetes.io/name: lumina
+        app.kubernetes.io/part-of: veneer-dev
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: lumina-controller
+    template:
+        metadata:
+            labels:
+                app: lumina-controller
+            annotations:
+                prometheus.io/scrape: "true"
+                prometheus.io/port: "8080"
+                prometheus.io/path: "/metrics"
+        spec:
+            serviceAccountName: lumina-controller
+            containers:
+                - name: controller
+                  # Use the latest Lumina image - in production you'd pin a version
+                  image: ghcr.io/nextdoor/lumina:latest
+                  imagePullPolicy: Always
+                  args:
+                      - --config=/etc/lumina/config.yaml
+                      - --metrics-bind-address=:8080
+                      - --metrics-secure=false
+                      - --health-probe-bind-address=:8081
+                      - --leader-elect=false
+                  ports:
+                      - containerPort: 8080
+                        name: metrics
+                      - containerPort: 8081
+                        name: health
+                  env:
+                      # Point AWS SDK to LocalStack
+                      - name: AWS_ENDPOINT_URL
+                        value: "http://localstack.localstack.svc.cluster.local:4566"
+                      # AWS credentials for LocalStack
+                      - name: AWS_ACCESS_KEY_ID
+                        value: "test"
+                      - name: AWS_SECRET_ACCESS_KEY
+                        value: "test"
+                      - name: AWS_DEFAULT_REGION
+                        value: "us-west-2"
+                      # Disable IMDS (EC2 metadata service) lookups
+                      - name: AWS_EC2_METADATA_DISABLED
+                        value: "true"
+                  livenessProbe:
+                      httpGet:
+                          path: /healthz
+                          port: 8081
+                      initialDelaySeconds: 15
+                      periodSeconds: 20
+                  readinessProbe:
+                      httpGet:
+                          path: /readyz
+                          port: 8081
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+                  resources:
+                      requests:
+                          cpu: 50m
+                          memory: 64Mi
+                      limits:
+                          cpu: 500m
+                          memory: 256Mi
+                  volumeMounts:
+                      - name: config
+                        mountPath: /etc/lumina
+                        readOnly: true
+            volumes:
+                - name: config
+                  configMap:
+                      name: lumina-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: lumina-metrics
+    namespace: lumina-system
+    labels:
+        app.kubernetes.io/name: lumina
+        app.kubernetes.io/part-of: veneer-dev
+spec:
+    type: ClusterIP
+    selector:
+        app: lumina-controller
+    ports:
+        - port: 8080
+          targetPort: 8080
+          name: metrics

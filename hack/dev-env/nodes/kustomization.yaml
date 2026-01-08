@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+    # Node-creator job dynamically creates mock nodes from LocalStack EC2 instances.
+    # This ensures providerIDs match actual LocalStack instance IDs for Lumina correlation.
+    - node-creator-job.yaml
