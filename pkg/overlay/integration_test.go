@@ -20,9 +20,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/nextdoor/veneer/internal/testutil"
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/overlay"
@@ -416,4 +419,301 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 		t.Logf("  - %s (type=%s, weight=%d, should_exist=%v, reason=%s)",
 			decision.Name, decision.CapacityType, decision.Weight, decision.ShouldExist, decision.Reason)
 	}
+}
+
+// TestNodeOverlayGeneratorIntegration tests the full flow from Prometheus queries to NodeOverlay generation.
+// This validates Phase 4 functionality: generating valid NodeOverlay specs from capacity decisions.
+//
+//nolint:gocyclo // Integration test complexity is acceptable for comprehensive validation
+func TestNodeOverlayGeneratorIntegration(t *testing.T) {
+	// Start mock Prometheus server with Lumina metrics
+	fixture := testutil.LuminaMetricsWithSPUtilization()
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var query string
+		if r.Method == http.MethodPost {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "failed to parse form", http.StatusBadRequest)
+				return
+			}
+			query = r.FormValue("query")
+		} else {
+			query = r.URL.Query().Get("query")
+		}
+
+		response, ok := fixture[query]
+		if !ok {
+			t.Logf("unexpected query: %s", query)
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
+	defer mockServer.Close()
+
+	// Create Prometheus client pointing to mock server
+	promClient, err := prometheus.NewClient(mockServer.URL, "123456789012", "us-west-2", logr.Discard())
+	if err != nil {
+		t.Fatalf("failed to create Prometheus client: %v", err)
+	}
+
+	// Create decision engine with test config
+	cfg := &config.Config{
+		Overlays: config.OverlayManagementConfig{
+			UtilizationThreshold: 95.0,
+			Weights: config.OverlayWeightsConfig{
+				ReservedInstance:       30,
+				EC2InstanceSavingsPlan: 20,
+				ComputeSavingsPlan:     10,
+			},
+		},
+	}
+	engine := overlay.NewDecisionEngine(cfg)
+	generator := overlay.NewGenerator()
+
+	ctx := context.Background()
+
+	// Collect decisions from all capacity types
+	var decisions []overlay.Decision
+
+	// Query Compute SPs
+	computeUtils, err := promClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeCompute)
+	if err != nil {
+		t.Fatalf("failed to query Compute SP utilization: %v", err)
+	}
+	computeCaps, err := promClient.QuerySavingsPlanCapacity(ctx, "")
+	if err != nil {
+		t.Fatalf("failed to query SP capacity: %v", err)
+	}
+	for _, util := range computeUtils {
+		for _, cap := range computeCaps {
+			if cap.Type == prometheus.SavingsPlanTypeCompute && cap.SavingsPlanARN == util.SavingsPlanARN {
+				decisions = append(decisions, engine.AnalyzeComputeSavingsPlanSingle(util, cap))
+				break
+			}
+		}
+	}
+
+	// Query EC2 Instance SPs
+	ec2Utils, err := promClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeEC2Instance)
+	if err != nil {
+		t.Fatalf("failed to query EC2 Instance SP utilization: %v", err)
+	}
+	for _, util := range ec2Utils {
+		familyCaps, err := promClient.QuerySavingsPlanCapacity(ctx, util.InstanceFamily)
+		if err != nil {
+			t.Fatalf("failed to query SP capacity for family %s: %v", util.InstanceFamily, err)
+		}
+		for _, cap := range familyCaps {
+			if cap.Type == prometheus.SavingsPlanTypeEC2Instance && cap.InstanceFamily == util.InstanceFamily {
+				decisions = append(decisions, engine.AnalyzeEC2InstanceSavingsPlanSingle(util, cap))
+				break
+			}
+		}
+	}
+
+	// Query Reserved Instances
+	ris, err := promClient.QueryReservedInstances(ctx, "")
+	if err != nil {
+		t.Fatalf("failed to query reserved instances: %v", err)
+	}
+	for _, ri := range ris {
+		decisions = append(decisions, engine.AnalyzeReservedInstanceSingle(ri))
+	}
+
+	// Generate NodeOverlays from decisions
+	generatedOverlays := generator.GenerateAll(decisions)
+
+	t.Run("generates overlays for decisions that should exist", func(t *testing.T) {
+		createCount := 0
+		deleteCount := 0
+
+		for _, gen := range generatedOverlays {
+			if gen.Action == "create" {
+				createCount++
+				if gen.Overlay == nil {
+					t.Error("overlay with action=create has nil Overlay")
+				}
+			} else if gen.Action == "delete" {
+				deleteCount++
+				if gen.Overlay != nil {
+					t.Error("overlay with action=delete should have nil Overlay")
+				}
+			}
+		}
+
+		t.Logf("Generated %d overlays to create, %d to delete", createCount, deleteCount)
+
+		if createCount == 0 && deleteCount == 0 {
+			t.Error("expected at least one overlay action")
+		}
+	})
+
+	t.Run("generated overlays have valid metadata", func(t *testing.T) {
+		for _, gen := range generatedOverlays {
+			if gen.Overlay == nil {
+				continue // Skip delete actions
+			}
+
+			// Verify name matches decision
+			if gen.Overlay.Name != gen.Decision.Name {
+				t.Errorf("overlay name %q doesn't match decision name %q",
+					gen.Overlay.Name, gen.Decision.Name)
+			}
+
+			// Verify managed-by label
+			if gen.Overlay.Labels[overlay.LabelManagedBy] != overlay.LabelManagedByValue {
+				t.Errorf("overlay %s missing managed-by label", gen.Overlay.Name)
+			}
+
+			// Verify capacity-type label
+			if gen.Overlay.Labels[overlay.LabelCapacityType] == "" {
+				t.Errorf("overlay %s missing capacity-type label", gen.Overlay.Name)
+			}
+
+			// Verify optimization-reason label
+			if gen.Overlay.Labels[overlay.LabelOptimizationReason] == "" {
+				t.Errorf("overlay %s missing optimization-reason label", gen.Overlay.Name)
+			}
+		}
+	})
+
+	t.Run("generated overlays have valid specs", func(t *testing.T) {
+		for _, gen := range generatedOverlays {
+			if gen.Overlay == nil {
+				continue
+			}
+
+			// Verify price
+			if gen.Overlay.Spec.Price == nil || *gen.Overlay.Spec.Price != "0.00" {
+				t.Errorf("overlay %s has invalid price: %v", gen.Overlay.Name, gen.Overlay.Spec.Price)
+			}
+
+			// Verify weight matches decision
+			if gen.Overlay.Spec.Weight == nil {
+				t.Errorf("overlay %s has nil weight", gen.Overlay.Name)
+			} else if int(*gen.Overlay.Spec.Weight) != gen.Decision.Weight {
+				t.Errorf("overlay %s weight %d doesn't match decision weight %d",
+					gen.Overlay.Name, *gen.Overlay.Spec.Weight, gen.Decision.Weight)
+			}
+
+			// Verify requirements exist
+			if len(gen.Overlay.Spec.Requirements) == 0 {
+				t.Errorf("overlay %s has no requirements", gen.Overlay.Name)
+			}
+
+			// Verify all overlays target on-demand capacity
+			hasOnDemandReq := false
+			for _, req := range gen.Overlay.Spec.Requirements {
+				if req.Key == overlay.LabelCapacityTypeKarpenter &&
+					req.Operator == corev1.NodeSelectorOpIn &&
+					len(req.Values) == 1 && req.Values[0] == "on-demand" {
+					hasOnDemandReq = true
+					break
+				}
+			}
+			if !hasOnDemandReq {
+				t.Errorf("overlay %s doesn't target on-demand capacity", gen.Overlay.Name)
+			}
+		}
+	})
+
+	t.Run("generated overlays pass validation", func(t *testing.T) {
+		for _, gen := range generatedOverlays {
+			if gen.Overlay == nil {
+				continue
+			}
+
+			errors := overlay.ValidateOverlay(gen.Overlay)
+			if len(errors) > 0 {
+				t.Errorf("overlay %s failed validation: %v", gen.Overlay.Name, errors)
+			}
+		}
+	})
+
+	t.Run("overlay requirements match capacity type", func(t *testing.T) {
+		for _, gen := range generatedOverlays {
+			if gen.Overlay == nil {
+				continue
+			}
+
+			switch gen.Decision.CapacityType {
+			case overlay.CapacityTypeComputeSavingsPlan:
+				// Should have instance-family Exists requirement
+				hasExistsReq := false
+				for _, req := range gen.Overlay.Spec.Requirements {
+					if req.Key == overlay.LabelInstanceFamilyKarpenter &&
+						req.Operator == corev1.NodeSelectorOpExists {
+						hasExistsReq = true
+						break
+					}
+				}
+				if !hasExistsReq {
+					t.Errorf("Compute SP overlay %s should have instance-family Exists requirement",
+						gen.Overlay.Name)
+				}
+
+			case overlay.CapacityTypeEC2InstanceSavingsPlan:
+				// Should have instance-family In requirement
+				hasInReq := false
+				for _, req := range gen.Overlay.Spec.Requirements {
+					if req.Key == overlay.LabelInstanceFamilyKarpenter &&
+						req.Operator == corev1.NodeSelectorOpIn &&
+						len(req.Values) > 0 {
+						hasInReq = true
+						break
+					}
+				}
+				if !hasInReq {
+					t.Errorf("EC2 Instance SP overlay %s should have instance-family In requirement",
+						gen.Overlay.Name)
+				}
+
+			case overlay.CapacityTypeReservedInstance:
+				// Should have instance-type In requirement
+				hasTypeReq := false
+				for _, req := range gen.Overlay.Spec.Requirements {
+					if req.Key == overlay.LabelInstanceTypeK8s &&
+						req.Operator == corev1.NodeSelectorOpIn &&
+						len(req.Values) > 0 {
+						hasTypeReq = true
+						break
+					}
+				}
+				if !hasTypeReq {
+					t.Errorf("RI overlay %s should have instance-type In requirement",
+						gen.Overlay.Name)
+				}
+			}
+		}
+	})
+
+	t.Run("YAML output is well-formed", func(t *testing.T) {
+		for _, gen := range generatedOverlays {
+			if gen.Overlay == nil {
+				continue
+			}
+
+			yaml := overlay.FormatOverlayYAML(gen.Overlay)
+
+			// Verify YAML contains expected fields
+			if !strings.Contains(yaml, "apiVersion: karpenter.sh/v1alpha1") {
+				t.Errorf("YAML for %s missing apiVersion", gen.Overlay.Name)
+			}
+			if !strings.Contains(yaml, "kind: NodeOverlay") {
+				t.Errorf("YAML for %s missing kind", gen.Overlay.Name)
+			}
+			if !strings.Contains(yaml, "name: "+gen.Overlay.Name) {
+				t.Errorf("YAML for %s missing name", gen.Overlay.Name)
+			}
+			if !strings.Contains(yaml, `price: "0.00"`) {
+				t.Errorf("YAML for %s missing price", gen.Overlay.Name)
+			}
+			if !strings.Contains(yaml, "requirements:") {
+				t.Errorf("YAML for %s missing requirements", gen.Overlay.Name)
+			}
+
+			t.Logf("Generated YAML for %s:\n%s", gen.Overlay.Name, yaml)
+		}
+	})
 }
