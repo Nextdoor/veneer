@@ -37,6 +37,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/nextdoor/veneer/pkg/config"
+	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"github.com/nextdoor/veneer/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
@@ -126,10 +127,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create decision engine and generator for NodeOverlay lifecycle management
+	decisionEngine := overlay.NewDecisionEngine(cfg)
+	generator := overlay.NewGenerator()
+
 	// Create and start metrics reconciler
+	// Phase 4: DryRun=true logs what would be created without making changes
 	metricsReconciler := &reconciler.MetricsReconciler{
 		PrometheusClient: promClient,
+		Config:           cfg,
+		DecisionEngine:   decisionEngine,
+		Generator:        generator,
 		Logger:           ctrl.Log.WithName("metrics-reconciler"),
+		DryRun:           true, // Phase 4: Read-only mode
 		// Use default 5 minute interval
 	}
 
