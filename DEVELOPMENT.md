@@ -425,12 +425,11 @@ metricsBindAddress: ":8080"
 healthProbeBindAddress: ":8081"
 
 # Overlay management settings
-overlayManagement:
-  utilizationThreshold: 95.0  # Delete overlays at 95% utilization
-  weights:
-    reservedInstance: 30       # Highest priority
-    ec2InstanceSavingsPlan: 20
-    computeSavingsPlan: 10
+overlays:
+  # Disabled mode creates NodeOverlays with an impossible requirement,
+  # preventing them from matching any nodes. Useful for testing overlay
+  # creation without affecting Karpenter's provisioning decisions.
+  disabled: false
 ```
 
 ### Environment Variables
@@ -444,11 +443,26 @@ export VENEER_PROMETHEUS_URL="http://prometheus.example.com:9090"
 # Override log level
 export VENEER_LOG_LEVEL="info"
 
+# Enable disabled mode (overlays created but won't match nodes)
+export VENEER_OVERLAY_DISABLED="true"
+
 # Run with overrides
 make run
 ```
 
 See [pkg/config/config.go](pkg/config/config.go) for all available environment variables.
+
+### CLI Flags
+
+Command-line flags override both config file and environment variables:
+
+```bash
+# Run with disabled mode enabled
+./bin/manager --config=config.local.yaml --overlay-disabled
+
+# View all available flags
+./bin/manager --help
+```
 
 ## Debugging
 

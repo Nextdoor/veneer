@@ -174,22 +174,25 @@ docker-push: ## Push docker image with the manager.
 DEV_ENV_DIR := hack/dev-env
 
 .PHONY: dev-env-up
-dev-env-up: kind-create ## Deploy full dev environment (LocalStack, Lumina, Prometheus, mock nodes)
+dev-env-up: kind-create ## Deploy full dev environment (LocalStack, Lumina, Prometheus, mock nodes, CRDs)
 	@echo "Deploying development environment..."
 	@echo ""
-	@echo "Step 1/4: Deploying LocalStack..."
+	@echo "Step 1/5: Installing Karpenter CRDs..."
+	kubectl apply -k $(DEV_ENV_DIR)/crds
+	@echo ""
+	@echo "Step 2/5: Deploying LocalStack..."
 	kubectl apply -k $(DEV_ENV_DIR)/localstack
 	@echo ""
-	@echo "Step 2/4: Waiting for LocalStack to be ready..."
+	@echo "Step 3/5: Waiting for LocalStack to be ready..."
 	kubectl wait --for=condition=available --timeout=120s deployment/localstack -n localstack
 	@echo "Waiting for LocalStack to seed data (30s)..."
 	@sleep 30
 	@echo ""
-	@echo "Step 3/4: Deploying Lumina and Prometheus..."
+	@echo "Step 4/5: Deploying Lumina and Prometheus..."
 	kubectl apply -k $(DEV_ENV_DIR)/lumina
 	kubectl apply -k $(DEV_ENV_DIR)/prometheus
 	@echo ""
-	@echo "Step 4/4: Creating mock Kubernetes nodes..."
+	@echo "Step 5/5: Creating mock Kubernetes nodes..."
 	kubectl apply -k $(DEV_ENV_DIR)/nodes
 	@echo ""
 	@echo "Waiting for deployments to be ready..."
@@ -211,14 +214,14 @@ dev-env-up: kind-create ## Deploy full dev environment (LocalStack, Lumina, Prom
 	@echo "============================================"
 
 .PHONY: dev-env-down
-dev-env-down: ## Tear down the dev environment (keeps Kind cluster)
+dev-env-down: ## Tear down the dev environment (keeps Kind cluster and CRDs)
 	@echo "Tearing down development environment..."
 	kubectl delete -k $(DEV_ENV_DIR)/nodes --ignore-not-found
 	kubectl delete -k $(DEV_ENV_DIR)/prometheus --ignore-not-found
 	kubectl delete -k $(DEV_ENV_DIR)/lumina --ignore-not-found
 	kubectl delete -k $(DEV_ENV_DIR)/localstack --ignore-not-found
 	@echo "Development environment torn down."
-	@echo "Note: Kind cluster '$(KIND_CLUSTER_NAME)' still exists. Use 'make kind-delete' to remove it."
+	@echo "Note: Kind cluster '$(KIND_CLUSTER_NAME)' and CRDs still exist. Use 'make kind-delete' to remove everything."
 
 .PHONY: dev-env-restart
 dev-env-restart: dev-env-down dev-env-up ## Restart the dev environment

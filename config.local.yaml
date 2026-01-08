@@ -1,9 +1,9 @@
 # Veneer Controller - Local Development Configuration
 #
 # This file is used for local development with `make run`.
-# It expects you to port-forward to a Prometheus instance:
+# It expects you to port-forward to Prometheus:
 #
-#   kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
+#   kubectl port-forward -n prometheus svc/prometheus 9090:9090
 #
 # Then run: make run
 
@@ -17,13 +17,18 @@ logLevel: "debug"
 metricsBindAddress: ":8080"
 healthProbeBindAddress: ":8081"
 
-# Overlay management configuration
-overlayManagement:
-  # Delete overlays when utilization reaches 95%
-  utilizationThreshold: 95.0
+# AWS configuration - must match LocalStack/Lumina setup
+aws:
+    accountId: "000000000000"
+    region: "us-west-2"
 
-  # Overlay weights (higher = higher priority)
-  weights:
-    reservedInstance: 30 # Highest priority (instance-type specific)
-    ec2InstanceSavingsPlan: 20 # Medium priority (family-specific)
-    computeSavingsPlan: 10 # Lowest priority (global)
+# Overlay management configuration
+overlays:
+    # Delete overlays when utilization reaches 95%
+    utilizationThreshold: 95.0
+
+    # Overlay weights (higher = higher priority)
+    weights:
+        reservedInstance: 30 # Highest priority (instance-type specific)
+        ec2InstanceSavingsPlan: 20 # Medium priority (family-specific)
+        computeSavingsPlan: 10 # Lowest priority (global)
