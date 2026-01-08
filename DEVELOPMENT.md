@@ -25,6 +25,8 @@ Veneer requires:
 2. **Lumina** deployed and exposing metrics via Prometheus
 3. **Prometheus** server scraping Lumina metrics
 
+For local development, you can use the **fully mocked local environment** (see [Local Dev Environment](#local-dev-environment)) which doesn't require any external infrastructure.
+
 ## Quick Start
 
 ### 1. Clone and Setup
@@ -103,6 +105,194 @@ curl http://localhost:8080/metrics
 
 # Watch Veneer logs for reconciliation activity
 # (logs appear in the terminal where you ran `make run`)
+```
+
+## Local Dev Environment
+
+For development without access to real AWS infrastructure or a production Kubernetes cluster, Veneer provides a fully mocked local environment using Kind, LocalStack, and Lumina with test data.
+
+### What's Included
+
+The local dev environment provides:
+
+| Component | Description |
+|-----------|-------------|
+| **Kind cluster** | Local Kubernetes cluster |
+| **LocalStack** | Mocked AWS EC2/STS APIs with seeded instances |
+| **Lumina** | Controller using test data for Savings Plans |
+| **Prometheus** | Scrapes Lumina metrics |
+| **Mock nodes** | K8s nodes correlated to LocalStack EC2 instances |
+
+### Quick Setup
+
+```bash
+# One command to bring up everything
+make dev-env-up
+```
+
+This creates:
+- A Kind cluster named `veneer`
+- 16 EC2 instances in LocalStack (m5.xlarge, c5.large, r5.large, m5.large)
+- 3 Savings Plans with test rates
+- 2 Reserved Instances
+- Mock Kubernetes nodes with matching providerIDs
+
+### Available Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make dev-env-up` | Deploy the full dev environment |
+| `make dev-env-down` | Tear down the dev environment |
+| `make dev-env-restart` | Restart (down + up) |
+| `make dev-env-status` | Show status of all components |
+| `make dev-env-logs` | Follow logs from all components |
+| `make kind-create` | Create Kind cluster only |
+| `make kind-delete` | Delete Kind cluster |
+
+### Running Veneer Against Local Environment
+
+```bash
+# Terminal 1: Start port-forward to Prometheus
+kubectl port-forward -n prometheus svc/prometheus 9090:9090
+
+# Terminal 2: Run Veneer
+make run
+```
+
+### Verifying the Environment
+
+```bash
+# Check all pods are running
+make dev-env-status
+
+# Check mock nodes exist with providerIDs
+kubectl get nodes -l veneer.io/mock-node=true \
+  -o custom-columns=NAME:.metadata.name,TYPE:.metadata.labels.node\\.kubernetes\\.io/instance-type,PROVIDER-ID:.spec.providerID
+
+# Query Prometheus for Lumina metrics
+kubectl port-forward -n prometheus svc/prometheus 9090:9090 &
+curl -s 'http://localhost:9090/api/v1/query?query=savings_plan_remaining_capacity' | jq '.data.result'
+```
+
+### Available Test Metrics
+
+The local environment exposes these Lumina metrics:
+
+| Metric | Description | Example Values |
+|--------|-------------|----------------|
+| `ec2_instance_hourly_cost` | Per-instance hourly cost | $0.048 (m5.xlarge) |
+| `savings_plan_remaining_capacity` | Unused SP capacity | $9.86, $4.71, $2.84 |
+| `savings_plan_utilization_percent` | SP utilization rate | 1.4%, 5.8%, 5.3% |
+| `savings_plan_hourly_commitment` | SP hourly commitment | $10, $5, $3 |
+| `ec2_reserved_instance` | RI count by type | 2 (t2.small) |
+
+### Test Data Configuration
+
+The Savings Plans and rates are configured in `hack/dev-env/lumina/configmap.yaml`:
+
+```yaml
+testData:
+  savingsPlans:
+    "000000000000":
+      - savingsPlanArn: "arn:aws:savingsplans::000000000000:savingsplan/dev-compute-sp-001"
+        savingsPlanType: "Compute"
+        hourlyCommitment: 10.0
+        # ... more SPs
+
+  savingsPlanRates:
+    "dev-compute-sp-001":
+      - rate: 0.0537
+        instanceType: "m5.xlarge"
+        region: "us-west-2"
+      # ... more rates
+```
+
+### EC2 Instances
+
+LocalStack seeds these EC2 instances (defined in `hack/dev-env/localstack/init-configmap.yaml`):
+
+| Instance Type | Count | Purpose |
+|---------------|-------|---------|
+| m5.xlarge | 6 | Tests EC2 Instance SP rates |
+| c5.large | 4 | Tests EC2 Instance SP rates |
+| r5.large | 4 | Tests Compute SP rates |
+| m5.large (spot) | 2 | Tests spot pricing |
+
+### Node Correlation
+
+The `node-creator` Job automatically:
+1. Queries LocalStack for running EC2 instances
+2. Creates mock Kubernetes nodes with matching providerIDs
+3. Labels nodes with `veneer.io/mock-node=true`
+
+This enables Lumina to correlate nodes → EC2 instances → Savings Plans.
+
+### Troubleshooting
+
+#### Pods stuck in Pending
+
+```bash
+# Check for resource issues
+kubectl describe pod -n lumina-system
+
+# The mock nodes show as Unknown/NotReady - this is expected
+# Only the control-plane node is real
+```
+
+#### No metrics in Prometheus
+
+```bash
+# Check Prometheus targets
+kubectl port-forward -n prometheus svc/prometheus 9090:9090 &
+curl -s 'http://localhost:9090/api/v1/targets' | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+
+# Check Lumina logs for errors
+kubectl logs -n lumina-system deployment/lumina-controller --tail=50
+```
+
+#### Node correlation not working
+
+```bash
+# Verify node-creator job completed
+kubectl get jobs -n default
+
+# Check job logs
+kubectl logs job/node-creator -n default
+
+# Verify nodes have correct providerIDs
+kubectl get nodes -o custom-columns=NAME:.metadata.name,PROVIDER-ID:.spec.providerID
+```
+
+#### LocalStack seed script failed
+
+```bash
+# Check LocalStack logs for seed script output
+kubectl logs -n localstack deployment/localstack | grep -A 50 "Seeding LocalStack"
+```
+
+### Customizing Test Data
+
+To modify the test environment:
+
+1. **Add more EC2 instances**: Edit `hack/dev-env/localstack/init-configmap.yaml`
+2. **Change Savings Plans**: Edit `hack/dev-env/lumina/configmap.yaml` under `testData.savingsPlans`
+3. **Modify SP rates**: Edit `hack/dev-env/lumina/configmap.yaml` under `testData.savingsPlanRates`
+
+After changes, restart the environment:
+
+```bash
+make dev-env-restart
+```
+
+### Cleaning Up
+
+```bash
+# Remove dev environment but keep Kind cluster
+make dev-env-down
+
+# Remove everything including Kind cluster
+make dev-env-down
+make kind-delete
 ```
 
 ## Development Workflow
