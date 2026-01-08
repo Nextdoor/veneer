@@ -69,18 +69,37 @@ const (
 
 	// LabelCapacityTypeKarpenter is the Karpenter label for capacity type (spot vs on-demand).
 	LabelCapacityTypeKarpenter = "karpenter.sh/capacity-type"
+
+	// LabelDisabledKey is the label key used to create an impossible requirement.
+	// When Disabled mode is enabled, overlays include a requirement that this label
+	// must equal "true", but no nodes will ever have this label, so the overlay
+	// never matches any instances.
+	LabelDisabledKey = "veneer.io/disabled"
+
+	// LabelDisabledValue is the value used for the disabled requirement.
+	LabelDisabledValue = "true"
 )
 
 // Generator creates Karpenter NodeOverlay resources from Veneer decisions.
 //
 // The generator converts Decision structs (which represent whether an overlay should exist)
-// into fully-formed NodeOverlay Kubernetes resources. In Phase 4 (read-only mode), these
-// resources are logged but not applied to the cluster.
-type Generator struct{}
+// into fully-formed NodeOverlay Kubernetes resources.
+type Generator struct {
+	// Disabled controls whether generated overlays are active or inactive.
+	// When true, an impossible requirement is added to each overlay that prevents
+	// it from matching any nodes. This allows testing overlay creation without
+	// affecting Karpenter's provisioning decisions.
+	Disabled bool
+}
 
-// NewGenerator creates a new NodeOverlay generator.
+// NewGenerator creates a new NodeOverlay generator with default settings (enabled).
 func NewGenerator() *Generator {
-	return &Generator{}
+	return &Generator{Disabled: false}
+}
+
+// NewGeneratorWithOptions creates a new NodeOverlay generator with the specified options.
+func NewGeneratorWithOptions(disabled bool) *Generator {
+	return &Generator{Disabled: disabled}
 }
 
 // GeneratedOverlay wraps a NodeOverlay with additional metadata for dry-run logging.
@@ -175,11 +194,19 @@ func (g *Generator) GenerateAll(decisions []Decision) []GeneratedOverlay {
 //
 // RI overlays additionally get:
 //   - instance-type: the specific instance type
+//
+// When disabled mode is enabled, overlays also get:
+//   - veneer.io/disabled: "true"
 func (g *Generator) generateLabels(decision Decision) map[string]string {
 	labels := map[string]string{
 		LabelManagedBy:          LabelManagedByValue,
 		LabelCapacityType:       capacityTypeToLabelValue(decision.CapacityType),
 		LabelOptimizationReason: sanitizeLabelValue(decision.Reason),
+	}
+
+	// Add disabled label when in disabled mode for easy identification
+	if g.Disabled {
+		labels[LabelDisabledKey] = LabelDisabledValue
 	}
 
 	// Extract instance family and type from the decision name for family-specific overlays
@@ -218,7 +245,25 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 //   - Reserved Instance: On-demand instances of a specific type
 //
 // All overlays target on-demand capacity type since SPs and RIs only apply to on-demand.
+//
+// When disabled mode is enabled, an additional "impossible" requirement is added that
+// requires the label "veneer.io/disabled: true" to be present on nodes. Since no nodes
+// have this label, the overlay will never match any instances, effectively disabling it
+// while still allowing the overlay to be created in the cluster for testing/validation.
 func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelectorRequirement {
+	var requirements []corev1.NodeSelectorRequirement
+
+	// If disabled mode is enabled, add an impossible requirement first.
+	// This requirement demands that nodes have a label that no node will ever have,
+	// ensuring the overlay never matches any instances while still being valid YAML.
+	if g.Disabled {
+		requirements = append(requirements, corev1.NodeSelectorRequirement{
+			Key:      LabelDisabledKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{LabelDisabledValue},
+		})
+	}
+
 	// All overlays target on-demand instances only
 	// SPs and RIs don't apply to spot instances
 	capacityTypeReq := corev1.NodeSelectorRequirement{
@@ -231,42 +276,44 @@ func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelecto
 	case CapacityTypeComputeSavingsPlan:
 		// Global Compute SPs apply to all instance families
 		// Use Exists operator to match any instance family
-		return []corev1.NodeSelectorRequirement{
-			{
+		requirements = append(requirements,
+			corev1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
 				Operator: corev1.NodeSelectorOpExists,
 			},
 			capacityTypeReq,
-		}
+		)
 
 	case CapacityTypeEC2InstanceSavingsPlan:
 		// EC2 Instance SPs are scoped to a specific instance family
 		family, _ := parseEC2InstanceSPName(decision.Name)
-		return []corev1.NodeSelectorRequirement{
-			{
+		requirements = append(requirements,
+			corev1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{family},
 			},
 			capacityTypeReq,
-		}
+		)
 
 	case CapacityTypeReservedInstance:
 		// RIs are scoped to a specific instance type
 		instanceType, _ := parseRIName(decision.Name)
-		return []corev1.NodeSelectorRequirement{
-			{
+		requirements = append(requirements,
+			corev1.NodeSelectorRequirement{
 				Key:      LabelInstanceTypeK8s,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{instanceType},
 			},
 			capacityTypeReq,
-		}
+		)
 
 	default:
-		// Should never happen, but return empty requirements as a safeguard
-		return []corev1.NodeSelectorRequirement{capacityTypeReq}
+		// Should never happen, but return capacity type requirement as a safeguard
+		requirements = append(requirements, capacityTypeReq)
 	}
+
+	return requirements
 }
 
 // capacityTypeToLabelValue converts a CapacityType to a Kubernetes-safe label value.

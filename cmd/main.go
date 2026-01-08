@@ -28,13 +28,16 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/overlay"
@@ -51,6 +54,15 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	// Register Karpenter v1alpha1 types (NodeOverlay)
+	// Karpenter doesn't export an AddToScheme function, so we register types directly
+	karpenterGV := schema.GroupVersion{Group: "karpenter.sh", Version: "v1alpha1"}
+	scheme.AddKnownTypes(karpenterGV,
+		&karpenterv1alpha1.NodeOverlay{},
+		&karpenterv1alpha1.NodeOverlayList{},
+	)
+	metav1.AddToGroupVersion(scheme, karpenterGV)
+
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -59,6 +71,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var configFile string
+	var overlayDisabled bool
 
 	flag.StringVar(&configFile, "config", "/etc/veneer/config.yaml",
 		"Path to the controller configuration file. Can be overridden with VENEER_CONFIG_PATH environment variable.")
@@ -69,6 +82,10 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&overlayDisabled, "overlay-disabled", false,
+		"Create NodeOverlays in disabled mode (with impossible requirements). "+
+			"Overlays will be created but won't affect Karpenter provisioning decisions. "+
+			"Can also be set via config file (overlays.disabled) or VENEER_OVERLAY_DISABLED env var.")
 
 	opts := zap.Options{
 		Development: true,
@@ -97,6 +114,11 @@ func main() {
 		setupLog.Info("loaded configuration",
 			"prometheus-url", cfg.PrometheusURL,
 			"log-level", cfg.LogLevel)
+	}
+
+	// CLI flag overrides config file for overlay-disabled
+	if overlayDisabled {
+		cfg.Overlays.Disabled = true
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -129,17 +151,21 @@ func main() {
 
 	// Create decision engine and generator for NodeOverlay lifecycle management
 	decisionEngine := overlay.NewDecisionEngine(cfg)
-	generator := overlay.NewGenerator()
+	generator := overlay.NewGeneratorWithOptions(cfg.Overlays.Disabled)
+
+	// Log disabled mode status at startup
+	if cfg.Overlays.Disabled {
+		setupLog.Info("overlay disabled mode enabled - NodeOverlays will be created with impossible requirements")
+	}
 
 	// Create and start metrics reconciler
-	// Phase 4: DryRun=true logs what would be created without making changes
 	metricsReconciler := &reconciler.MetricsReconciler{
 		PrometheusClient: promClient,
 		Config:           cfg,
 		DecisionEngine:   decisionEngine,
 		Generator:        generator,
 		Logger:           ctrl.Log.WithName("metrics-reconciler"),
-		DryRun:           true, // Phase 4: Read-only mode
+		Client:           mgr.GetClient(),
 		// Use default 5 minute interval
 	}
 

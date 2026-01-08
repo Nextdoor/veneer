@@ -34,6 +34,7 @@ const (
 	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
 	KeyAWSAccountID                        = "aws.accountId"
 	KeyAWSRegion                           = "aws.region"
+	KeyOverlayDisabled                     = "overlays.disabled"
 	KeyOverlayUtilizationThreshold         = "overlays.utilizationThreshold"
 	KeyOverlayWeightReservedInstance       = "overlays.weights.reservedInstance"
 	KeyOverlayWeightEC2InstanceSavingsPlan = "overlays.weights.ec2InstanceSavingsPlan"
@@ -51,6 +52,7 @@ const (
 	EnvHealthProbeBindAddress = "VENEER_HEALTH_PROBE_BIND_ADDRESS"
 	EnvAWSAccountID           = "VENEER_AWS_ACCOUNT_ID"
 	EnvAWSRegion              = "VENEER_AWS_REGION"
+	EnvOverlayDisabled        = "VENEER_OVERLAY_DISABLED"
 	EnvPrefix                 = "VENEER"
 )
 
@@ -121,6 +123,14 @@ type AWSConfig struct {
 // making Karpenter prefer on-demand instances that will receive pre-paid coverage.
 // Overlays are deleted when capacity is exhausted (at utilization threshold).
 type OverlayManagementConfig struct {
+	// Disabled controls whether NodeOverlays are active or inactive.
+	// When true, overlays are created with an impossible requirement that prevents
+	// them from matching any nodes. This allows testing overlay creation without
+	// affecting Karpenter's provisioning decisions.
+	//
+	// Default: false (overlays are active)
+	Disabled bool `yaml:"disabled,omitempty"`
+
 	// UtilizationThreshold is the SP/RI utilization percentage at which overlays are deleted.
 	// When utilization reaches this threshold, overlays are removed to prevent over-provisioning
 	// beyond available pre-paid capacity.
@@ -211,6 +221,7 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv(KeyHealthProbeBindAddress, EnvHealthProbeBindAddress)
 	_ = v.BindEnv(KeyAWSAccountID, EnvAWSAccountID)
 	_ = v.BindEnv(KeyAWSRegion, EnvAWSRegion)
+	_ = v.BindEnv(KeyOverlayDisabled, EnvOverlayDisabled)
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {

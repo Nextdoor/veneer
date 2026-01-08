@@ -21,3 +21,17 @@ metricsBindAddress: ":8080"
 # Default: :8081
 # Can be overridden with VENEER_HEALTH_PROBE_BIND_ADDRESS environment variable
 healthProbeBindAddress: ":8081"
+
+# Overlay management configuration
+overlays:
+    # Disabled mode creates NodeOverlays with an impossible requirement that
+    # prevents them from matching any nodes. This allows testing overlay creation
+    # in a cluster without affecting Karpenter's provisioning decisions.
+    #
+    # When disabled: overlays include a requirement for "veneer.io/disabled: true"
+    # which no node will have, so they never match.
+    #
+    # Default: false (overlays are active and will affect Karpenter)
+    # Can be overridden with VENEER_OVERLAY_DISABLED environment variable
+    # or --overlay-disabled CLI flag
+    disabled: false

@@ -17,8 +17,7 @@ limitations under the License.
 // Package reconciler provides Kubernetes controllers for managing cost-aware provisioning.
 //
 // The metrics reconciler periodically queries Prometheus for Lumina metrics,
-// makes overlay lifecycle decisions, and generates NodeOverlay specs.
-// In dry-run mode (Phase 4), it logs what would be created without applying changes.
+// makes overlay lifecycle decisions, and creates/updates/deletes NodeOverlay resources.
 package reconciler
 
 import (
@@ -30,12 +29,14 @@ import (
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
 
 // MetricsReconciler periodically queries Prometheus for Lumina metrics.
 // It analyzes capacity utilization, makes overlay lifecycle decisions,
-// and generates NodeOverlay specs. In dry-run mode, it logs what would
-// be created without applying changes to the cluster.
+// and creates/updates/deletes NodeOverlay resources in the cluster.
 type MetricsReconciler struct {
 	// PrometheusClient is the client for querying Lumina metrics
 	PrometheusClient *prometheus.Client
@@ -49,15 +50,14 @@ type MetricsReconciler struct {
 	// Generator creates NodeOverlay specs from decisions
 	Generator *overlay.Generator
 
+	// Client is the Kubernetes client for managing NodeOverlay resources
+	Client client.Client
+
 	// Logger is the structured logger for this reconciler
 	Logger logr.Logger
 
 	// Interval is how often to query metrics (default: 5 minutes)
 	Interval time.Duration
-
-	// DryRun controls whether to actually create/update/delete NodeOverlays.
-	// When true (Phase 4), only logs what would happen without making changes.
-	DryRun bool
 }
 
 // Start begins the metrics reconciliation loop.
@@ -132,10 +132,10 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 		decisions = append(decisions, riDecisions...)
 	}
 
-	// Generate NodeOverlay specs from decisions
-	if r.Generator != nil && len(decisions) > 0 {
+	// Generate and apply NodeOverlay specs from decisions
+	if r.Generator != nil && r.Client != nil && len(decisions) > 0 {
 		generatedOverlays := r.Generator.GenerateAll(decisions)
-		r.logGeneratedOverlays(generatedOverlays)
+		r.applyOverlays(ctx, generatedOverlays)
 	}
 
 	r.Logger.V(1).Info("Metrics reconciliation complete",
@@ -277,58 +277,121 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 	return decisions, nil
 }
 
-// logGeneratedOverlays logs the generated NodeOverlay specs in dry-run mode.
-func (r *MetricsReconciler) logGeneratedOverlays(overlays []overlay.GeneratedOverlay) {
+// applyOverlays creates, updates, or deletes NodeOverlay resources based on decisions.
+func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overlay.GeneratedOverlay) {
 	createCount := 0
+	updateCount := 0
 	deleteCount := 0
+	errorCount := 0
 
 	for _, gen := range overlays {
 		switch gen.Action {
 		case "create":
-			createCount++
 			if gen.Overlay != nil {
 				// Validate the generated overlay
-				if errors := overlay.ValidateOverlay(gen.Overlay); len(errors) > 0 {
+				if validationErrors := overlay.ValidateOverlay(gen.Overlay); len(validationErrors) > 0 {
 					r.Logger.Error(nil, "Generated overlay failed validation",
 						"name", gen.Overlay.Name,
-						"errors", errors,
+						"errors", validationErrors,
 					)
+					errorCount++
 					continue
 				}
 
-				if r.DryRun {
-					r.Logger.Info("DRY-RUN: Would create NodeOverlay",
+				// Check if overlay already exists
+				existing := &karpenterv1alpha1.NodeOverlay{}
+				err := r.Client.Get(ctx, client.ObjectKey{Name: gen.Overlay.Name}, existing)
+
+				if errors.IsNotFound(err) {
+					// Create new overlay
+					if err := r.Client.Create(ctx, gen.Overlay); err != nil {
+						r.Logger.Error(err, "Failed to create NodeOverlay",
+							"name", gen.Overlay.Name,
+						)
+						errorCount++
+						continue
+					}
+					createCount++
+					r.Logger.Info("Created NodeOverlay",
 						"name", gen.Overlay.Name,
 						"capacity_type", gen.Decision.CapacityType,
 						"weight", gen.Decision.Weight,
 						"price", gen.Decision.Price,
 						"reason", gen.Decision.Reason,
 					)
-					// Log full YAML at debug level
-					r.Logger.V(1).Info("DRY-RUN: NodeOverlay YAML",
+				} else if err != nil {
+					r.Logger.Error(err, "Failed to check existing NodeOverlay",
 						"name", gen.Overlay.Name,
-						"yaml", overlay.FormatOverlayYAML(gen.Overlay),
+					)
+					errorCount++
+					continue
+				} else {
+					// Update existing overlay if spec differs
+					// Copy the resource version from existing to allow update
+					gen.Overlay.ResourceVersion = existing.ResourceVersion
+					if err := r.Client.Update(ctx, gen.Overlay); err != nil {
+						r.Logger.Error(err, "Failed to update NodeOverlay",
+							"name", gen.Overlay.Name,
+						)
+						errorCount++
+						continue
+					}
+					updateCount++
+					r.Logger.V(1).Info("Updated NodeOverlay",
+						"name", gen.Overlay.Name,
+						"capacity_type", gen.Decision.CapacityType,
 					)
 				}
-				// TODO (Phase 5): Actually create the NodeOverlay CR
 			}
 
 		case "delete":
-			deleteCount++
-			if r.DryRun {
-				r.Logger.Info("DRY-RUN: Would delete NodeOverlay",
+			// Check if overlay exists before deleting
+			existing := &karpenterv1alpha1.NodeOverlay{}
+			err := r.Client.Get(ctx, client.ObjectKey{Name: gen.Decision.Name}, existing)
+
+			if errors.IsNotFound(err) {
+				// Already gone, nothing to do
+				r.Logger.V(1).Info("NodeOverlay already deleted",
 					"name", gen.Decision.Name,
-					"capacity_type", gen.Decision.CapacityType,
-					"reason", gen.Decision.Reason,
 				)
+				continue
+			} else if err != nil {
+				r.Logger.Error(err, "Failed to check existing NodeOverlay for deletion",
+					"name", gen.Decision.Name,
+				)
+				errorCount++
+				continue
 			}
-			// TODO (Phase 5): Actually delete the NodeOverlay CR
+
+			// Only delete if it's managed by Veneer
+			if existing.Labels[overlay.LabelManagedBy] != overlay.LabelManagedByValue {
+				r.Logger.Info("Skipping deletion of NodeOverlay not managed by Veneer",
+					"name", gen.Decision.Name,
+					"managed_by", existing.Labels[overlay.LabelManagedBy],
+				)
+				continue
+			}
+
+			if err := r.Client.Delete(ctx, existing); err != nil {
+				r.Logger.Error(err, "Failed to delete NodeOverlay",
+					"name", gen.Decision.Name,
+				)
+				errorCount++
+				continue
+			}
+			deleteCount++
+			r.Logger.Info("Deleted NodeOverlay",
+				"name", gen.Decision.Name,
+				"capacity_type", gen.Decision.CapacityType,
+				"reason", gen.Decision.Reason,
+			)
 		}
 	}
 
-	r.Logger.Info("NodeOverlay generation summary",
-		"dry_run", r.DryRun,
-		"would_create", createCount,
-		"would_delete", deleteCount,
+	r.Logger.Info("NodeOverlay reconciliation summary",
+		"created", createCount,
+		"updated", updateCount,
+		"deleted", deleteCount,
+		"errors", errorCount,
 	)
 }

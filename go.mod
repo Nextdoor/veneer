@@ -2,6 +2,8 @@ module github.com/nextdoor/veneer
 
 go 1.25.0
 
+toolchain go1.25.5
+
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/nextdoor/lumina v0.4.0

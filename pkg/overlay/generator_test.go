@@ -670,3 +670,170 @@ func TestFormatOverlayYAML_Nil(t *testing.T) {
 func stringPtr(s string) *string {
 	return &s
 }
+
+func TestNewGeneratorWithOptions(t *testing.T) {
+	t.Run("disabled=false", func(t *testing.T) {
+		g := NewGeneratorWithOptions(false)
+		if g.Disabled {
+			t.Error("expected Disabled to be false")
+		}
+	})
+
+	t.Run("disabled=true", func(t *testing.T) {
+		g := NewGeneratorWithOptions(true)
+		if !g.Disabled {
+			t.Error("expected Disabled to be true")
+		}
+	})
+}
+
+func TestGenerator_DisabledMode_AddsImpossibleRequirement(t *testing.T) {
+	g := NewGeneratorWithOptions(true) // Disabled mode enabled
+
+	decision := Decision{
+		Name:               "cost-aware-compute-sp-global",
+		CapacityType:       CapacityTypeComputeSavingsPlan,
+		ShouldExist:        true,
+		Weight:             10,
+		Price:              "0.00",
+		Reason:             "capacity available",
+		UtilizationPercent: 50.0,
+		RemainingCapacity:  25.0,
+	}
+
+	overlay := g.Generate(decision)
+
+	if overlay == nil {
+		t.Fatal("expected overlay to be generated, got nil")
+	}
+
+	// Should have 3 requirements: disabled, instance-family, capacity-type
+	if len(overlay.Spec.Requirements) != 3 {
+		t.Fatalf("expected 3 requirements in disabled mode, got %d", len(overlay.Spec.Requirements))
+	}
+
+	// First requirement should be the impossible disabled requirement
+	disabledReq := overlay.Spec.Requirements[0]
+	if disabledReq.Key != LabelDisabledKey {
+		t.Errorf("expected first requirement key %q, got %q", LabelDisabledKey, disabledReq.Key)
+	}
+	if disabledReq.Operator != corev1.NodeSelectorOpIn {
+		t.Errorf("expected first requirement operator %q, got %q", corev1.NodeSelectorOpIn, disabledReq.Operator)
+	}
+	if len(disabledReq.Values) != 1 || disabledReq.Values[0] != LabelDisabledValue {
+		t.Errorf("expected first requirement values [%s], got %v", LabelDisabledValue, disabledReq.Values)
+	}
+
+	// Verify disabled label is also added
+	if overlay.Labels[LabelDisabledKey] != LabelDisabledValue {
+		t.Errorf("expected disabled label %q=%q, got %q",
+			LabelDisabledKey, LabelDisabledValue, overlay.Labels[LabelDisabledKey])
+	}
+}
+
+func TestGenerator_DisabledMode_EC2InstanceSP(t *testing.T) {
+	g := NewGeneratorWithOptions(true) // Disabled mode enabled
+
+	decision := Decision{
+		Name:         "cost-aware-ec2-sp-m5-us-west-2",
+		CapacityType: CapacityTypeEC2InstanceSavingsPlan,
+		ShouldExist:  true,
+		Weight:       20,
+		Price:        "0.00",
+		Reason:       "capacity available",
+	}
+
+	overlay := g.Generate(decision)
+
+	if overlay == nil {
+		t.Fatal("expected overlay to be generated, got nil")
+	}
+
+	// Should have 3 requirements: disabled, instance-family, capacity-type
+	if len(overlay.Spec.Requirements) != 3 {
+		t.Fatalf("expected 3 requirements in disabled mode, got %d", len(overlay.Spec.Requirements))
+	}
+
+	// Verify the impossible requirement is first
+	if overlay.Spec.Requirements[0].Key != LabelDisabledKey {
+		t.Errorf("expected first requirement to be disabled key, got %q", overlay.Spec.Requirements[0].Key)
+	}
+
+	// Verify family requirement is still present
+	familyReq := overlay.Spec.Requirements[1]
+	if familyReq.Key != LabelInstanceFamilyKarpenter {
+		t.Errorf("expected second requirement key %q, got %q", LabelInstanceFamilyKarpenter, familyReq.Key)
+	}
+	if len(familyReq.Values) != 1 || familyReq.Values[0] != "m5" {
+		t.Errorf("expected second requirement values [m5], got %v", familyReq.Values)
+	}
+}
+
+func TestGenerator_DisabledMode_ReservedInstance(t *testing.T) {
+	g := NewGeneratorWithOptions(true) // Disabled mode enabled
+
+	decision := Decision{
+		Name:         "cost-aware-ri-m5.xlarge-us-west-2",
+		CapacityType: CapacityTypeReservedInstance,
+		ShouldExist:  true,
+		Weight:       30,
+		Price:        "0.00",
+		Reason:       "3 reserved instances available",
+	}
+
+	overlay := g.Generate(decision)
+
+	if overlay == nil {
+		t.Fatal("expected overlay to be generated, got nil")
+	}
+
+	// Should have 3 requirements: disabled, instance-type, capacity-type
+	if len(overlay.Spec.Requirements) != 3 {
+		t.Fatalf("expected 3 requirements in disabled mode, got %d", len(overlay.Spec.Requirements))
+	}
+
+	// Verify the impossible requirement is first
+	if overlay.Spec.Requirements[0].Key != LabelDisabledKey {
+		t.Errorf("expected first requirement to be disabled key, got %q", overlay.Spec.Requirements[0].Key)
+	}
+
+	// Verify instance-type requirement is present
+	typeReq := overlay.Spec.Requirements[1]
+	if typeReq.Key != LabelInstanceTypeK8s {
+		t.Errorf("expected second requirement key %q, got %q", LabelInstanceTypeK8s, typeReq.Key)
+	}
+}
+
+func TestGenerator_EnabledMode_NoImpossibleRequirement(t *testing.T) {
+	g := NewGenerator() // Default: disabled=false
+
+	decision := Decision{
+		Name:         "cost-aware-compute-sp-global",
+		CapacityType: CapacityTypeComputeSavingsPlan,
+		ShouldExist:  true,
+		Weight:       10,
+		Price:        "0.00",
+		Reason:       "capacity available",
+	}
+
+	overlay := g.Generate(decision)
+
+	if overlay == nil {
+		t.Fatal("expected overlay to be generated, got nil")
+	}
+
+	// Should have only 2 requirements (no disabled requirement)
+	if len(overlay.Spec.Requirements) != 2 {
+		t.Fatalf("expected 2 requirements in enabled mode, got %d", len(overlay.Spec.Requirements))
+	}
+
+	// First requirement should NOT be the disabled key
+	if overlay.Spec.Requirements[0].Key == LabelDisabledKey {
+		t.Error("did not expect disabled requirement in enabled mode")
+	}
+
+	// Should NOT have disabled label
+	if _, exists := overlay.Labels[LabelDisabledKey]; exists {
+		t.Error("did not expect disabled label in enabled mode")
+	}
+}
