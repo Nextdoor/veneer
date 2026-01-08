@@ -10,7 +10,7 @@ rules:
 - apiGroups:
   - karpenter.sh
   resources:
-  - nodeoverlay
+  - nodeoverlays
   verbs:
   - get
   - list
@@ -22,7 +22,7 @@ rules:
 - apiGroups:
   - karpenter.sh
   resources:
-  - nodeoverlay/status
+  - nodeoverlays/status
   verbs:
   - get
   - update
