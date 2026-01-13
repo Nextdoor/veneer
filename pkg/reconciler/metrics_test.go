@@ -23,8 +23,35 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/internal/testutil"
+	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/prometheus"
+	"github.com/stretchr/testify/assert"
 )
+
+// newTestConfig creates a minimal config for testing.
+func newTestConfig() *config.Config {
+	return &config.Config{
+		PrometheusURL: "http://test:9090",
+		AWS: config.AWSConfig{
+			AccountID: "123456789012",
+			Region:    "us-west-2",
+		},
+		Overlays: config.OverlayManagementConfig{
+			Disabled:             false,
+			UtilizationThreshold: config.DefaultOverlayUtilizationThreshold,
+			Weights: config.OverlayWeightsConfig{
+				ReservedInstance:       config.DefaultOverlayWeightReservedInstance,
+				EC2InstanceSavingsPlan: config.DefaultOverlayWeightEC2InstanceSavingsPlan,
+				ComputeSavingsPlan:     config.DefaultOverlayWeightComputeSavingsPlan,
+			},
+			Naming: config.OverlayNamingConfig{
+				ReservedInstancePrefix:       config.DefaultOverlayNamingReservedInstancePrefix,
+				EC2InstanceSavingsPlanPrefix: config.DefaultOverlayNamingEC2InstanceSPPrefix,
+				ComputeSavingsPlanPrefix:     config.DefaultOverlayNamingComputeSPPrefix,
+			},
+		},
+	}
+}
 
 func TestMetricsReconciler_Start(t *testing.T) {
 	server := testutil.NewMockPrometheusServer()
@@ -49,6 +76,7 @@ func TestMetricsReconciler_Start(t *testing.T) {
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
+		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 		Interval:         100 * time.Millisecond, // Fast interval for testing
 	}
@@ -85,6 +113,7 @@ func TestMetricsReconciler_StartWithCancel(t *testing.T) {
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
+		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 		Interval:         1 * time.Second,
 	}
@@ -177,6 +206,7 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 
 			reconciler := &MetricsReconciler{
 				PrometheusClient: client,
+				Config:           newTestConfig(),
 				Logger:           logr.Discard(),
 			}
 
@@ -203,6 +233,7 @@ func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
+		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 	}
 
@@ -233,6 +264,7 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
+		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 		// Don't set Interval - should use default
 	}
@@ -244,7 +276,51 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 	_ = reconciler.Start(ctx)
 
 	// Verify default was set
-	if reconciler.Interval != 5*time.Minute {
-		t.Errorf("Expected default interval 5m, got %v", reconciler.Interval)
+	assert.Equal(t, DefaultReconcileInterval, reconciler.Interval)
+}
+
+func TestMetricsReconciler_StartSetsConfigMetrics(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
+	server.SetMetrics(testutil.MetricFixture{
+		`lumina_data_freshness_seconds`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [{"metric": {}, "value": [1640000000, "30"]}]
+			}
+		}`,
+	})
+
+	client, _ := prometheus.NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
+
+	cfg := newTestConfig()
+	cfg.Overlays.Disabled = true
+	cfg.Overlays.UtilizationThreshold = 90.0
+
+	reconciler := &MetricsReconciler{
+		PrometheusClient: client,
+		Config:           cfg,
+		Logger:           logr.Discard(),
+		Interval:         50 * time.Millisecond,
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Start should set config metrics without error
+	err := reconciler.Start(ctx)
+	assert.NoError(t, err)
+}
+
+func TestDefaultReconcileInterval(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 5*time.Minute, DefaultReconcileInterval)
+}
+
+func TestMaxDataFreshnessSeconds(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 600.0, MaxDataFreshnessSeconds)
 }
