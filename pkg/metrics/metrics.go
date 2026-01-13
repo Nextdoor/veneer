@@ -22,22 +22,27 @@ limitations under the License.
 //
 // Metrics are registered with controller-runtime's metrics registry, which automatically
 // exposes them on the metrics endpoint (default :8080/metrics).
+//
+// This package follows Lumina's struct-based metrics pattern for consistency between
+// the two projects. Metrics are encapsulated in a Metrics struct and initialized via
+// NewMetrics(registry) factory function.
 package metrics
 
 import (
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-// Metric namespace and subsystem constants.
+// Metric namespace constant.
 const (
 	// Namespace is the Prometheus metric namespace for all Veneer metrics.
 	Namespace = "veneer"
 )
 
 // Metric name constants.
+// These are exported for use by external consumers that need to query Veneer metrics
+// programmatically. Using these constants provides compile-time safety and IDE autocomplete.
 const (
 	MetricReconciliationDuration      = "reconciliation_duration_seconds"
 	MetricReconciliationTotal         = "reconciliation_total"
@@ -54,7 +59,6 @@ const (
 	MetricPrometheusQueryResultCount  = "prometheus_query_result_count"
 	MetricConfigOverlaysDisabled      = "config_overlays_disabled"
 	MetricConfigUtilizationThreshold  = "config_utilization_threshold_percent"
-	MetricBuildInfo                   = "build_info"
 )
 
 // Label key constants.
@@ -68,9 +72,6 @@ const (
 	LabelReason       = "reason"
 	LabelInstanceType = "instance_type"
 	LabelRegion       = "region"
-	LabelVersion      = "version"
-	LabelCommit       = "commit"
-	LabelBuildDate    = "build_date"
 )
 
 // Result represents the outcome of an operation.
@@ -198,7 +199,6 @@ const (
 	helpPrometheusQueryResultCount  = "Number of results returned by last Prometheus query (0 may indicate missing data)"
 	helpConfigOverlaysDisabled      = "1 if overlay creation is disabled (dry-run mode), 0 if enabled"
 	helpConfigUtilizationThreshold  = "Configured utilization threshold for overlay deletion (default 95%)"
-	helpBuildInfo                   = "Build information for Veneer"
 )
 
 // Reason string patterns used for sanitization.
@@ -211,27 +211,21 @@ const (
 	reasonPatternNoRI           = "no reserved instances"
 )
 
-var (
+// Metrics holds all Prometheus metrics for the Veneer controller.
+// This struct-based approach matches Lumina's pattern for consistency between
+// the two projects.
+type Metrics struct {
 	// ===================
 	// Reconciliation Metrics
 	// ===================
 
 	// ReconciliationDuration tracks the duration of metrics reconciliation cycles.
 	// This helps identify performance issues and establish baseline latency.
-	ReconciliationDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Name:      MetricReconciliationDuration,
-		Help:      helpReconciliationDuration,
-		Buckets:   prometheus.DefBuckets,
-	})
+	ReconciliationDuration prometheus.Histogram
 
 	// ReconciliationTotal counts the total number of reconciliation cycles.
 	// Labels: result (success, error)
-	ReconciliationTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Name:      MetricReconciliationTotal,
-		Help:      helpReconciliationTotal,
-	}, []string{LabelResult})
+	ReconciliationTotal *prometheus.CounterVec
 
 	// ===================
 	// Data Source Health Metrics
@@ -240,20 +234,12 @@ var (
 	// LuminaDataFreshnessSeconds reports the age of Lumina data.
 	// This is derived from the lumina_data_freshness_seconds metric and helps
 	// identify when Veneer is operating on stale data.
-	LuminaDataFreshnessSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricLuminaDataFreshnessSeconds,
-		Help:      helpLuminaDataFreshnessSeconds,
-	})
+	LuminaDataFreshnessSeconds prometheus.Gauge
 
 	// LuminaDataAvailable indicates whether Lumina data is available and fresh.
 	// 1 = data available and fresh (< 10 minutes old), 0 = stale or unavailable.
 	// This is useful for alerting on data availability issues.
-	LuminaDataAvailable = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricLuminaDataAvailable,
-		Help:      helpLuminaDataAvailable,
-	})
+	LuminaDataAvailable prometheus.Gauge
 
 	// ===================
 	// Decision Metrics
@@ -262,11 +248,7 @@ var (
 	// DecisionTotal counts decisions made by the decision engine.
 	// Labels: capacity_type, should_exist, reason
 	// This is the most important metric for understanding Veneer's behavior.
-	DecisionTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Name:      MetricDecisionTotal,
-		Help:      helpDecisionTotal,
-	}, []string{LabelCapacityType, LabelShouldExist, LabelReason})
+	DecisionTotal *prometheus.CounterVec
 
 	// ===================
 	// Reserved Instance Metrics
@@ -275,20 +257,12 @@ var (
 	// ReservedInstanceDataAvailable indicates whether Lumina is exposing RI data.
 	// NOTE: Lumina does not currently expose ec2_reserved_instance metric.
 	// This metric helps distinguish "no RIs exist" from "Lumina not exporting RI data".
-	ReservedInstanceDataAvailable = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricReservedInstanceDataAvail,
-		Help:      helpReservedInstanceDataAvail,
-	})
+	ReservedInstanceDataAvailable prometheus.Gauge
 
 	// ReservedInstanceCount tracks the number of RIs detected per instance type.
 	// Labels: instance_type, region
 	// This will be populated when Lumina starts exposing RI data.
-	ReservedInstanceCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricReservedInstanceCount,
-		Help:      helpReservedInstanceCount,
-	}, []string{LabelInstanceType, LabelRegion})
+	ReservedInstanceCount *prometheus.GaugeVec
 
 	// ===================
 	// NodeOverlay Lifecycle Metrics
@@ -296,28 +270,16 @@ var (
 
 	// OverlayOperationsTotal counts NodeOverlay operations by type and capacity type.
 	// Labels: operation (create, update, delete), capacity_type
-	OverlayOperationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Name:      MetricOverlayOperationsTotal,
-		Help:      helpOverlayOperationsTotal,
-	}, []string{LabelOperation, LabelCapacityType})
+	OverlayOperationsTotal *prometheus.CounterVec
 
 	// OverlayOperationErrorsTotal counts NodeOverlay operation errors.
 	// Labels: operation (create, update, delete), error_type (validation, api, not_found)
-	OverlayOperationErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Name:      MetricOverlayOperationErrorsTotal,
-		Help:      helpOverlayOperationErrorsTotal,
-	}, []string{LabelOperation, LabelErrorType})
+	OverlayOperationErrorsTotal *prometheus.CounterVec
 
 	// OverlayCount tracks the current number of NodeOverlays managed by Veneer.
 	// Labels: capacity_type
 	// This is a gauge that gets updated after each reconciliation cycle.
-	OverlayCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricOverlayCount,
-		Help:      helpOverlayCount,
-	}, []string{LabelCapacityType})
+	OverlayCount *prometheus.GaugeVec
 
 	// ===================
 	// Prometheus Query Metrics
@@ -325,29 +287,16 @@ var (
 
 	// PrometheusQueryDuration tracks the duration of Prometheus queries to Lumina.
 	// Labels: query_type (sp_utilization, sp_capacity, ri, data_freshness)
-	PrometheusQueryDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Name:      MetricPrometheusQueryDuration,
-		Help:      helpPrometheusQueryDuration,
-		Buckets:   prometheus.DefBuckets,
-	}, []string{LabelQueryType})
+	PrometheusQueryDuration *prometheus.HistogramVec
 
 	// PrometheusQueryErrorsTotal counts Prometheus query errors.
 	// Labels: query_type
-	PrometheusQueryErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: Namespace,
-		Name:      MetricPrometheusQueryErrorsTotal,
-		Help:      helpPrometheusQueryErrorsTotal,
-	}, []string{LabelQueryType})
+	PrometheusQueryErrorsTotal *prometheus.CounterVec
 
 	// PrometheusQueryResultCount tracks the number of results returned by queries.
 	// Labels: query_type
 	// A value of 0 may indicate missing data in Prometheus.
-	PrometheusQueryResultCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricPrometheusQueryResultCount,
-		Help:      helpPrometheusQueryResultCount,
-	}, []string{LabelQueryType})
+	PrometheusQueryResultCount *prometheus.GaugeVec
 
 	// ===================
 	// Configuration Metrics
@@ -355,79 +304,229 @@ var (
 
 	// ConfigOverlaysDisabled indicates whether overlay creation is disabled.
 	// 1 = disabled (dry-run mode), 0 = enabled.
-	ConfigOverlaysDisabled = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricConfigOverlaysDisabled,
-		Help:      helpConfigOverlaysDisabled,
-	})
+	ConfigOverlaysDisabled prometheus.Gauge
 
 	// ConfigUtilizationThreshold reports the configured utilization threshold.
 	// Default is 95% - overlays are deleted when utilization reaches this threshold.
-	ConfigUtilizationThreshold = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricConfigUtilizationThreshold,
-		Help:      helpConfigUtilizationThreshold,
-	})
-
-	// ===================
-	// Info Metric
-	// ===================
-
-	// BuildInfo provides build information as a metric.
-	// Labels: version, commit, build_date
-	// The value is always 1; the information is in the labels.
-	BuildInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: Namespace,
-		Name:      MetricBuildInfo,
-		Help:      helpBuildInfo,
-	}, []string{LabelVersion, LabelCommit, LabelBuildDate})
-)
-
-func init() {
-	// Register all metrics with controller-runtime's registry.
-	// This makes them available on the metrics endpoint automatically.
-	metrics.Registry.MustRegister(
-		// Reconciliation
-		ReconciliationDuration,
-		ReconciliationTotal,
-		// Data source health
-		LuminaDataFreshnessSeconds,
-		LuminaDataAvailable,
-		// Decisions
-		DecisionTotal,
-		// Reserved Instances
-		ReservedInstanceDataAvailable,
-		ReservedInstanceCount,
-		// NodeOverlay lifecycle
-		OverlayOperationsTotal,
-		OverlayOperationErrorsTotal,
-		OverlayCount,
-		// Prometheus queries
-		PrometheusQueryDuration,
-		PrometheusQueryErrorsTotal,
-		PrometheusQueryResultCount,
-		// Configuration
-		ConfigOverlaysDisabled,
-		ConfigUtilizationThreshold,
-		// Info
-		BuildInfo,
-	)
+	ConfigUtilizationThreshold prometheus.Gauge
 }
 
-// SetBuildInfo sets the build info metric. Call this once at startup.
-func SetBuildInfo(version, commit, buildDate string) {
-	BuildInfo.WithLabelValues(version, commit, buildDate).Set(1)
+// NewMetrics creates and registers all Prometheus metrics with the provided
+// registry. The registry is typically the controller-runtime metrics registry
+// (ctrlmetrics.Registry) which exposes metrics via the /metrics endpoint.
+//
+// This follows Lumina's pattern for metrics initialization, providing consistency
+// between the two projects.
+//
+// Example usage:
+//
+//	import ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+//	metrics := metrics.NewMetrics(ctrlmetrics.Registry)
+//	metrics.ReconciliationTotal.WithLabelValues("success").Inc()
+func NewMetrics(reg prometheus.Registerer) *Metrics {
+	m := &Metrics{
+		ReconciliationDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Name:      MetricReconciliationDuration,
+			Help:      helpReconciliationDuration,
+			Buckets:   prometheus.DefBuckets,
+		}),
+
+		ReconciliationTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      MetricReconciliationTotal,
+			Help:      helpReconciliationTotal,
+		}, []string{LabelResult}),
+
+		LuminaDataFreshnessSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricLuminaDataFreshnessSeconds,
+			Help:      helpLuminaDataFreshnessSeconds,
+		}),
+
+		LuminaDataAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricLuminaDataAvailable,
+			Help:      helpLuminaDataAvailable,
+		}),
+
+		DecisionTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      MetricDecisionTotal,
+			Help:      helpDecisionTotal,
+		}, []string{LabelCapacityType, LabelShouldExist, LabelReason}),
+
+		ReservedInstanceDataAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricReservedInstanceDataAvail,
+			Help:      helpReservedInstanceDataAvail,
+		}),
+
+		ReservedInstanceCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricReservedInstanceCount,
+			Help:      helpReservedInstanceCount,
+		}, []string{LabelInstanceType, LabelRegion}),
+
+		OverlayOperationsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      MetricOverlayOperationsTotal,
+			Help:      helpOverlayOperationsTotal,
+		}, []string{LabelOperation, LabelCapacityType}),
+
+		OverlayOperationErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      MetricOverlayOperationErrorsTotal,
+			Help:      helpOverlayOperationErrorsTotal,
+		}, []string{LabelOperation, LabelErrorType}),
+
+		OverlayCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricOverlayCount,
+			Help:      helpOverlayCount,
+		}, []string{LabelCapacityType}),
+
+		PrometheusQueryDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Name:      MetricPrometheusQueryDuration,
+			Help:      helpPrometheusQueryDuration,
+			Buckets:   prometheus.DefBuckets,
+		}, []string{LabelQueryType}),
+
+		PrometheusQueryErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: Namespace,
+			Name:      MetricPrometheusQueryErrorsTotal,
+			Help:      helpPrometheusQueryErrorsTotal,
+		}, []string{LabelQueryType}),
+
+		PrometheusQueryResultCount: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricPrometheusQueryResultCount,
+			Help:      helpPrometheusQueryResultCount,
+		}, []string{LabelQueryType}),
+
+		ConfigOverlaysDisabled: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricConfigOverlaysDisabled,
+			Help:      helpConfigOverlaysDisabled,
+		}),
+
+		ConfigUtilizationThreshold: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricConfigUtilizationThreshold,
+			Help:      helpConfigUtilizationThreshold,
+		}),
+	}
+
+	// Register all metrics with the provided registry
+	reg.MustRegister(
+		// Reconciliation
+		m.ReconciliationDuration,
+		m.ReconciliationTotal,
+		// Data source health
+		m.LuminaDataFreshnessSeconds,
+		m.LuminaDataAvailable,
+		// Decisions
+		m.DecisionTotal,
+		// Reserved Instances
+		m.ReservedInstanceDataAvailable,
+		m.ReservedInstanceCount,
+		// NodeOverlay lifecycle
+		m.OverlayOperationsTotal,
+		m.OverlayOperationErrorsTotal,
+		m.OverlayCount,
+		// Prometheus queries
+		m.PrometheusQueryDuration,
+		m.PrometheusQueryErrorsTotal,
+		m.PrometheusQueryResultCount,
+		// Configuration
+		m.ConfigOverlaysDisabled,
+		m.ConfigUtilizationThreshold,
+	)
+
+	return m
 }
 
 // SetConfigMetrics sets configuration-related metrics. Call this once at startup
 // and whenever configuration changes.
-func SetConfigMetrics(overlaysDisabled bool, utilizationThreshold float64) {
+func (m *Metrics) SetConfigMetrics(overlaysDisabled bool, utilizationThreshold float64) {
 	if overlaysDisabled {
-		ConfigOverlaysDisabled.Set(1)
+		m.ConfigOverlaysDisabled.Set(1)
 	} else {
-		ConfigOverlaysDisabled.Set(0)
+		m.ConfigOverlaysDisabled.Set(0)
 	}
-	ConfigUtilizationThreshold.Set(utilizationThreshold)
+	m.ConfigUtilizationThreshold.Set(utilizationThreshold)
+}
+
+// RecordReconciliation records a reconciliation cycle result and duration.
+func (m *Metrics) RecordReconciliation(result Result, durationSeconds float64) {
+	m.ReconciliationTotal.WithLabelValues(result.String()).Inc()
+	m.ReconciliationDuration.Observe(durationSeconds)
+}
+
+// RecordDecision records a decision made by the decision engine.
+func (m *Metrics) RecordDecision(capacityType CapacityType, shouldExist ShouldExist, reason DecisionReason) {
+	m.DecisionTotal.WithLabelValues(
+		capacityType.String(),
+		shouldExist.String(),
+		reason.String(),
+	).Inc()
+}
+
+// RecordOverlayOperation records a successful NodeOverlay operation.
+func (m *Metrics) RecordOverlayOperation(operation Operation, capacityType CapacityType) {
+	m.OverlayOperationsTotal.WithLabelValues(operation.String(), capacityType.String()).Inc()
+}
+
+// RecordOverlayOperationError records a failed NodeOverlay operation.
+func (m *Metrics) RecordOverlayOperationError(operation Operation, errorType ErrorType) {
+	m.OverlayOperationErrorsTotal.WithLabelValues(operation.String(), errorType.String()).Inc()
+}
+
+// RecordPrometheusQuery records a Prometheus query result.
+func (m *Metrics) RecordPrometheusQuery(queryType QueryType, durationSeconds float64, resultCount int, err error) {
+	m.PrometheusQueryDuration.WithLabelValues(queryType.String()).Observe(durationSeconds)
+	m.PrometheusQueryResultCount.WithLabelValues(queryType.String()).Set(float64(resultCount))
+	if err != nil {
+		m.PrometheusQueryErrorsTotal.WithLabelValues(queryType.String()).Inc()
+	}
+}
+
+// SetLuminaDataFreshness sets the Lumina data freshness metrics.
+// freshnessSeconds is the age of the data in seconds.
+// Data is considered "available" if freshnessSeconds < maxFreshnessSeconds.
+func (m *Metrics) SetLuminaDataFreshness(freshnessSeconds float64, maxFreshnessSeconds float64) {
+	m.LuminaDataFreshnessSeconds.Set(freshnessSeconds)
+	if freshnessSeconds < maxFreshnessSeconds {
+		m.LuminaDataAvailable.Set(1)
+	} else {
+		m.LuminaDataAvailable.Set(0)
+	}
+}
+
+// SetLuminaDataUnavailable marks Lumina data as unavailable.
+func (m *Metrics) SetLuminaDataUnavailable() {
+	m.LuminaDataAvailable.Set(0)
+}
+
+// SetReservedInstanceMetrics sets the RI-related metrics.
+func (m *Metrics) SetReservedInstanceMetrics(dataAvailable bool, counts map[string]map[string]int) {
+	if dataAvailable {
+		m.ReservedInstanceDataAvailable.Set(1)
+	} else {
+		m.ReservedInstanceDataAvailable.Set(0)
+	}
+
+	for instanceType, regions := range counts {
+		for region, count := range regions {
+			m.ReservedInstanceCount.WithLabelValues(instanceType, region).Set(float64(count))
+		}
+	}
+}
+
+// SetOverlayCount sets the current overlay count by capacity type.
+func (m *Metrics) SetOverlayCount(capacityType CapacityType, count int) {
+	m.OverlayCount.WithLabelValues(capacityType.String()).Set(float64(count))
 }
 
 // BoolToShouldExist converts a boolean to a ShouldExist label value.
@@ -477,75 +576,4 @@ func CapacityTypeFromOverlay(ct string) CapacityType {
 	default:
 		return CapacityType(ct)
 	}
-}
-
-// RecordReconciliation records a reconciliation cycle result and duration.
-func RecordReconciliation(result Result, durationSeconds float64) {
-	ReconciliationTotal.WithLabelValues(result.String()).Inc()
-	ReconciliationDuration.Observe(durationSeconds)
-}
-
-// RecordDecision records a decision made by the decision engine.
-func RecordDecision(capacityType CapacityType, shouldExist ShouldExist, reason DecisionReason) {
-	DecisionTotal.WithLabelValues(
-		capacityType.String(),
-		shouldExist.String(),
-		reason.String(),
-	).Inc()
-}
-
-// RecordOverlayOperation records a successful NodeOverlay operation.
-func RecordOverlayOperation(operation Operation, capacityType CapacityType) {
-	OverlayOperationsTotal.WithLabelValues(operation.String(), capacityType.String()).Inc()
-}
-
-// RecordOverlayOperationError records a failed NodeOverlay operation.
-func RecordOverlayOperationError(operation Operation, errorType ErrorType) {
-	OverlayOperationErrorsTotal.WithLabelValues(operation.String(), errorType.String()).Inc()
-}
-
-// RecordPrometheusQuery records a Prometheus query result.
-func RecordPrometheusQuery(queryType QueryType, durationSeconds float64, resultCount int, err error) {
-	PrometheusQueryDuration.WithLabelValues(queryType.String()).Observe(durationSeconds)
-	PrometheusQueryResultCount.WithLabelValues(queryType.String()).Set(float64(resultCount))
-	if err != nil {
-		PrometheusQueryErrorsTotal.WithLabelValues(queryType.String()).Inc()
-	}
-}
-
-// SetLuminaDataFreshness sets the Lumina data freshness metrics.
-// freshnessSeconds is the age of the data in seconds.
-// Data is considered "available" if freshnessSeconds < maxFreshnessSeconds.
-func SetLuminaDataFreshness(freshnessSeconds float64, maxFreshnessSeconds float64) {
-	LuminaDataFreshnessSeconds.Set(freshnessSeconds)
-	if freshnessSeconds < maxFreshnessSeconds {
-		LuminaDataAvailable.Set(1)
-	} else {
-		LuminaDataAvailable.Set(0)
-	}
-}
-
-// SetLuminaDataUnavailable marks Lumina data as unavailable.
-func SetLuminaDataUnavailable() {
-	LuminaDataAvailable.Set(0)
-}
-
-// SetReservedInstanceMetrics sets the RI-related metrics.
-func SetReservedInstanceMetrics(dataAvailable bool, counts map[string]map[string]int) {
-	if dataAvailable {
-		ReservedInstanceDataAvailable.Set(1)
-	} else {
-		ReservedInstanceDataAvailable.Set(0)
-	}
-
-	for instanceType, regions := range counts {
-		for region, count := range regions {
-			ReservedInstanceCount.WithLabelValues(instanceType, region).Set(float64(count))
-		}
-	}
-}
-
-// SetOverlayCount sets the current overlay count by capacity type.
-func SetOverlayCount(capacityType CapacityType, count int) {
-	OverlayCount.WithLabelValues(capacityType.String()).Set(float64(count))
 }

@@ -24,7 +24,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/internal/testutil"
 	"github.com/nextdoor/veneer/pkg/config"
+	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/prometheus"
+	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,6 +55,12 @@ func newTestConfig() *config.Config {
 	}
 }
 
+// newTestMetrics creates a Metrics instance with a new registry for testing.
+func newTestMetrics() *veneermetrics.Metrics {
+	reg := promclient.NewRegistry()
+	return veneermetrics.NewMetrics(reg)
+}
+
 func TestMetricsReconciler_Start(t *testing.T) {
 	server := testutil.NewMockPrometheusServer()
 	defer server.Close()
@@ -79,6 +87,7 @@ func TestMetricsReconciler_Start(t *testing.T) {
 		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 		Interval:         100 * time.Millisecond, // Fast interval for testing
+		Metrics:          newTestMetrics(),
 	}
 
 	// Start reconciler in background
@@ -116,6 +125,7 @@ func TestMetricsReconciler_StartWithCancel(t *testing.T) {
 		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
 		Interval:         1 * time.Second,
+		Metrics:          newTestMetrics(),
 	}
 
 	// Start and immediately cancel
@@ -208,6 +218,7 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 				PrometheusClient: client,
 				Config:           newTestConfig(),
 				Logger:           logr.Discard(),
+				Metrics:          newTestMetrics(),
 			}
 
 			ctx := context.Background()
@@ -235,6 +246,7 @@ func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 		PrometheusClient: client,
 		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
+		Metrics:          newTestMetrics(),
 	}
 
 	ctx := context.Background()
@@ -266,6 +278,7 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 		PrometheusClient: client,
 		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
+		Metrics:          newTestMetrics(),
 		// Don't set Interval - should use default
 	}
 
@@ -279,7 +292,8 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 	assert.Equal(t, DefaultReconcileInterval, reconciler.Interval)
 }
 
-func TestMetricsReconciler_StartSetsConfigMetrics(t *testing.T) {
+func TestMetricsReconciler_ReconcileWithNilMetrics(t *testing.T) {
+	// Test that reconciler works when Metrics is nil (graceful degradation)
 	server := testutil.NewMockPrometheusServer()
 	defer server.Close()
 
@@ -296,22 +310,17 @@ func TestMetricsReconciler_StartSetsConfigMetrics(t *testing.T) {
 
 	client, _ := prometheus.NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 
-	cfg := newTestConfig()
-	cfg.Overlays.Disabled = true
-	cfg.Overlays.UtilizationThreshold = 90.0
-
 	reconciler := &MetricsReconciler{
 		PrometheusClient: client,
-		Config:           cfg,
+		Config:           newTestConfig(),
 		Logger:           logr.Discard(),
-		Interval:         50 * time.Millisecond,
+		Metrics:          nil, // Explicitly nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	ctx := context.Background()
+	err := reconciler.reconcile(ctx)
 
-	// Start should set config metrics without error
-	err := reconciler.Start(ctx)
+	// Should not panic, should complete successfully
 	assert.NoError(t, err)
 }
 

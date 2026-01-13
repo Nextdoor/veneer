@@ -36,23 +36,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 
 	"github.com/nextdoor/veneer/pkg/config"
-	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
+	"github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"github.com/nextdoor/veneer/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
-)
-
-// Build information set via ldflags during build.
-// Example: go build -ldflags "-X main.version=v1.0.0 -X main.commit=abc123 -X main.buildDate=2025-01-13"
-var (
-	version   = "dev"
-	commit    = "unknown"
-	buildDate = "unknown"
 )
 
 var (
@@ -104,9 +97,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Set build info metric for observability
-	veneermetrics.SetBuildInfo(version, commit, buildDate)
-	setupLog.Info("Veneer starting", "version", version, "commit", commit, "build_date", buildDate)
+	setupLog.Info("Veneer starting")
 
 	// Allow environment variable to override config file path
 	if envConfigPath := os.Getenv("VENEER_CONFIG_PATH"); envConfigPath != "" {
@@ -133,6 +124,13 @@ func main() {
 	if overlayDisabled {
 		cfg.Overlays.Disabled = true
 	}
+
+	// Initialize Prometheus metrics using Lumina's struct-based pattern.
+	// Metrics are registered with the controller-runtime registry and exposed
+	// via the /metrics endpoint.
+	veneerMetrics := metrics.NewMetrics(ctrlmetrics.Registry)
+	veneerMetrics.SetConfigMetrics(cfg.Overlays.Disabled, cfg.Overlays.UtilizationThreshold)
+	setupLog.Info("metrics initialized")
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
@@ -179,6 +177,7 @@ func main() {
 		Generator:        generator,
 		Logger:           ctrl.Log.WithName("metrics-reconciler"),
 		Client:           mgr.GetClient(),
+		Metrics:          veneerMetrics,
 		// Use default 5 minute interval
 	}
 

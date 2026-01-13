@@ -69,6 +69,10 @@ type MetricsReconciler struct {
 
 	// Interval is how often to query metrics (default: 5 minutes)
 	Interval time.Duration
+
+	// Metrics holds the Prometheus metrics for recording reconciler behavior.
+	// This follows Lumina's pattern of passing metrics struct to reconcilers.
+	Metrics *veneermetrics.Metrics
 }
 
 // Start begins the metrics reconciliation loop.
@@ -80,9 +84,6 @@ func (r *MetricsReconciler) Start(ctx context.Context) error {
 	if r.Interval == 0 {
 		r.Interval = DefaultReconcileInterval
 	}
-
-	// Export configuration as metrics at startup
-	veneermetrics.SetConfigMetrics(r.Config.Overlays.Disabled, r.Config.Overlays.UtilizationThreshold)
 
 	ticker := time.NewTicker(r.Interval)
 	defer ticker.Stop()
@@ -110,9 +111,13 @@ func (r *MetricsReconciler) runReconcileWithMetrics(ctx context.Context) {
 
 	if err != nil {
 		r.Logger.Error(err, "Failed to reconcile metrics")
-		veneermetrics.RecordReconciliation(veneermetrics.ResultError, duration)
+		if r.Metrics != nil {
+			r.Metrics.RecordReconciliation(veneermetrics.ResultError, duration)
+		}
 	} else {
-		veneermetrics.RecordReconciliation(veneermetrics.ResultSuccess, duration)
+		if r.Metrics != nil {
+			r.Metrics.RecordReconciliation(veneermetrics.ResultSuccess, duration)
+		}
 	}
 }
 
@@ -174,13 +179,17 @@ func (r *MetricsReconciler) queryDataFreshness(ctx context.Context) (float64, er
 	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
-		veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, duration, 0, err)
-		veneermetrics.SetLuminaDataUnavailable()
+		if r.Metrics != nil {
+			r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, duration, 0, err)
+			r.Metrics.SetLuminaDataUnavailable()
+		}
 		return 0, err
 	}
 
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, duration, 1, nil)
-	veneermetrics.SetLuminaDataFreshness(freshnessSeconds, MaxDataFreshnessSeconds)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, duration, 1, nil)
+		r.Metrics.SetLuminaDataFreshness(freshnessSeconds, MaxDataFreshnessSeconds)
+	}
 
 	return freshnessSeconds, nil
 }
@@ -191,7 +200,9 @@ func (r *MetricsReconciler) analyzeComputeSavingsPlans(ctx context.Context) ([]o
 	startTime := time.Now()
 	utilizations, err := r.PrometheusClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeCompute)
 	duration := time.Since(startTime).Seconds()
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, duration, len(utilizations), err)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, duration, len(utilizations), err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Compute SP utilization: %w", err)
 	}
@@ -200,7 +211,9 @@ func (r *MetricsReconciler) analyzeComputeSavingsPlans(ctx context.Context) ([]o
 	startTime = time.Now()
 	capacities, err := r.PrometheusClient.QuerySavingsPlanCapacity(ctx, "")
 	duration = time.Since(startTime).Seconds()
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, duration, len(capacities), err)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, duration, len(capacities), err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query SP capacity: %w", err)
 	}
@@ -227,11 +240,13 @@ func (r *MetricsReconciler) analyzeComputeSavingsPlans(ctx context.Context) ([]o
 	decision := r.DecisionEngine.AnalyzeComputeSavingsPlan(agg)
 
 	// Record decision metric
-	veneermetrics.RecordDecision(
-		veneermetrics.CapacityTypeComputeSP,
-		veneermetrics.BoolToShouldExist(decision.ShouldExist),
-		veneermetrics.SanitizeReason(decision.Reason),
-	)
+	if r.Metrics != nil {
+		r.Metrics.RecordDecision(
+			veneermetrics.CapacityTypeComputeSP,
+			veneermetrics.BoolToShouldExist(decision.ShouldExist),
+			veneermetrics.SanitizeReason(decision.Reason),
+		)
+	}
 
 	r.Logger.Info("Compute Savings Plan analysis",
 		"total_remaining_capacity", agg.TotalRemainingCapacity,
@@ -249,7 +264,9 @@ func (r *MetricsReconciler) analyzeEC2InstanceSavingsPlans(ctx context.Context) 
 	startTime := time.Now()
 	utilizations, err := r.PrometheusClient.QuerySavingsPlanUtilization(ctx, prometheus.SavingsPlanTypeEC2Instance)
 	duration := time.Since(startTime).Seconds()
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, duration, len(utilizations), err)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, duration, len(utilizations), err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query EC2 Instance SP utilization: %w", err)
 	}
@@ -258,7 +275,9 @@ func (r *MetricsReconciler) analyzeEC2InstanceSavingsPlans(ctx context.Context) 
 	startTime = time.Now()
 	capacities, err := r.PrometheusClient.QuerySavingsPlanCapacity(ctx, "")
 	duration = time.Since(startTime).Seconds()
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, duration, len(capacities), err)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, duration, len(capacities), err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query SP capacity: %w", err)
 	}
@@ -287,11 +306,13 @@ func (r *MetricsReconciler) analyzeEC2InstanceSavingsPlans(ctx context.Context) 
 		decision := r.DecisionEngine.AnalyzeEC2InstanceSavingsPlan(agg)
 
 		// Record decision metric
-		veneermetrics.RecordDecision(
-			veneermetrics.CapacityTypeEC2InstanceSP,
-			veneermetrics.BoolToShouldExist(decision.ShouldExist),
-			veneermetrics.SanitizeReason(decision.Reason),
-		)
+		if r.Metrics != nil {
+			r.Metrics.RecordDecision(
+				veneermetrics.CapacityTypeEC2InstanceSP,
+				veneermetrics.BoolToShouldExist(decision.ShouldExist),
+				veneermetrics.SanitizeReason(decision.Reason),
+			)
+		}
 
 		r.Logger.Info("EC2 Instance Savings Plan analysis",
 			"family_region", key,
@@ -313,9 +334,13 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 	startTime := time.Now()
 	ris, err := r.PrometheusClient.QueryReservedInstances(ctx, "")
 	duration := time.Since(startTime).Seconds()
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeRI, duration, len(ris), err)
+	if r.Metrics != nil {
+		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeRI, duration, len(ris), err)
+	}
 	if err != nil {
-		veneermetrics.SetReservedInstanceMetrics(false, nil)
+		if r.Metrics != nil {
+			r.Metrics.SetReservedInstanceMetrics(false, nil)
+		}
 		return nil, fmt.Errorf("failed to query Reserved Instances: %w", err)
 	}
 
@@ -330,7 +355,9 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 
 	// Set RI metrics - data is available if query succeeded (even if empty)
 	dataAvailable := len(ris) > 0
-	veneermetrics.SetReservedInstanceMetrics(dataAvailable, riCounts)
+	if r.Metrics != nil {
+		r.Metrics.SetReservedInstanceMetrics(dataAvailable, riCounts)
+	}
 
 	if len(ris) == 0 {
 		r.Logger.V(1).Info("No Reserved Instances found")
@@ -348,11 +375,13 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 		decision := r.DecisionEngine.AnalyzeReservedInstance(agg)
 
 		// Record decision metric
-		veneermetrics.RecordDecision(
-			veneermetrics.CapacityTypeRI,
-			veneermetrics.BoolToShouldExist(decision.ShouldExist),
-			veneermetrics.SanitizeReason(decision.Reason),
-		)
+		if r.Metrics != nil {
+			r.Metrics.RecordDecision(
+				veneermetrics.CapacityTypeRI,
+				veneermetrics.BoolToShouldExist(decision.ShouldExist),
+				veneermetrics.SanitizeReason(decision.Reason),
+			)
+		}
 
 		r.Logger.Info("Reserved Instance analysis",
 			"type_region", key,
@@ -393,7 +422,9 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						"name", gen.Overlay.Name,
 						"errors", validationErrors,
 					)
-					veneermetrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeValidation)
+					if r.Metrics != nil {
+						r.Metrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeValidation)
+					}
 					errorCount++
 					continue
 				}
@@ -408,11 +439,15 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						r.Logger.Error(err, "Failed to create NodeOverlay",
 							"name", gen.Overlay.Name,
 						)
-						veneermetrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
+						if r.Metrics != nil {
+							r.Metrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
+						}
 						errorCount++
 						continue
 					}
-					veneermetrics.RecordOverlayOperation(veneermetrics.OperationCreate, capacityType)
+					if r.Metrics != nil {
+						r.Metrics.RecordOverlayOperation(veneermetrics.OperationCreate, capacityType)
+					}
 					overlayCounts[capacityType]++
 					createCount++
 					r.Logger.Info("Created NodeOverlay",
@@ -426,7 +461,9 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					r.Logger.Error(err, "Failed to check existing NodeOverlay",
 						"name", gen.Overlay.Name,
 					)
-					veneermetrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
+					if r.Metrics != nil {
+						r.Metrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
+					}
 					errorCount++
 					continue
 				} else {
@@ -437,11 +474,15 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						r.Logger.Error(err, "Failed to update NodeOverlay",
 							"name", gen.Overlay.Name,
 						)
-						veneermetrics.RecordOverlayOperationError(veneermetrics.OperationUpdate, veneermetrics.ErrorTypeAPI)
+						if r.Metrics != nil {
+							r.Metrics.RecordOverlayOperationError(veneermetrics.OperationUpdate, veneermetrics.ErrorTypeAPI)
+						}
 						errorCount++
 						continue
 					}
-					veneermetrics.RecordOverlayOperation(veneermetrics.OperationUpdate, capacityType)
+					if r.Metrics != nil {
+						r.Metrics.RecordOverlayOperation(veneermetrics.OperationUpdate, capacityType)
+					}
 					overlayCounts[capacityType]++
 					updateCount++
 					r.Logger.V(1).Info("Updated NodeOverlay",
@@ -466,7 +507,9 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 				r.Logger.Error(err, "Failed to check existing NodeOverlay for deletion",
 					"name", gen.Decision.Name,
 				)
-				veneermetrics.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeAPI)
+				if r.Metrics != nil {
+					r.Metrics.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeAPI)
+				}
 				errorCount++
 				continue
 			}
@@ -484,11 +527,15 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 				r.Logger.Error(err, "Failed to delete NodeOverlay",
 					"name", gen.Decision.Name,
 				)
-				veneermetrics.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeAPI)
+				if r.Metrics != nil {
+					r.Metrics.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeAPI)
+				}
 				errorCount++
 				continue
 			}
-			veneermetrics.RecordOverlayOperation(veneermetrics.OperationDelete, capacityType)
+			if r.Metrics != nil {
+				r.Metrics.RecordOverlayOperation(veneermetrics.OperationDelete, capacityType)
+			}
 			deleteCount++
 			r.Logger.Info("Deleted NodeOverlay",
 				"name", gen.Decision.Name,
@@ -499,8 +546,10 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 	}
 
 	// Update overlay count metrics
-	for ct, count := range overlayCounts {
-		veneermetrics.SetOverlayCount(ct, count)
+	if r.Metrics != nil {
+		for ct, count := range overlayCounts {
+			r.Metrics.SetOverlayCount(ct, count)
+		}
 	}
 
 	r.Logger.Info("NodeOverlay reconciliation summary",

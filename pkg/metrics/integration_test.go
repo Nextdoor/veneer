@@ -17,7 +17,6 @@ limitations under the License.
 package metrics_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +27,14 @@ import (
 	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
 )
 
+// newTestMetrics creates a Metrics instance with a new registry for testing.
+// Each test gets its own registry to avoid metric registration conflicts.
+func newTestMetrics(t *testing.T) *veneermetrics.Metrics {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	return veneermetrics.NewMetrics(reg)
+}
+
 // TestMetricsIntegration_ReconciliationWorkflow tests the full reconciliation metrics workflow.
 // This simulates what happens during a real reconciliation cycle:
 // 1. Record reconciliation start
@@ -36,153 +43,149 @@ import (
 // 4. Record overlay operations
 // 5. Record reconciliation completion
 func TestMetricsIntegration_ReconciliationWorkflow(t *testing.T) {
-	// Simulate a successful reconciliation cycle
+	m := newTestMetrics(t)
 
 	// Step 1: Set configuration metrics (done at startup)
-	veneermetrics.SetConfigMetrics(false, 95.0)
+	m.SetConfigMetrics(false, 95.0)
 
 	// Step 2: Query data freshness
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, 0.05, 1, nil)
-	veneermetrics.SetLuminaDataFreshness(30.0, 600.0) // 30 seconds old, max 600 seconds
+	m.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, 0.05, 1, nil)
+	m.SetLuminaDataFreshness(30.0, 600.0) // 30 seconds old, max 600 seconds
 
 	// Step 3: Query Savings Plan utilization
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, 0.1, 3, nil)
+	m.RecordPrometheusQuery(veneermetrics.QueryTypeSPUtilization, 0.1, 3, nil)
 
 	// Step 4: Query Savings Plan capacity
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, 0.08, 2, nil)
+	m.RecordPrometheusQuery(veneermetrics.QueryTypeSPCapacity, 0.08, 2, nil)
 
 	// Step 5: Query Reserved Instances
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeRI, 0.06, 5, nil)
+	m.RecordPrometheusQuery(veneermetrics.QueryTypeRI, 0.06, 5, nil)
 
 	// Step 6: Record decisions
-	veneermetrics.RecordDecision(
+	m.RecordDecision(
 		veneermetrics.CapacityTypeComputeSP,
 		veneermetrics.ShouldExistTrue,
 		veneermetrics.ReasonCapacityAvailable,
 	)
-	veneermetrics.RecordDecision(
+	m.RecordDecision(
 		veneermetrics.CapacityTypeEC2InstanceSP,
 		veneermetrics.ShouldExistFalse,
 		veneermetrics.ReasonUtilizationAboveThreshold,
 	)
-	veneermetrics.RecordDecision(
+	m.RecordDecision(
 		veneermetrics.CapacityTypeRI,
 		veneermetrics.ShouldExistTrue,
 		veneermetrics.ReasonRIAvailable,
 	)
 
 	// Step 7: Record overlay operations
-	veneermetrics.RecordOverlayOperation(veneermetrics.OperationCreate, veneermetrics.CapacityTypeComputeSP)
-	veneermetrics.RecordOverlayOperation(veneermetrics.OperationDelete, veneermetrics.CapacityTypeEC2InstanceSP)
-	veneermetrics.RecordOverlayOperation(veneermetrics.OperationUpdate, veneermetrics.CapacityTypeRI)
+	m.RecordOverlayOperation(veneermetrics.OperationCreate, veneermetrics.CapacityTypeComputeSP)
+	m.RecordOverlayOperation(veneermetrics.OperationDelete, veneermetrics.CapacityTypeEC2InstanceSP)
+	m.RecordOverlayOperation(veneermetrics.OperationUpdate, veneermetrics.CapacityTypeRI)
 
 	// Step 8: Set overlay counts
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 0)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeRI, 2)
+	m.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
+	m.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 0)
+	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 2)
 
 	// Step 9: Record successful reconciliation
-	veneermetrics.RecordReconciliation(veneermetrics.ResultSuccess, 0.5)
+	m.RecordReconciliation(veneermetrics.ResultSuccess, 0.5)
 
 	// Verify key metrics are recorded correctly
 	t.Run("lumina_data_available_is_set", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.LuminaDataAvailable)
+		value := testutil.ToFloat64(m.LuminaDataAvailable)
 		assert.Equal(t, float64(1), value, "Lumina data should be available")
 	})
 
 	t.Run("lumina_data_freshness_is_set", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.LuminaDataFreshnessSeconds)
+		value := testutil.ToFloat64(m.LuminaDataFreshnessSeconds)
 		assert.Equal(t, 30.0, value, "Lumina data freshness should be 30 seconds")
 	})
 
 	t.Run("config_overlays_disabled_is_set", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ConfigOverlaysDisabled)
+		value := testutil.ToFloat64(m.ConfigOverlaysDisabled)
 		assert.Equal(t, float64(0), value, "Overlays should not be disabled")
 	})
 
 	t.Run("config_utilization_threshold_is_set", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ConfigUtilizationThreshold)
+		value := testutil.ToFloat64(m.ConfigUtilizationThreshold)
 		assert.Equal(t, 95.0, value, "Utilization threshold should be 95%")
 	})
 }
 
 // TestMetricsIntegration_ErrorWorkflow tests metrics recording during error scenarios.
 func TestMetricsIntegration_ErrorWorkflow(t *testing.T) {
-	// Simulate a failed reconciliation cycle
+	m := newTestMetrics(t)
 
 	// Query fails
-	veneermetrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, 0.5, 0, assert.AnError)
-	veneermetrics.SetLuminaDataUnavailable()
+	m.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, 0.5, 0, assert.AnError)
+	m.SetLuminaDataUnavailable()
 
 	// Overlay operation fails
-	veneermetrics.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
-	veneermetrics.RecordOverlayOperationError(veneermetrics.OperationUpdate, veneermetrics.ErrorTypeValidation)
-	veneermetrics.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeNotFound)
+	m.RecordOverlayOperationError(veneermetrics.OperationCreate, veneermetrics.ErrorTypeAPI)
+	m.RecordOverlayOperationError(veneermetrics.OperationUpdate, veneermetrics.ErrorTypeValidation)
+	m.RecordOverlayOperationError(veneermetrics.OperationDelete, veneermetrics.ErrorTypeNotFound)
 
 	// Record failed reconciliation
-	veneermetrics.RecordReconciliation(veneermetrics.ResultError, 1.0)
+	m.RecordReconciliation(veneermetrics.ResultError, 1.0)
 
 	// Verify Lumina data is marked unavailable
 	t.Run("lumina_data_unavailable", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.LuminaDataAvailable)
+		value := testutil.ToFloat64(m.LuminaDataAvailable)
 		assert.Equal(t, float64(0), value, "Lumina data should be unavailable")
 	})
 }
 
 // TestMetricsIntegration_ReservedInstanceMetrics tests RI-specific metrics.
 func TestMetricsIntegration_ReservedInstanceMetrics(t *testing.T) {
+	m := newTestMetrics(t)
+
 	// Simulate RI data being available with counts
 	riCounts := map[string]map[string]int{
 		"m5.xlarge":  {"us-west-2": 5, "us-east-1": 3},
 		"c5.2xlarge": {"us-west-2": 2},
 	}
 
-	veneermetrics.SetReservedInstanceMetrics(true, riCounts)
+	m.SetReservedInstanceMetrics(true, riCounts)
 
 	t.Run("ri_data_available", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ReservedInstanceDataAvailable)
+		value := testutil.ToFloat64(m.ReservedInstanceDataAvailable)
 		assert.Equal(t, float64(1), value, "RI data should be available")
 	})
 
 	// Test with no RI data
-	veneermetrics.SetReservedInstanceMetrics(false, nil)
+	m.SetReservedInstanceMetrics(false, nil)
 
 	t.Run("ri_data_unavailable", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ReservedInstanceDataAvailable)
+		value := testutil.ToFloat64(m.ReservedInstanceDataAvailable)
 		assert.Equal(t, float64(0), value, "RI data should be unavailable")
-	})
-}
-
-// TestMetricsIntegration_BuildInfo tests build info metric setting.
-func TestMetricsIntegration_BuildInfo(t *testing.T) {
-	veneermetrics.SetBuildInfo("v1.2.3", "abc123def", "2025-01-13T10:00:00Z")
-
-	// The build info metric should be queryable
-	// We verify it doesn't panic and is registered
-	t.Run("build_info_is_set", func(t *testing.T) {
-		// BuildInfo is a GaugeVec, we can verify it's registered by checking gather
-		// This is a basic sanity check that the metric exists
-		assert.NotNil(t, veneermetrics.BuildInfo)
 	})
 }
 
 // TestMetricsIntegration_DisabledMode tests metrics when overlays are disabled.
 func TestMetricsIntegration_DisabledMode(t *testing.T) {
+	m := newTestMetrics(t)
+
 	// Set disabled mode
-	veneermetrics.SetConfigMetrics(true, 90.0)
+	m.SetConfigMetrics(true, 90.0)
 
 	t.Run("config_overlays_disabled_enabled", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ConfigOverlaysDisabled)
+		value := testutil.ToFloat64(m.ConfigOverlaysDisabled)
 		assert.Equal(t, float64(1), value, "Overlays should be disabled")
 	})
 
 	t.Run("config_utilization_threshold_custom", func(t *testing.T) {
-		value := testutil.ToFloat64(veneermetrics.ConfigUtilizationThreshold)
+		value := testutil.ToFloat64(m.ConfigUtilizationThreshold)
 		assert.Equal(t, 90.0, value, "Utilization threshold should be 90%")
 	})
 
 	// Reset to enabled
-	veneermetrics.SetConfigMetrics(false, 95.0)
+	m.SetConfigMetrics(false, 95.0)
+
+	t.Run("config_overlays_re-enabled", func(t *testing.T) {
+		value := testutil.ToFloat64(m.ConfigOverlaysDisabled)
+		assert.Equal(t, float64(0), value, "Overlays should be enabled")
+	})
 }
 
 // TestMetricsIntegration_DataFreshnessThresholds tests different freshness scenarios.
@@ -203,12 +206,13 @@ func TestMetricsIntegration_DataFreshnessThresholds(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			veneermetrics.SetLuminaDataFreshness(tc.freshnessSeconds, maxFreshness)
+			m := newTestMetrics(t)
+			m.SetLuminaDataFreshness(tc.freshnessSeconds, maxFreshness)
 
-			freshnessValue := testutil.ToFloat64(veneermetrics.LuminaDataFreshnessSeconds)
+			freshnessValue := testutil.ToFloat64(m.LuminaDataFreshnessSeconds)
 			assert.Equal(t, tc.freshnessSeconds, freshnessValue)
 
-			availableValue := testutil.ToFloat64(veneermetrics.LuminaDataAvailable)
+			availableValue := testutil.ToFloat64(m.LuminaDataAvailable)
 			assert.Equal(t, tc.expectedAvailable, availableValue)
 		})
 	}
@@ -241,8 +245,9 @@ func TestMetricsIntegration_AllDecisionCombinations(t *testing.T) {
 		for _, se := range shouldExistValues {
 			for _, r := range reasons {
 				t.Run(ct.String()+"_"+se.String()+"_"+r.String(), func(t *testing.T) {
+					m := newTestMetrics(t)
 					// Should not panic
-					veneermetrics.RecordDecision(ct, se, r)
+					m.RecordDecision(ct, se, r)
 				})
 			}
 		}
@@ -273,7 +278,8 @@ func TestMetricsIntegration_AllOperationCombinations(t *testing.T) {
 	for _, op := range operations {
 		for _, ct := range capacityTypes {
 			t.Run("success_"+op.String()+"_"+ct.String(), func(t *testing.T) {
-				veneermetrics.RecordOverlayOperation(op, ct)
+				m := newTestMetrics(t)
+				m.RecordOverlayOperation(op, ct)
 			})
 		}
 	}
@@ -282,7 +288,8 @@ func TestMetricsIntegration_AllOperationCombinations(t *testing.T) {
 	for _, op := range operations {
 		for _, et := range errorTypes {
 			t.Run("error_"+op.String()+"_"+et.String(), func(t *testing.T) {
-				veneermetrics.RecordOverlayOperationError(op, et)
+				m := newTestMetrics(t)
+				m.RecordOverlayOperationError(op, et)
 			})
 		}
 	}
@@ -299,23 +306,43 @@ func TestMetricsIntegration_PrometheusQueryTypes(t *testing.T) {
 
 	for _, qt := range queryTypes {
 		t.Run("query_"+qt.String()+"_success", func(t *testing.T) {
-			veneermetrics.RecordPrometheusQuery(qt, 0.1, 5, nil)
+			m := newTestMetrics(t)
+			m.RecordPrometheusQuery(qt, 0.1, 5, nil)
 		})
 		t.Run("query_"+qt.String()+"_error", func(t *testing.T) {
-			veneermetrics.RecordPrometheusQuery(qt, 0.5, 0, assert.AnError)
+			m := newTestMetrics(t)
+			m.RecordPrometheusQuery(qt, 0.5, 0, assert.AnError)
 		})
 	}
 }
 
 // TestMetricsIntegration_MetricRegistration verifies all metrics are properly registered.
 func TestMetricsIntegration_MetricRegistration(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := veneermetrics.NewMetrics(reg)
+
 	// Gather all metrics to verify registration
-	metrics, err := prometheus.DefaultGatherer.Gather()
+	families, err := reg.Gather()
 	require.NoError(t, err)
 
 	// Build a map of metric names for easy lookup
 	metricNames := make(map[string]bool)
-	for _, mf := range metrics {
+	for _, mf := range families {
+		metricNames[*mf.Name] = true
+	}
+
+	// Set some values so metrics appear in gather
+	m.SetConfigMetrics(false, 95.0)
+	m.SetLuminaDataFreshness(30.0, 600.0)
+	m.SetReservedInstanceMetrics(true, nil)
+	m.RecordReconciliation(veneermetrics.ResultSuccess, 0.1)
+
+	// Re-gather after setting values
+	families, err = reg.Gather()
+	require.NoError(t, err)
+
+	metricNames = make(map[string]bool)
+	for _, mf := range families {
 		metricNames[*mf.Name] = true
 	}
 
@@ -325,56 +352,59 @@ func TestMetricsIntegration_MetricRegistration(t *testing.T) {
 		"veneer_reconciliation_total",
 		"veneer_lumina_data_freshness_seconds",
 		"veneer_lumina_data_available",
-		"veneer_decision_total",
 		"veneer_reserved_instance_data_available",
-		"veneer_reserved_instance_count",
-		"veneer_overlay_operations_total",
-		"veneer_overlay_operation_errors_total",
-		"veneer_overlay_count",
-		"veneer_prometheus_query_duration_seconds",
-		"veneer_prometheus_query_errors_total",
-		"veneer_prometheus_query_result_count",
 		"veneer_config_overlays_disabled",
 		"veneer_config_utilization_threshold_percent",
-		"veneer_build_info",
 	}
 
 	for _, name := range expectedMetrics {
 		t.Run("registered_"+name, func(t *testing.T) {
-			// Check if the metric family exists (metrics may not have values yet)
-			// We use Contains because some metrics might be registered with the
-			// controller-runtime registry which is separate from DefaultGatherer
-			found := false
-			for mfName := range metricNames {
-				if strings.Contains(mfName, strings.TrimPrefix(name, "veneer_")) {
-					found = true
-					break
-				}
-			}
-			// Note: This test may not find all metrics if they're registered
-			// with controller-runtime's registry. The important thing is that
-			// recording metrics doesn't panic.
-			_ = found
+			assert.True(t, metricNames[name], "metric %s should be registered", name)
 		})
 	}
 }
 
 // TestMetricsIntegration_OverlayCountByCapacityType tests overlay count tracking.
 func TestMetricsIntegration_OverlayCountByCapacityType(t *testing.T) {
+	m := newTestMetrics(t)
+
 	// Set counts for each capacity type
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 3)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeRI, 5)
+	m.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
+	m.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 3)
+	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 5)
 
 	// Update counts (simulating next reconciliation)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 2)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeRI, 7)
+	m.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 1)
+	m.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 2)
+	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 7)
 
 	// Reset to zero (simulating all overlays deleted)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 0)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 0)
-	veneermetrics.SetOverlayCount(veneermetrics.CapacityTypeRI, 0)
+	m.SetOverlayCount(veneermetrics.CapacityTypeComputeSP, 0)
+	m.SetOverlayCount(veneermetrics.CapacityTypeEC2InstanceSP, 0)
+	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 0)
 
 	// No panics means success
+}
+
+// TestMetricsIntegration_NewMetricsCreatesAllFields verifies NewMetrics initializes all fields.
+func TestMetricsIntegration_NewMetricsCreatesAllFields(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := veneermetrics.NewMetrics(reg)
+
+	// Verify all fields are non-nil
+	assert.NotNil(t, m.ReconciliationDuration, "ReconciliationDuration should not be nil")
+	assert.NotNil(t, m.ReconciliationTotal, "ReconciliationTotal should not be nil")
+	assert.NotNil(t, m.LuminaDataFreshnessSeconds, "LuminaDataFreshnessSeconds should not be nil")
+	assert.NotNil(t, m.LuminaDataAvailable, "LuminaDataAvailable should not be nil")
+	assert.NotNil(t, m.DecisionTotal, "DecisionTotal should not be nil")
+	assert.NotNil(t, m.ReservedInstanceDataAvailable, "ReservedInstanceDataAvailable should not be nil")
+	assert.NotNil(t, m.ReservedInstanceCount, "ReservedInstanceCount should not be nil")
+	assert.NotNil(t, m.OverlayOperationsTotal, "OverlayOperationsTotal should not be nil")
+	assert.NotNil(t, m.OverlayOperationErrorsTotal, "OverlayOperationErrorsTotal should not be nil")
+	assert.NotNil(t, m.OverlayCount, "OverlayCount should not be nil")
+	assert.NotNil(t, m.PrometheusQueryDuration, "PrometheusQueryDuration should not be nil")
+	assert.NotNil(t, m.PrometheusQueryErrorsTotal, "PrometheusQueryErrorsTotal should not be nil")
+	assert.NotNil(t, m.PrometheusQueryResultCount, "PrometheusQueryResultCount should not be nil")
+	assert.NotNil(t, m.ConfigOverlaysDisabled, "ConfigOverlaysDisabled should not be nil")
+	assert.NotNil(t, m.ConfigUtilizationThreshold, "ConfigUtilizationThreshold should not be nil")
 }

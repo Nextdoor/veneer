@@ -25,6 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestMetrics creates a Metrics instance with a new registry for testing.
+// Each test gets its own registry to avoid metric registration conflicts.
+func newTestMetrics(t *testing.T) *Metrics {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	return NewMetrics(reg)
+}
+
 // TestTypeStringMethods verifies that all type String() methods return expected values.
 func TestTypeStringMethods(t *testing.T) {
 	t.Parallel()
@@ -191,8 +199,8 @@ func TestCapacityTypeFromOverlay(t *testing.T) {
 	}
 }
 
-// TestSetConfigMetrics verifies configuration metric updates.
-func TestSetConfigMetrics(t *testing.T) {
+// TestMetrics_SetConfigMetrics verifies configuration metric updates.
+func TestMetrics_SetConfigMetrics(t *testing.T) {
 	tests := []struct {
 		name                  string
 		overlaysDisabled      bool
@@ -215,21 +223,22 @@ func TestSetConfigMetrics(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			SetConfigMetrics(tc.overlaysDisabled, tc.utilizationThreshold)
+			m := newTestMetrics(t)
+			m.SetConfigMetrics(tc.overlaysDisabled, tc.utilizationThreshold)
 
 			// Verify ConfigOverlaysDisabled
-			disabledValue := getGaugeValue(t, ConfigOverlaysDisabled)
+			disabledValue := getGaugeValue(t, m.ConfigOverlaysDisabled)
 			assert.Equal(t, tc.expectedDisabledValue, disabledValue)
 
 			// Verify ConfigUtilizationThreshold
-			thresholdValue := getGaugeValue(t, ConfigUtilizationThreshold)
+			thresholdValue := getGaugeValue(t, m.ConfigUtilizationThreshold)
 			assert.Equal(t, tc.utilizationThreshold, thresholdValue)
 		})
 	}
 }
 
-// TestSetLuminaDataFreshness verifies Lumina data freshness metric updates.
-func TestSetLuminaDataFreshness(t *testing.T) {
+// TestMetrics_SetLuminaDataFreshness verifies Lumina data freshness metric updates.
+func TestMetrics_SetLuminaDataFreshness(t *testing.T) {
 	const maxFreshness = 600.0 // 10 minutes
 
 	tests := []struct {
@@ -261,44 +270,49 @@ func TestSetLuminaDataFreshness(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			SetLuminaDataFreshness(tc.freshnessSeconds, maxFreshness)
+			m := newTestMetrics(t)
+			m.SetLuminaDataFreshness(tc.freshnessSeconds, maxFreshness)
 
 			// Verify LuminaDataFreshnessSeconds
-			freshnessValue := getGaugeValue(t, LuminaDataFreshnessSeconds)
+			freshnessValue := getGaugeValue(t, m.LuminaDataFreshnessSeconds)
 			assert.Equal(t, tc.freshnessSeconds, freshnessValue)
 
 			// Verify LuminaDataAvailable
-			availableValue := getGaugeValue(t, LuminaDataAvailable)
+			availableValue := getGaugeValue(t, m.LuminaDataAvailable)
 			assert.Equal(t, tc.expectedAvailableValue, availableValue)
 		})
 	}
 }
 
-// TestSetLuminaDataUnavailable verifies the unavailable state.
-func TestSetLuminaDataUnavailable(t *testing.T) {
+// TestMetrics_SetLuminaDataUnavailable verifies the unavailable state.
+func TestMetrics_SetLuminaDataUnavailable(t *testing.T) {
+	m := newTestMetrics(t)
+
 	// First set it to available
-	SetLuminaDataFreshness(100.0, 600.0)
-	assert.Equal(t, float64(1), getGaugeValue(t, LuminaDataAvailable))
+	m.SetLuminaDataFreshness(100.0, 600.0)
+	assert.Equal(t, float64(1), getGaugeValue(t, m.LuminaDataAvailable))
 
 	// Now mark as unavailable
-	SetLuminaDataUnavailable()
-	assert.Equal(t, float64(0), getGaugeValue(t, LuminaDataAvailable))
+	m.SetLuminaDataUnavailable()
+	assert.Equal(t, float64(0), getGaugeValue(t, m.LuminaDataAvailable))
 }
 
-// TestRecordReconciliation verifies reconciliation metric recording.
-func TestRecordReconciliation(t *testing.T) {
+// TestMetrics_RecordReconciliation verifies reconciliation metric recording.
+func TestMetrics_RecordReconciliation(t *testing.T) {
+	m := newTestMetrics(t)
+
 	// Record success
-	RecordReconciliation(ResultSuccess, 1.5)
+	m.RecordReconciliation(ResultSuccess, 1.5)
 
 	// Record error
-	RecordReconciliation(ResultError, 0.5)
+	m.RecordReconciliation(ResultError, 0.5)
 
 	// Verify counter incremented (we can't easily check exact values with counter vecs
 	// in unit tests without more setup, but we verify no panics occur)
 }
 
-// TestRecordDecision verifies decision metric recording.
-func TestRecordDecision(t *testing.T) {
+// TestMetrics_RecordDecision verifies decision metric recording.
+func TestMetrics_RecordDecision(t *testing.T) {
 	tests := []struct {
 		name         string
 		capacityType CapacityType
@@ -327,44 +341,47 @@ func TestRecordDecision(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			m := newTestMetrics(t)
 			// Should not panic
-			RecordDecision(tc.capacityType, tc.shouldExist, tc.reason)
+			m.RecordDecision(tc.capacityType, tc.shouldExist, tc.reason)
 		})
 	}
 }
 
-// TestRecordOverlayOperation verifies overlay operation metric recording.
-func TestRecordOverlayOperation(t *testing.T) {
+// TestMetrics_RecordOverlayOperation verifies overlay operation metric recording.
+func TestMetrics_RecordOverlayOperation(t *testing.T) {
 	operations := []Operation{OperationCreate, OperationUpdate, OperationDelete}
 	capacityTypes := []CapacityType{CapacityTypeComputeSP, CapacityTypeEC2InstanceSP, CapacityTypeRI}
 
 	for _, op := range operations {
 		for _, ct := range capacityTypes {
 			t.Run(op.String()+"_"+ct.String(), func(t *testing.T) {
+				m := newTestMetrics(t)
 				// Should not panic
-				RecordOverlayOperation(op, ct)
+				m.RecordOverlayOperation(op, ct)
 			})
 		}
 	}
 }
 
-// TestRecordOverlayOperationError verifies overlay error metric recording.
-func TestRecordOverlayOperationError(t *testing.T) {
+// TestMetrics_RecordOverlayOperationError verifies overlay error metric recording.
+func TestMetrics_RecordOverlayOperationError(t *testing.T) {
 	operations := []Operation{OperationCreate, OperationUpdate, OperationDelete}
 	errorTypes := []ErrorType{ErrorTypeValidation, ErrorTypeAPI, ErrorTypeNotFound}
 
 	for _, op := range operations {
 		for _, et := range errorTypes {
 			t.Run(op.String()+"_"+et.String(), func(t *testing.T) {
+				m := newTestMetrics(t)
 				// Should not panic
-				RecordOverlayOperationError(op, et)
+				m.RecordOverlayOperationError(op, et)
 			})
 		}
 	}
 }
 
-// TestRecordPrometheusQuery verifies Prometheus query metric recording.
-func TestRecordPrometheusQuery(t *testing.T) {
+// TestMetrics_RecordPrometheusQuery verifies Prometheus query metric recording.
+func TestMetrics_RecordPrometheusQuery(t *testing.T) {
 	queryTypes := []QueryType{
 		QueryTypeSPUtilization,
 		QueryTypeSPCapacity,
@@ -374,16 +391,18 @@ func TestRecordPrometheusQuery(t *testing.T) {
 
 	for _, qt := range queryTypes {
 		t.Run(qt.String()+"_success", func(t *testing.T) {
-			RecordPrometheusQuery(qt, 0.1, 5, nil)
+			m := newTestMetrics(t)
+			m.RecordPrometheusQuery(qt, 0.1, 5, nil)
 		})
 		t.Run(qt.String()+"_error", func(t *testing.T) {
-			RecordPrometheusQuery(qt, 0.05, 0, assert.AnError)
+			m := newTestMetrics(t)
+			m.RecordPrometheusQuery(qt, 0.05, 0, assert.AnError)
 		})
 	}
 }
 
-// TestSetReservedInstanceMetrics verifies RI metric setting.
-func TestSetReservedInstanceMetrics(t *testing.T) {
+// TestMetrics_SetReservedInstanceMetrics verifies RI metric setting.
+func TestMetrics_SetReservedInstanceMetrics(t *testing.T) {
 	tests := []struct {
 		name          string
 		dataAvailable bool
@@ -411,33 +430,57 @@ func TestSetReservedInstanceMetrics(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			SetReservedInstanceMetrics(tc.dataAvailable, tc.counts)
+			m := newTestMetrics(t)
+			m.SetReservedInstanceMetrics(tc.dataAvailable, tc.counts)
 
 			expectedAvailable := float64(0)
 			if tc.dataAvailable {
 				expectedAvailable = 1
 			}
-			assert.Equal(t, expectedAvailable, getGaugeValue(t, ReservedInstanceDataAvailable))
+			assert.Equal(t, expectedAvailable, getGaugeValue(t, m.ReservedInstanceDataAvailable))
 		})
 	}
 }
 
-// TestSetOverlayCount verifies overlay count metric setting.
-func TestSetOverlayCount(t *testing.T) {
+// TestMetrics_SetOverlayCount verifies overlay count metric setting.
+func TestMetrics_SetOverlayCount(t *testing.T) {
 	capacityTypes := []CapacityType{CapacityTypeComputeSP, CapacityTypeEC2InstanceSP, CapacityTypeRI}
 
 	for _, ct := range capacityTypes {
 		t.Run(ct.String(), func(t *testing.T) {
-			SetOverlayCount(ct, 5)
+			m := newTestMetrics(t)
+			m.SetOverlayCount(ct, 5)
 			// Verify no panic - actual value verification requires more setup
 		})
 	}
 }
 
-// TestSetBuildInfo verifies build info metric setting.
-func TestSetBuildInfo(t *testing.T) {
-	SetBuildInfo("v1.0.0", "abc123", "2025-01-13")
-	// Verify no panic - the metric is a gauge vec so value verification is complex
+// TestNewMetrics verifies that NewMetrics creates and registers all metrics.
+func TestNewMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+
+	// Verify all metrics are non-nil
+	assert.NotNil(t, m.ReconciliationDuration)
+	assert.NotNil(t, m.ReconciliationTotal)
+	assert.NotNil(t, m.LuminaDataFreshnessSeconds)
+	assert.NotNil(t, m.LuminaDataAvailable)
+	assert.NotNil(t, m.DecisionTotal)
+	assert.NotNil(t, m.ReservedInstanceDataAvailable)
+	assert.NotNil(t, m.ReservedInstanceCount)
+	assert.NotNil(t, m.OverlayOperationsTotal)
+	assert.NotNil(t, m.OverlayOperationErrorsTotal)
+	assert.NotNil(t, m.OverlayCount)
+	assert.NotNil(t, m.PrometheusQueryDuration)
+	assert.NotNil(t, m.PrometheusQueryErrorsTotal)
+	assert.NotNil(t, m.PrometheusQueryResultCount)
+	assert.NotNil(t, m.ConfigOverlaysDisabled)
+	assert.NotNil(t, m.ConfigUtilizationThreshold)
+
+	// Verify metrics are registered by gathering them
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	assert.Greater(t, len(families), 0, "should have registered metrics")
 }
 
 // TestMetricConstants verifies that all metric name constants are non-empty.
@@ -460,7 +503,6 @@ func TestMetricConstants(t *testing.T) {
 		MetricPrometheusQueryResultCount,
 		MetricConfigOverlaysDisabled,
 		MetricConfigUtilizationThreshold,
-		MetricBuildInfo,
 	}
 
 	for _, name := range metricNames {
@@ -482,9 +524,6 @@ func TestLabelConstants(t *testing.T) {
 		LabelReason,
 		LabelInstanceType,
 		LabelRegion,
-		LabelVersion,
-		LabelCommit,
-		LabelBuildDate,
 	}
 
 	for _, key := range labelKeys {
