@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/pkg/config"
+	"github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -58,6 +59,9 @@ type MetricsReconciler struct {
 
 	// Interval is how often to query metrics (default: 5 minutes)
 	Interval time.Duration
+
+	// Recorder is the Prometheus metrics recorder for observability
+	Recorder *metrics.Recorder
 }
 
 // Start begins the metrics reconciliation loop.
@@ -98,12 +102,24 @@ func (r *MetricsReconciler) Start(ctx context.Context) error {
 func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 	r.Logger.V(1).Info("Reconciling metrics")
 
+	// Start timing for metrics if recorder is available
+	if r.Recorder != nil {
+		done := r.Recorder.ReconciliationTimer()
+		defer done()
+	}
+
 	// Check data freshness
 	freshness, err := r.PrometheusClient.DataFreshness(ctx)
 	if err != nil {
+		r.recordReconciliationError()
 		return fmt.Errorf("failed to query data freshness: %w", err)
 	}
 	r.Logger.Info("Lumina data freshness", "age_seconds", freshness)
+
+	// Record data freshness metric
+	if r.Recorder != nil {
+		r.Recorder.RecordDataFreshness(freshness)
+	}
 
 	// Collect all decisions
 	var decisions []overlay.Decision
@@ -132,17 +148,69 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 		decisions = append(decisions, riDecisions...)
 	}
 
+	// Record decisions for metrics
+	if r.Recorder != nil {
+		for _, decision := range decisions {
+			r.Recorder.RecordDecision(decision)
+		}
+	}
+
 	// Generate and apply NodeOverlay specs from decisions
 	if r.Generator != nil && r.Client != nil && len(decisions) > 0 {
 		generatedOverlays := r.Generator.GenerateAll(decisions)
 		r.applyOverlays(ctx, generatedOverlays)
 	}
 
+	// Record successful reconciliation
+	r.recordReconciliationSuccess()
+
 	r.Logger.V(1).Info("Metrics reconciliation complete",
 		"decisions_count", len(decisions),
 	)
 
 	return nil
+}
+
+// recordReconciliationSuccess records a successful reconciliation if recorder is available.
+func (r *MetricsReconciler) recordReconciliationSuccess() {
+	if r.Recorder != nil {
+		r.Recorder.RecordReconciliationSuccess()
+	}
+}
+
+// recordReconciliationError records a failed reconciliation if recorder is available.
+func (r *MetricsReconciler) recordReconciliationError() {
+	if r.Recorder != nil {
+		r.Recorder.RecordReconciliationError()
+	}
+}
+
+// recordOverlayCreated records a successful overlay creation if recorder is available.
+func (r *MetricsReconciler) recordOverlayCreated(capacityType overlay.CapacityType) {
+	if r.Recorder != nil {
+		r.Recorder.RecordOverlayCreated(metrics.CapacityTypeLabel(string(capacityType)))
+	}
+}
+
+// recordOverlayUpdated records a successful overlay update if recorder is available.
+func (r *MetricsReconciler) recordOverlayUpdated(capacityType overlay.CapacityType) {
+	if r.Recorder != nil {
+		r.Recorder.RecordOverlayUpdated(metrics.CapacityTypeLabel(string(capacityType)))
+	}
+}
+
+// recordOverlayDeleted records a successful overlay deletion if recorder is available.
+func (r *MetricsReconciler) recordOverlayDeleted(capacityType overlay.CapacityType) {
+	if r.Recorder != nil {
+		r.Recorder.RecordOverlayDeleted(metrics.CapacityTypeLabel(string(capacityType)))
+	}
+}
+
+// recordOverlayError records an overlay operation error if recorder is available.
+func (r *MetricsReconciler) recordOverlayError(capacityType overlay.CapacityType) {
+	if r.Recorder != nil {
+		r.Recorder.RecordOverlayError(metrics.CapacityTypeLabel(string(capacityType)))
+	}
 }
 
 // analyzeComputeSavingsPlans queries and analyzes Compute Savings Plans.
@@ -295,6 +363,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						"errors", validationErrors,
 					)
 					errorCount++
+					r.recordOverlayError(gen.Decision.CapacityType)
 					continue
 				}
 
@@ -309,9 +378,11 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 							"name", gen.Overlay.Name,
 						)
 						errorCount++
+						r.recordOverlayError(gen.Decision.CapacityType)
 						continue
 					}
 					createCount++
+					r.recordOverlayCreated(gen.Decision.CapacityType)
 					r.Logger.Info("Created NodeOverlay",
 						"name", gen.Overlay.Name,
 						"capacity_type", gen.Decision.CapacityType,
@@ -324,6 +395,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						"name", gen.Overlay.Name,
 					)
 					errorCount++
+					r.recordOverlayError(gen.Decision.CapacityType)
 					continue
 				} else {
 					// Update existing overlay if spec differs
@@ -334,9 +406,11 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 							"name", gen.Overlay.Name,
 						)
 						errorCount++
+						r.recordOverlayError(gen.Decision.CapacityType)
 						continue
 					}
 					updateCount++
+					r.recordOverlayUpdated(gen.Decision.CapacityType)
 					r.Logger.V(1).Info("Updated NodeOverlay",
 						"name", gen.Overlay.Name,
 						"capacity_type", gen.Decision.CapacityType,
@@ -360,6 +434,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					"name", gen.Decision.Name,
 				)
 				errorCount++
+				r.recordOverlayError(gen.Decision.CapacityType)
 				continue
 			}
 
@@ -377,9 +452,11 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					"name", gen.Decision.Name,
 				)
 				errorCount++
+				r.recordOverlayError(gen.Decision.CapacityType)
 				continue
 			}
 			deleteCount++
+			r.recordOverlayDeleted(gen.Decision.CapacityType)
 			r.Logger.Info("Deleted NodeOverlay",
 				"name", gen.Decision.Name,
 				"capacity_type", gen.Decision.CapacityType,
