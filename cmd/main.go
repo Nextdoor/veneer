@@ -36,6 +36,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 
@@ -159,8 +160,12 @@ func main() {
 		setupLog.Info("overlay disabled mode enabled - NodeOverlays will be created with impossible requirements")
 	}
 
-	// Create metrics recorder for Prometheus observability
-	metricsRecorder := metrics.NewRecorder(cfg.Overlays.Disabled)
+	// Initialize Prometheus metrics using struct-based pattern.
+	// Metrics are registered with the controller-runtime registry and exposed
+	// via the /metrics endpoint.
+	veneerMetrics := metrics.NewMetrics(ctrlmetrics.Registry)
+	veneerMetrics.SetConfigMetrics(cfg.Overlays.Disabled, cfg.Overlays.UtilizationThreshold)
+	setupLog.Info("metrics initialized")
 
 	// Create and start metrics reconciler
 	metricsReconciler := &reconciler.MetricsReconciler{
@@ -170,7 +175,7 @@ func main() {
 		Generator:        generator,
 		Logger:           ctrl.Log.WithName("metrics-reconciler"),
 		Client:           mgr.GetClient(),
-		Recorder:         metricsRecorder,
+		Metrics:          veneerMetrics,
 		// Use default 5 minute interval
 	}
 
