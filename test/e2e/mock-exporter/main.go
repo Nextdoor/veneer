@@ -9,9 +9,14 @@ import (
 
 func metricsHandler(w http.ResponseWriter, r *http.Request) {
 	// Mock Lumina metrics in Prometheus format
+	// Note: data_freshness requires account_id and data_type labels to match queries
 	metrics := `# HELP lumina_data_freshness_seconds Time since last successful AWS API refresh
 # TYPE lumina_data_freshness_seconds gauge
-lumina_data_freshness_seconds 30
+lumina_data_freshness_seconds{account_id="123456789012",data_type="savings_plans"} 30
+lumina_data_freshness_seconds{account_id="123456789012",data_type="reserved_instances"} 30
+lumina_data_freshness_seconds{account_id="123456789012",data_type="ec2_instances"} 30
+lumina_data_freshness_seconds{account_id="123456789012",data_type="spot-pricing"} 30
+lumina_data_freshness_seconds{account_id="123456789012",data_type="pricing"} 30
 
 # HELP lumina_savings_plan_capacity_hours Remaining Savings Plan capacity in normalized hours
 # TYPE lumina_savings_plan_capacity_hours gauge
