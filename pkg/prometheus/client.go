@@ -471,13 +471,53 @@ func (c *Client) QueryOnDemandPrice(ctx context.Context, instanceType string) ([
 	return prices, nil
 }
 
+// DataType represents the type of Lumina data being queried.
+// Each data type has its own refresh interval in Lumina.
+type DataType string
+
+const (
+	// DataTypeSavingsPlans is for Savings Plan data (refreshes hourly in Lumina).
+	DataTypeSavingsPlans DataType = "savings_plans"
+
+	// DataTypeReservedInstances is for Reserved Instance data (refreshes hourly in Lumina).
+	DataTypeReservedInstances DataType = "reserved_instances"
+
+	// DataTypeEC2Instances is for EC2 instance data (refreshes every ~1 min in Lumina).
+	DataTypeEC2Instances DataType = "ec2_instances"
+
+	// DataTypeSpotPricing is for spot pricing data (refreshes every 15s in Lumina).
+	DataTypeSpotPricing DataType = "spot-pricing"
+
+	// DataTypePricing is for on-demand pricing data (refreshes every ~24h in Lumina).
+	DataTypePricing DataType = "pricing"
+)
+
 // DataFreshness queries the lumina_data_freshness_seconds metric to check how old
-// Lumina's data is. Returns the age in seconds, or an error if the metric is not available.
+// Lumina's data is for a specific data type. Returns the age in seconds, or an error
+// if the metric is not available.
 //
-// This is useful for determining if Lumina's data is stale and cost decisions
-// should be delayed until fresh data is available.
-func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
-	query := metricLuminaDataFreshnessSeconds
+// The dataType parameter specifies which Lumina data type to check. Different data types
+// have different refresh intervals:
+//   - savings_plans: refreshes hourly
+//   - reserved_instances: refreshes hourly
+//   - ec2_instances: refreshes every ~1 minute
+//   - spot-pricing: refreshes every 15 seconds
+//   - pricing: refreshes every ~24 hours
+//
+// The query is scoped to this client's account ID to ensure we're checking freshness
+// for the correct AWS account.
+func (c *Client) DataFreshness(ctx context.Context, dataType DataType) (float64, error) {
+	query := fmt.Sprintf(`%s{%s="%s", data_type="%s"}`,
+		metricLuminaDataFreshnessSeconds,
+		labelAccountID,
+		c.accountID,
+		dataType,
+	)
+
+	c.logger.V(1).Info("Executing Prometheus query for data freshness",
+		"query", query,
+		"account_id", c.accountID,
+		"data_type", dataType)
 
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
@@ -494,10 +534,10 @@ func (c *Client) DataFreshness(ctx context.Context) (float64, error) {
 	}
 
 	if len(vector) == 0 {
-		return 0, fmt.Errorf("no data freshness metric available")
+		return 0, fmt.Errorf("no data freshness metric available for account %s, data_type %s", c.accountID, dataType)
 	}
 
-	// Return the first sample (should only be one)
+	// Return the first sample (should only be one after filtering by account and data_type)
 	return float64(vector[0].Value), nil
 }
 

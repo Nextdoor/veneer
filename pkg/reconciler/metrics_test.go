@@ -111,11 +111,18 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 			fixtures: []testutil.MetricFixture{
 				testutil.LuminaMetricsWithSPCapacity(),
 				{
-					`lumina_data_freshness_seconds`: `{
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {}, "value": [1640000000, "30"]}]
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "30"]}]
+						}
+					}`,
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
+						"status": "success",
+						"data": {
+							"resultType": "vector",
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "30"]}]
 						}
 					}`,
 				},
@@ -127,11 +134,18 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 			fixtures: []testutil.MetricFixture{
 				testutil.LuminaMetricsWithNoCapacity(),
 				{
-					`lumina_data_freshness_seconds`: `{
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {}, "value": [1640000000, "45"]}]
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "45"]}]
+						}
+					}`,
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
+						"status": "success",
+						"data": {
+							"resultType": "vector",
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "45"]}]
 						}
 					}`,
 				},
@@ -143,11 +157,18 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 			fixtures: []testutil.MetricFixture{
 				testutil.LuminaMetricsEmpty(),
 				{
-					`lumina_data_freshness_seconds`: `{
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {}, "value": [1640000000, "60"]}]
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "60"]}]
+						}
+					}`,
+					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
+						"status": "success",
+						"data": {
+							"resultType": "vector",
+							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "60"]}]
 						}
 					}`,
 				},
@@ -155,12 +176,12 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "error when data freshness missing",
+			// When freshness data is missing, we now gracefully continue (logging error) instead of failing
+			name: "graceful continue when data freshness missing",
 			fixtures: []testutil.MetricFixture{
 				testutil.LuminaMetricsWithSPCapacity(),
 			},
-			wantErr:     true,
-			errContains: "data freshness",
+			wantErr: false, // Changed: no longer returns error, just logs and continues
 		},
 	}
 
@@ -199,6 +220,7 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 
 func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 	// Use unavailable server to trigger connection errors
+	// The reconciler now gracefully handles errors and continues instead of failing
 	client, _ := prometheus.NewClient("http://localhost:1", "123456789012", "us-west-2", logr.Discard())
 
 	reconciler := &MetricsReconciler{
@@ -209,8 +231,10 @@ func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 	ctx := context.Background()
 	err := reconciler.reconcile(ctx)
 
-	if err == nil {
-		t.Error("reconcile() expected error with unavailable server, got nil")
+	// With the new design, reconcile() logs errors but doesn't return them
+	// This allows partial reconciliation when some data sources are unavailable
+	if err != nil {
+		t.Errorf("reconcile() unexpected error: %v (should gracefully handle server errors)", err)
 	}
 }
 
@@ -220,11 +244,18 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 
 	server.SetMetrics(testutil.LuminaMetricsWithSPCapacity())
 	server.SetMetrics(testutil.MetricFixture{
-		`lumina_data_freshness_seconds`: `{
+		`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
-				"result": [{"metric": {}, "value": [1640000000, "30"]}]
+				"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "30"]}]
+			}
+		}`,
+		`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "30"]}]
 			}
 		}`,
 	})
