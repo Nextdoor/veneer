@@ -115,14 +115,20 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "30"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
+								"value": [1640000000, "30"]
+							}]
 						}
 					}`,
 					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "30"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "reserved_instances"},
+								"value": [1640000000, "30"]
+							}]
 						}
 					}`,
 				},
@@ -138,14 +144,20 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "45"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
+								"value": [1640000000, "45"]
+							}]
 						}
 					}`,
 					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "45"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "reserved_instances"},
+								"value": [1640000000, "45"]
+							}]
 						}
 					}`,
 				},
@@ -161,14 +173,20 @@ func TestMetricsReconciler_Reconcile(t *testing.T) {
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "60"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
+								"value": [1640000000, "60"]
+							}]
 						}
 					}`,
 					`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
 						"status": "success",
 						"data": {
 							"resultType": "vector",
-							"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "60"]}]
+							"result": [{
+								"metric": {"account_id": "123456789012", "data_type": "reserved_instances"},
+								"value": [1640000000, "60"]
+							}]
 						}
 					}`,
 				},
@@ -248,14 +266,20 @@ func TestMetricsReconciler_DefaultInterval(t *testing.T) {
 			"status": "success",
 			"data": {
 				"resultType": "vector",
-				"result": [{"metric": {"account_id": "123456789012", "data_type": "savings_plans"}, "value": [1640000000, "30"]}]
+				"result": [{
+					"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
+					"value": [1640000000, "30"]
+				}]
 			}
 		}`,
 		`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
-				"result": [{"metric": {"account_id": "123456789012", "data_type": "reserved_instances"}, "value": [1640000000, "30"]}]
+				"result": [{
+					"metric": {"account_id": "123456789012", "data_type": "reserved_instances"},
+					"value": [1640000000, "30"]
+				}]
 			}
 		}`,
 	})

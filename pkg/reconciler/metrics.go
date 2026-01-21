@@ -126,6 +126,11 @@ func (r *MetricsReconciler) runReconcileWithMetrics(ctx context.Context) {
 }
 
 // reconcile queries Prometheus, makes overlay decisions, and generates NodeOverlay specs.
+// The error return is kept for interface consistency with runReconcileWithMetrics,
+// but we always return nil because errors are logged and handled gracefully to allow
+// partial reconciliation when some data sources are unavailable.
+//
+//nolint:unparam // error is always nil by design - we handle errors gracefully
 func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 	r.Logger.V(1).Info("Reconciling metrics")
 
