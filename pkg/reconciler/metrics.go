@@ -40,9 +40,13 @@ const (
 	// DefaultReconcileInterval is the default interval between reconciliation cycles.
 	DefaultReconcileInterval = 5 * time.Minute
 
-	// MaxDataFreshnessSeconds is the maximum age of Lumina data before it's considered stale.
-	// Data older than this threshold will cause LuminaDataAvailable metric to be 0.
-	MaxDataFreshnessSeconds = 600.0 // 10 minutes
+	// MaxSavingsPlanFreshnessSeconds is the maximum age of Savings Plan data before it's considered stale.
+	// Lumina refreshes SP data hourly, so we allow 65 minutes (1 hour + buffer).
+	MaxSavingsPlanFreshnessSeconds = 3900.0 // 65 minutes
+
+	// MaxReservedInstanceFreshnessSeconds is the maximum age of Reserved Instance data before it's considered stale.
+	// Lumina refreshes RI data hourly, so we allow 65 minutes (1 hour + buffer).
+	MaxReservedInstanceFreshnessSeconds = 3900.0 // 65 minutes
 )
 
 // MetricsReconciler periodically queries Prometheus for Lumina metrics.
@@ -122,41 +126,69 @@ func (r *MetricsReconciler) runReconcileWithMetrics(ctx context.Context) {
 }
 
 // reconcile queries Prometheus, makes overlay decisions, and generates NodeOverlay specs.
+// The error return is kept for interface consistency with runReconcileWithMetrics,
+// but we always return nil because errors are logged and handled gracefully to allow
+// partial reconciliation when some data sources are unavailable.
+//
+//nolint:unparam // error is always nil by design - we handle errors gracefully
 func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 	r.Logger.V(1).Info("Reconciling metrics")
-
-	// Check data freshness with metrics
-	freshness, err := r.queryDataFreshness(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to query data freshness: %w", err)
-	}
-	r.Logger.Info("Lumina data freshness", "age_seconds", freshness)
 
 	// Collect all decisions
 	var decisions []overlay.Decision
 
-	// Query and analyze Compute Savings Plans
-	computeDecisions, err := r.analyzeComputeSavingsPlans(ctx)
-	if err != nil {
-		r.Logger.Error(err, "Failed to analyze Compute Savings Plans")
+	// Check Savings Plan data freshness and analyze if data is fresh enough
+	spFreshness, spFreshnessErr := r.queryDataFreshness(ctx, prometheus.DataTypeSavingsPlans)
+	if spFreshnessErr != nil {
+		r.Logger.Error(spFreshnessErr, "Failed to query Savings Plan data freshness")
 	} else {
-		decisions = append(decisions, computeDecisions...)
+		r.Logger.Info("Lumina Savings Plan data freshness", "age_seconds", spFreshness)
+
+		if spFreshness <= MaxSavingsPlanFreshnessSeconds {
+			// Query and analyze Compute Savings Plans
+			computeDecisions, err := r.analyzeComputeSavingsPlans(ctx)
+			if err != nil {
+				r.Logger.Error(err, "Failed to analyze Compute Savings Plans")
+			} else {
+				decisions = append(decisions, computeDecisions...)
+			}
+
+			// Query and analyze EC2 Instance Savings Plans
+			ec2Decisions, err := r.analyzeEC2InstanceSavingsPlans(ctx)
+			if err != nil {
+				r.Logger.Error(err, "Failed to analyze EC2 Instance Savings Plans")
+			} else {
+				decisions = append(decisions, ec2Decisions...)
+			}
+		} else {
+			r.Logger.Info("Skipping Savings Plan analysis due to stale data",
+				"freshness_seconds", spFreshness,
+				"max_freshness_seconds", MaxSavingsPlanFreshnessSeconds,
+			)
+		}
 	}
 
-	// Query and analyze EC2 Instance Savings Plans
-	ec2Decisions, err := r.analyzeEC2InstanceSavingsPlans(ctx)
-	if err != nil {
-		r.Logger.Error(err, "Failed to analyze EC2 Instance Savings Plans")
+	// Check Reserved Instance data freshness and analyze if data is fresh enough
+	riFreshness, riFreshnessErr := r.queryDataFreshness(ctx, prometheus.DataTypeReservedInstances)
+	if riFreshnessErr != nil {
+		r.Logger.Error(riFreshnessErr, "Failed to query Reserved Instance data freshness")
 	} else {
-		decisions = append(decisions, ec2Decisions...)
-	}
+		r.Logger.Info("Lumina Reserved Instance data freshness", "age_seconds", riFreshness)
 
-	// Query and analyze Reserved Instances
-	riDecisions, err := r.analyzeReservedInstances(ctx)
-	if err != nil {
-		r.Logger.Error(err, "Failed to analyze Reserved Instances")
-	} else {
-		decisions = append(decisions, riDecisions...)
+		if riFreshness <= MaxReservedInstanceFreshnessSeconds {
+			// Query and analyze Reserved Instances
+			riDecisions, err := r.analyzeReservedInstances(ctx)
+			if err != nil {
+				r.Logger.Error(err, "Failed to analyze Reserved Instances")
+			} else {
+				decisions = append(decisions, riDecisions...)
+			}
+		} else {
+			r.Logger.Info("Skipping Reserved Instance analysis due to stale data",
+				"freshness_seconds", riFreshness,
+				"max_freshness_seconds", MaxReservedInstanceFreshnessSeconds,
+			)
+		}
 	}
 
 	// Generate and apply NodeOverlay specs from decisions
@@ -172,11 +204,22 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 	return nil
 }
 
-// queryDataFreshness queries Lumina data freshness with metrics instrumentation.
-func (r *MetricsReconciler) queryDataFreshness(ctx context.Context) (float64, error) {
+// queryDataFreshness queries Lumina data freshness for a specific data type with metrics instrumentation.
+func (r *MetricsReconciler) queryDataFreshness(ctx context.Context, dataType prometheus.DataType) (float64, error) {
 	startTime := time.Now()
-	freshnessSeconds, err := r.PrometheusClient.DataFreshness(ctx)
+	freshnessSeconds, err := r.PrometheusClient.DataFreshness(ctx, dataType)
 	duration := time.Since(startTime).Seconds()
+
+	// Determine max freshness based on data type
+	var maxFreshness float64
+	switch dataType {
+	case prometheus.DataTypeSavingsPlans:
+		maxFreshness = MaxSavingsPlanFreshnessSeconds
+	case prometheus.DataTypeReservedInstances:
+		maxFreshness = MaxReservedInstanceFreshnessSeconds
+	default:
+		maxFreshness = MaxSavingsPlanFreshnessSeconds // Default to SP threshold
+	}
 
 	if err != nil {
 		if r.Metrics != nil {
@@ -188,7 +231,7 @@ func (r *MetricsReconciler) queryDataFreshness(ctx context.Context) (float64, er
 
 	if r.Metrics != nil {
 		r.Metrics.RecordPrometheusQuery(veneermetrics.QueryTypeDataFreshness, duration, 1, nil)
-		r.Metrics.SetLuminaDataFreshness(freshnessSeconds, MaxDataFreshnessSeconds)
+		r.Metrics.SetLuminaDataFreshness(freshnessSeconds, maxFreshness)
 	}
 
 	return freshnessSeconds, nil

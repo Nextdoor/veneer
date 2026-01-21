@@ -123,12 +123,12 @@ var _ = Describe("Metrics Reconciler", Ordered, func() {
 				logs, err := logsClient.GetPodLogs(ctx, controllerPodName, nil, "")
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// The reconciler should log either:
-				// - "Reconciling metrics" (debug level)
-				// - "Lumina data freshness" (info level)
-				// - Any capacity/RI logs
+				// The reconciler should log data freshness per type:
+				// - "Lumina Savings Plan data freshness" (info level)
+				// - "Lumina Reserved Instance data freshness" (info level)
 				g.Expect(logs).To(Or(
-					ContainSubstring("Lumina data freshness"),
+					ContainSubstring("Lumina Savings Plan data freshness"),
+					ContainSubstring("Lumina Reserved Instance data freshness"),
 					ContainSubstring("Savings Plan capacity"),
 					ContainSubstring("Reserved Instance"),
 				), "Metrics reconciler should have queried Lumina")
@@ -145,9 +145,11 @@ var _ = Describe("Metrics Reconciler", Ordered, func() {
 				logs, err := logsClient.GetPodLogs(ctx, controllerPodName, nil, "")
 				g.Expect(err).NotTo(HaveOccurred())
 
-				// Should see log with data freshness (age in seconds)
-				g.Expect(logs).To(ContainSubstring("Lumina data freshness"),
-					"Should log Lumina data freshness")
+				// Should see log with data freshness per type (age in seconds)
+				g.Expect(logs).To(Or(
+					ContainSubstring("Lumina Savings Plan data freshness"),
+					ContainSubstring("Lumina Reserved Instance data freshness"),
+				), "Should log Lumina data freshness per type")
 
 				// Verify the log includes age_seconds field
 				g.Expect(logs).To(ContainSubstring("age_seconds"),

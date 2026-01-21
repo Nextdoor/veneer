@@ -263,15 +263,15 @@ func TestDataFreshness(t *testing.T) {
 	server := testutil.NewMockPrometheusServer()
 	defer server.Close()
 
-	// Add data freshness metric
+	// Add data freshness metric with account_id and data_type labels
 	server.SetMetrics(testutil.MetricFixture{
-		`lumina_data_freshness_seconds`: `{
+		`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
 			"status": "success",
 			"data": {
 				"resultType": "vector",
 				"result": [
 					{
-						"metric": {},
+						"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
 						"value": [1640000000, "45.5"]
 					}
 				]
@@ -282,13 +282,67 @@ func TestDataFreshness(t *testing.T) {
 	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
-	freshness, err := client.DataFreshness(ctx)
+	freshness, err := client.DataFreshness(ctx, DataTypeSavingsPlans)
 	if err != nil {
 		t.Fatalf("DataFreshness() error = %v", err)
 	}
 
 	if freshness != 45.5 {
 		t.Errorf("expected freshness 45.5, got %f", freshness)
+	}
+}
+
+func TestDataFreshness_DifferentDataTypes(t *testing.T) {
+	server := testutil.NewMockPrometheusServer()
+	defer server.Close()
+
+	// Add freshness metrics for different data types
+	server.SetMetrics(testutil.MetricFixture{
+		`lumina_data_freshness_seconds{account_id="123456789012", data_type="savings_plans"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {"account_id": "123456789012", "data_type": "savings_plans"},
+						"value": [1640000000, "3600.0"]
+					}
+				]
+			}
+		}`,
+		`lumina_data_freshness_seconds{account_id="123456789012", data_type="reserved_instances"}`: `{
+			"status": "success",
+			"data": {
+				"resultType": "vector",
+				"result": [
+					{
+						"metric": {"account_id": "123456789012", "data_type": "reserved_instances"},
+						"value": [1640000000, "1800.0"]
+					}
+				]
+			}
+		}`,
+	})
+
+	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
+	ctx := context.Background()
+
+	// Test Savings Plans freshness
+	spFreshness, err := client.DataFreshness(ctx, DataTypeSavingsPlans)
+	if err != nil {
+		t.Fatalf("DataFreshness(savings_plans) error = %v", err)
+	}
+	if spFreshness != 3600.0 {
+		t.Errorf("expected SP freshness 3600.0, got %f", spFreshness)
+	}
+
+	// Test Reserved Instances freshness
+	riFreshness, err := client.DataFreshness(ctx, DataTypeReservedInstances)
+	if err != nil {
+		t.Fatalf("DataFreshness(reserved_instances) error = %v", err)
+	}
+	if riFreshness != 1800.0 {
+		t.Errorf("expected RI freshness 1800.0, got %f", riFreshness)
 	}
 }
 
@@ -301,7 +355,7 @@ func TestDataFreshness_NoMetric(t *testing.T) {
 	client, _ := NewClient(server.URL, "123456789012", "us-west-2", logr.Discard())
 	ctx := context.Background()
 
-	_, err := client.DataFreshness(ctx)
+	_, err := client.DataFreshness(ctx, DataTypeSavingsPlans)
 	if err == nil {
 		t.Error("DataFreshness() expected error when metric missing, got nil")
 	}
@@ -409,7 +463,7 @@ func TestQueryServerUnavailable(t *testing.T) {
 		t.Error("QueryOnDemandPrice() expected error with unavailable server")
 	}
 
-	_, err = client.DataFreshness(ctx)
+	_, err = client.DataFreshness(ctx, DataTypeSavingsPlans)
 	if err == nil {
 		t.Error("DataFreshness() expected error with unavailable server")
 	}
