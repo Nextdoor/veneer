@@ -20,6 +20,7 @@ import (
 	"testing"
 )
 
+//nolint:gocyclo // Table-driven tests with inline assertions have high cyclomatic complexity
 func TestParseNodePoolPreferences(t *testing.T) {
 	tests := []struct {
 		name         string

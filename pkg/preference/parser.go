@@ -58,7 +58,7 @@ var adjustmentRegex = regexp.MustCompile(`^adjust=([+-]?\d+(?:\.\d+)?)%$`)
 // Returns the parsed preferences sorted by number (ascending), and any parse errors.
 // Parse errors are non-fatal; valid preferences are still returned.
 func ParseNodePoolPreferences(annotations map[string]string, nodePoolName string) ([]Preference, []error) {
-	var preferences []Preference
+	preferences := make([]Preference, 0, len(annotations))
 	var errors []error
 
 	for key, value := range annotations {
@@ -267,7 +267,8 @@ func parseAdjustment(expr string) (float64, error) {
 
 	matches := adjustmentRegex.FindStringSubmatch(expr)
 	if matches == nil {
-		return 0, fmt.Errorf("invalid adjustment %q: expected format 'adjust=[+-]N%%' (e.g., 'adjust=-20%%', 'adjust=+40%%')", expr)
+		return 0, fmt.Errorf(
+			"invalid adjustment %q: expected format 'adjust=[+-]N%%' (e.g., 'adjust=-20%%')", expr)
 	}
 
 	// matches[1] is the captured number (including optional sign)

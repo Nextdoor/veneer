@@ -249,7 +249,9 @@ func main() {
 //
 // Returns nil if the environment variables are not set or the Deployment cannot be found.
 // This allows the controller to run in environments without these variables (e.g., local development).
-func discoverControllerDeployment(ctx context.Context, k8sClient client.Client, log logr.Logger) *metav1.OwnerReference {
+func discoverControllerDeployment(
+	ctx context.Context, k8sClient client.Client, log logr.Logger,
+) *metav1.OwnerReference {
 	podNamespace := os.Getenv("POD_NAMESPACE")
 	podName := os.Getenv("POD_NAME")
 
@@ -281,7 +283,8 @@ func discoverControllerDeployment(ctx context.Context, k8sClient client.Client, 
 
 	// Get the ReplicaSet
 	var replicaSet appsv1.ReplicaSet
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: podNamespace, Name: replicaSetName}, &replicaSet); err != nil {
+	rsKey := types.NamespacedName{Namespace: podNamespace, Name: replicaSetName}
+	if err := k8sClient.Get(ctx, rsKey, &replicaSet); err != nil {
 		log.Error(err, "Failed to get ReplicaSet", "namespace", podNamespace, "name", replicaSetName)
 		return nil
 	}
@@ -302,7 +305,8 @@ func discoverControllerDeployment(ctx context.Context, k8sClient client.Client, 
 
 	// Get the Deployment
 	var deployment appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: podNamespace, Name: deploymentName}, &deployment); err != nil {
+	deployKey := types.NamespacedName{Namespace: podNamespace, Name: deploymentName}
+	if err := k8sClient.Get(ctx, deployKey, &deployment); err != nil {
 		log.Error(err, "Failed to get Deployment", "namespace", podNamespace, "name", deploymentName)
 		return nil
 	}

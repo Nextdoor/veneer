@@ -24,6 +24,14 @@ import (
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
 
+// Test constants for commonly used values
+const (
+	testNodePoolMyWorkload = "my-workload"
+	testInstanceFamilyC7a  = "c7a"
+	testInstanceFamilyC7g  = "c7g"
+)
+
+//nolint:gocyclo // Table-driven tests with inline assertions have high cyclomatic complexity
 func TestGenerator_Generate(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -36,20 +44,20 @@ func TestGenerator_Generate(t *testing.T) {
 			disabled: false,
 			pref: Preference{
 				Number:       1,
-				NodePoolName: "my-workload",
+				NodePoolName: testNodePoolMyWorkload,
 				Adjustment:   -20,
 				Matchers: []LabelMatcher{
 					{
 						Key:      LabelInstanceFamily,
 						Operator: OperatorIn,
-						Values:   []string{"c7a", "c7g"},
+						Values:   []string{testInstanceFamilyC7a, testInstanceFamilyC7g},
 					},
 				},
 			},
 			check: func(t *testing.T, o *karpenterv1alpha1.NodeOverlay) {
-				// Check name
-				if o.Name != "pref-my-workload-1" {
-					t.Errorf("expected name pref-my-workload-1, got %s", o.Name)
+				expectedName := "pref-" + testNodePoolMyWorkload + "-1"
+				if o.Name != expectedName {
+					t.Errorf("expected name %s, got %s", expectedName, o.Name)
 				}
 
 				// Check labels
@@ -59,8 +67,8 @@ func TestGenerator_Generate(t *testing.T) {
 				if o.Labels[LabelPreferenceType] != LabelPreferenceTypeValue {
 					t.Errorf("expected type label %s, got %s", LabelPreferenceTypeValue, o.Labels[LabelPreferenceType])
 				}
-				if o.Labels[LabelSourceNodePool] != "my-workload" {
-					t.Errorf("expected source-nodepool label my-workload, got %s", o.Labels[LabelSourceNodePool])
+				if o.Labels[LabelSourceNodePool] != testNodePoolMyWorkload {
+					t.Errorf("expected source-nodepool label, got %s", o.Labels[LabelSourceNodePool])
 				}
 				if o.Labels[LabelPreferenceNumber] != "1" {
 					t.Errorf("expected preference-number label 1, got %s", o.Labels[LabelPreferenceNumber])
@@ -89,8 +97,8 @@ func TestGenerator_Generate(t *testing.T) {
 				if npReq.Operator != corev1.NodeSelectorOpIn {
 					t.Errorf("expected first req operator In, got %s", npReq.Operator)
 				}
-				if len(npReq.Values) != 1 || npReq.Values[0] != "my-workload" {
-					t.Errorf("expected first req values [my-workload], got %v", npReq.Values)
+				if len(npReq.Values) != 1 || npReq.Values[0] != testNodePoolMyWorkload {
+					t.Errorf("expected first req values [%s], got %v", testNodePoolMyWorkload, npReq.Values)
 				}
 
 				// Second requirement should be the user matcher
@@ -101,8 +109,9 @@ func TestGenerator_Generate(t *testing.T) {
 				if userReq.Operator != corev1.NodeSelectorOpIn {
 					t.Errorf("expected second req operator In, got %s", userReq.Operator)
 				}
-				if len(userReq.Values) != 2 || userReq.Values[0] != "c7a" || userReq.Values[1] != "c7g" {
-					t.Errorf("expected second req values [c7a, c7g], got %v", userReq.Values)
+				expVals := []string{testInstanceFamilyC7a, testInstanceFamilyC7g}
+				if len(userReq.Values) != 2 || userReq.Values[0] != expVals[0] || userReq.Values[1] != expVals[1] {
+					t.Errorf("expected second req values %v, got %v", expVals, userReq.Values)
 				}
 			},
 		},

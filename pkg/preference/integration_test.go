@@ -25,6 +25,8 @@ import (
 
 // TestIntegration_ParseGenerateValidate tests the full workflow from parsing
 // NodePool annotations to generating and validating NodeOverlay resources.
+//
+//nolint:gocyclo // Table-driven tests with inline assertions have high cyclomatic complexity
 func TestIntegration_ParseGenerateValidate(t *testing.T) {
 	tests := []struct {
 		name         string

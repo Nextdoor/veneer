@@ -128,7 +128,12 @@ func (g *Generator) generateLabels(pref Preference) map[string]string {
 //   - user-specified matchers converted to requirements
 //   - veneer.io/disabled: "true" (if disabled mode is enabled)
 func (g *Generator) generateRequirements(pref Preference) []corev1.NodeSelectorRequirement {
-	var requirements []corev1.NodeSelectorRequirement
+	// Pre-allocate: 1 for nodepool + matchers + potentially 1 for disabled
+	capacity := 1 + len(pref.Matchers)
+	if g.Disabled {
+		capacity++
+	}
+	requirements := make([]corev1.NodeSelectorRequirement, 0, capacity)
 
 	// If disabled mode is enabled, add an impossible requirement first.
 	// This prevents the overlay from ever matching any instances.

@@ -228,7 +228,9 @@ func (r *NodePoolReconciler) reconcileOverlays(
 // The overlay will be owned by both the NodePool (source of the preference)
 // and optionally the controller Deployment (if ControllerRef is set).
 // This ensures overlays are garbage collected when either owner is deleted.
-func (r *NodePoolReconciler) setOwnerReferences(overlay *karpenterv1alpha1.NodeOverlay, nodePool *karpenterv1.NodePool) {
+func (r *NodePoolReconciler) setOwnerReferences(
+	overlay *karpenterv1alpha1.NodeOverlay, nodePool *karpenterv1.NodePool,
+) {
 	// Create NodePool owner reference
 	nodePoolRef := metav1.OwnerReference{
 		APIVersion: "karpenter.sh/v1",
