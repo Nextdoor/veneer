@@ -23,6 +23,7 @@ import (
 	"github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/preference"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -51,6 +52,11 @@ type NodePoolReconciler struct {
 
 	// Metrics holds the Prometheus metrics for recording reconciler behavior
 	Metrics *metrics.Metrics
+
+	// ControllerRef is the OwnerReference for the controller Deployment.
+	// When set, all created overlays will have this as an owner, ensuring
+	// they are garbage collected when the controller is uninstalled.
+	ControllerRef *metav1.OwnerReference
 }
 
 // Reconcile handles NodePool create/update/delete events.
@@ -104,7 +110,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Reconcile: create new, update existing, delete stale
-	return r.reconcileOverlays(ctx, log, nodePool.Name, desiredOverlays, existingOverlays)
+	return r.reconcileOverlays(ctx, log, &nodePool, desiredOverlays, existingOverlays)
 }
 
 // listPreferenceOverlaysForNodePool returns all preference overlays generated from a NodePool.
@@ -126,7 +132,7 @@ func (r *NodePoolReconciler) listPreferenceOverlaysForNodePool(
 func (r *NodePoolReconciler) reconcileOverlays(
 	ctx context.Context,
 	log logr.Logger,
-	nodePoolName string,
+	nodePool *karpenterv1.NodePool,
 	desired []*karpenterv1alpha1.NodeOverlay,
 	existing []karpenterv1alpha1.NodeOverlay,
 ) (ctrl.Result, error) {
@@ -147,6 +153,9 @@ func (r *NodePoolReconciler) reconcileOverlays(
 	// Create or update desired overlays
 	for name, desiredOverlay := range desiredByName {
 		existingOverlay, exists := existingByName[name]
+
+		// Set owner references before create/update
+		r.setOwnerReferences(desiredOverlay, nodePool)
 
 		if !exists {
 			// Create new overlay
@@ -204,7 +213,7 @@ func (r *NodePoolReconciler) reconcileOverlays(
 
 	if createCount > 0 || updateCount > 0 || deleteCount > 0 || errorCount > 0 {
 		log.Info("Preference overlay reconciliation complete",
-			"nodepool", nodePoolName,
+			"nodepool", nodePool.Name,
 			"created", createCount,
 			"updated", updateCount,
 			"deleted", deleteCount,
@@ -213,6 +222,30 @@ func (r *NodePoolReconciler) reconcileOverlays(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// setOwnerReferences sets the owner references on a NodeOverlay.
+// The overlay will be owned by both the NodePool (source of the preference)
+// and optionally the controller Deployment (if ControllerRef is set).
+// This ensures overlays are garbage collected when either owner is deleted.
+func (r *NodePoolReconciler) setOwnerReferences(overlay *karpenterv1alpha1.NodeOverlay, nodePool *karpenterv1.NodePool) {
+	// Create NodePool owner reference
+	nodePoolRef := metav1.OwnerReference{
+		APIVersion: "karpenter.sh/v1",
+		Kind:       "NodePool",
+		Name:       nodePool.Name,
+		UID:        nodePool.UID,
+	}
+
+	// Build owner references list
+	ownerRefs := []metav1.OwnerReference{nodePoolRef}
+
+	// Add controller deployment owner reference if set
+	if r.ControllerRef != nil {
+		ownerRefs = append(ownerRefs, *r.ControllerRef)
+	}
+
+	overlay.OwnerReferences = ownerRefs
 }
 
 // cleanupOverlaysForNodePool deletes all preference overlays generated from a deleted NodePool.
