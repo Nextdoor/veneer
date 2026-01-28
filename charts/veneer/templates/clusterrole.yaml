@@ -27,6 +27,15 @@ rules:
   - get
   - update
   - patch
+# NodePool permissions (for preference reconciler)
+- apiGroups:
+  - karpenter.sh
+  resources:
+  - nodepools
+  verbs:
+  - get
+  - list
+  - watch
 # Node permissions for querying cluster state
 - apiGroups:
   - ""

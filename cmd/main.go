@@ -38,11 +38,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/overlay"
+	"github.com/nextdoor/veneer/pkg/preference"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"github.com/nextdoor/veneer/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
@@ -58,12 +60,20 @@ func init() {
 
 	// Register Karpenter v1alpha1 types (NodeOverlay)
 	// Karpenter doesn't export an AddToScheme function, so we register types directly
-	karpenterGV := schema.GroupVersion{Group: "karpenter.sh", Version: "v1alpha1"}
-	scheme.AddKnownTypes(karpenterGV,
+	karpenterv1alpha1GV := schema.GroupVersion{Group: "karpenter.sh", Version: "v1alpha1"}
+	scheme.AddKnownTypes(karpenterv1alpha1GV,
 		&karpenterv1alpha1.NodeOverlay{},
 		&karpenterv1alpha1.NodeOverlayList{},
 	)
-	metav1.AddToGroupVersion(scheme, karpenterGV)
+	metav1.AddToGroupVersion(scheme, karpenterv1alpha1GV)
+
+	// Register Karpenter v1 types (NodePool) for preference-based overlays
+	karpenterv1GV := schema.GroupVersion{Group: "karpenter.sh", Version: "v1"}
+	scheme.AddKnownTypes(karpenterv1GV,
+		&karpenterv1.NodePool{},
+		&karpenterv1.NodePoolList{},
+	)
+	metav1.AddToGroupVersion(scheme, karpenterv1GV)
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -184,6 +194,21 @@ func main() {
 		setupLog.Error(err, "unable to add metrics reconciler to manager")
 		os.Exit(1)
 	}
+
+	// Create and setup NodePool reconciler for preference-based overlays
+	// This watches NodePools and generates NodeOverlays from veneer.io/preference.N annotations
+	preferenceGenerator := preference.NewGeneratorWithOptions(cfg.Overlays.Disabled)
+	nodePoolReconciler := &reconciler.NodePoolReconciler{
+		Client:    mgr.GetClient(),
+		Logger:    ctrl.Log.WithName("nodepool-reconciler"),
+		Generator: preferenceGenerator,
+		Metrics:   veneerMetrics,
+	}
+	if err := nodePoolReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to setup NodePool reconciler")
+		os.Exit(1)
+	}
+	setupLog.Info("NodePool reconciler configured for preference-based overlays")
 
 	// Setup health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

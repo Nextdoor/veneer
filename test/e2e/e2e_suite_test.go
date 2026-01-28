@@ -89,6 +89,16 @@ var _ = BeforeSuite(func() {
 	// Update client to use the new namespace
 	client.namespace = namespace
 
+	By("creating RBAC for Veneer controller")
+	rbacClient, err := NewRBACClient()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create RBAC client")
+
+	err = rbacClient.CreateVeneerClusterRole(ctx)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create ClusterRole")
+
+	err = rbacClient.CreateVeneerClusterRoleBinding(ctx, namespace)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
+
 	By("deploying mock Lumina exporter")
 	replicas := int32(1)
 	mockExporterDeployment := &appsv1.Deployment{
@@ -342,5 +352,11 @@ var _ = AfterSuite(func() {
 	By("removing manager namespace")
 	if err == nil {
 		_ = client.DeleteNamespace(ctx, namespace)
+	}
+
+	By("removing RBAC")
+	rbacClient, err := NewRBACClient()
+	if err == nil {
+		_ = rbacClient.DeleteVeneerRBAC(ctx)
 	}
 })
