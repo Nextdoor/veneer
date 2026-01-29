@@ -22,10 +22,106 @@ Veneer watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay 
 ```
 Lumina (RFC-0002) → Exposes SP/RI metrics to Prometheus
       ↓
-Veneer (RFC-0003) → Queries metrics, manages NodeOverlays  
+Veneer (RFC-0003) → Queries metrics, manages NodeOverlays
       ↓
 Karpenter → Uses adjusted pricing for provisioning decisions
 ```
+
+## Features
+
+### Cost-Aware Provisioning (Lumina Integration)
+
+Veneer queries Lumina metrics to automatically create NodeOverlays that adjust instance pricing based on RI/SP coverage:
+- **Reserved Instances**: Highest priority (weight 30)
+- **EC2 Instance Savings Plans**: Medium priority (weight 20)
+- **Compute Savings Plans**: Lower priority (weight 10)
+
+### Instance Preferences
+
+Define instance type preferences directly on NodePools using annotations. Veneer watches NodePools and generates NodeOverlay resources for each preference.
+
+**Annotation Format:**
+```
+veneer.io/preference.N: "<matcher> [<matcher>...] adjust=[+-]N%"
+```
+
+Where:
+- `N` is a positive integer (1-9 recommended) that determines overlay weight/priority
+- `<matcher>` is `key=value1,value2` or `key!=value` or `key>value` or `key<value`
+- `adjust` specifies the price adjustment percentage
+
+**Example NodePool:**
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: my-workload
+  annotations:
+    # Prefer c7a/c7g families with 20% discount
+    veneer.io/preference.1: "karpenter.k8s.aws/instance-family=c7a,c7g adjust=-20%"
+    # Prefer ARM64 architecture with 30% discount
+    veneer.io/preference.2: "kubernetes.io/arch=arm64 adjust=-30%"
+    # Combined matcher: m7g on ARM64 with 40% discount
+    veneer.io/preference.3: "karpenter.k8s.aws/instance-family=m7g kubernetes.io/arch=arm64 adjust=-40%"
+```
+
+**Generated NodeOverlay:**
+```yaml
+apiVersion: karpenter.sh/v1alpha1
+kind: NodeOverlay
+metadata:
+  name: pref-my-workload-1
+  labels:
+    app.kubernetes.io/managed-by: veneer
+    veneer.io/type: preference
+    veneer.io/source-nodepool: my-workload
+spec:
+  requirements:
+    - key: karpenter.sh/nodepool
+      operator: In
+      values: ["my-workload"]
+    - key: karpenter.k8s.aws/instance-family
+      operator: In
+      values: ["c7a", "c7g"]
+  priceAdjustment: "-20%"
+  weight: 1
+```
+
+**Supported Labels:**
+| Label | Description |
+|-------|-------------|
+| `karpenter.k8s.aws/instance-family` | Instance family (c7a, m7g, etc.) |
+| `karpenter.k8s.aws/instance-category` | Instance category (c, m, r, etc.) |
+| `karpenter.k8s.aws/instance-generation` | Instance generation number |
+| `karpenter.k8s.aws/instance-size` | Instance size (large, xlarge, etc.) |
+| `karpenter.k8s.aws/instance-cpu` | Number of vCPUs |
+| `karpenter.k8s.aws/instance-cpu-manufacturer` | CPU manufacturer (intel, amd, aws) |
+| `karpenter.k8s.aws/instance-memory` | Memory in MiB |
+| `kubernetes.io/arch` | Architecture (amd64, arm64) |
+| `karpenter.sh/capacity-type` | Capacity type (on-demand, spot) |
+| `node.kubernetes.io/instance-type` | Specific instance type |
+
+**Operators:**
+| Syntax | Kubernetes Operator | Description |
+|--------|---------------------|-------------|
+| `=` | `In` | Match any of the values |
+| `!=` | `NotIn` | Exclude all of the values |
+| `>` | `Gt` | Greater than (numeric) |
+| `<` | `Lt` | Less than (numeric) |
+
+**Weight Hierarchy:**
+- Reserved Instance overlays: weight 30 (highest priority)
+- EC2 Instance SP overlays: weight 20
+- Compute SP overlays: weight 10
+- Preference overlays: weight N (from annotation number)
+
+Keep preference numbers below 10 to ensure RI/SP overlays take precedence.
+
+**Lifecycle:**
+- Overlays are created when preferences are added to a NodePool
+- Overlays are updated when preference values change
+- Overlays are deleted when preferences are removed or the NodePool is deleted
+- Owner references ensure garbage collection on controller uninstall
 
 ## Development
 

@@ -1,0 +1,26 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "veneer.fullname" . }}-manager-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "veneer.labels" . | nindent 4 }}
+rules:
+# Pod, ReplicaSet, Deployment permissions for owner reference discovery.
+# The controller discovers its own Deployment to set owner references on
+# created NodeOverlays, enabling garbage collection on uninstall.
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  - deployments
+  verbs:
+  - get
+{{- end }}
