@@ -31,6 +31,34 @@ entries:
     version: 0.0.1
   veneer:
   - apiVersion: v2
+    appVersion: 0.3.0
+    created: "2026-01-29T00:42:31.347107107Z"
+    dependencies:
+    - condition: lumina.enabled
+      name: lumina
+      repository: https://oss.nextdoor.com/lumina
+      version: ^0.4.0
+    description: Veneer - Cost-Aware Karpenter Provisioning Controller
+    digest: e8d40cbf0f006a26d396e0864e773943b17a1550d6aba3744da3968fecdd0676
+    home: https://github.com/Nextdoor/veneer
+    keywords:
+    - kubernetes
+    - karpenter
+    - cost-optimization
+    - aws
+    - savings-plans
+    - reserved-instances
+    maintainers:
+    - name: Veneer Maintainers
+      url: https://github.com/Nextdoor/veneer
+    name: veneer
+    sources:
+    - https://github.com/Nextdoor/veneer
+    type: application
+    urls:
+    - veneer-0.3.0.tgz
+    version: 0.3.0
+  - apiVersion: v2
     appVersion: 0.2.1
     created: "2026-01-21T01:43:15.212203883Z"
     dependencies:
@@ -170,4 +198,4 @@ entries:
     urls:
     - veneer-0.0.2.tgz
     version: 0.0.2
-generated: "2026-01-21T01:43:15.212219661Z"
+generated: "2026-01-29T00:42:31.347125287Z"
