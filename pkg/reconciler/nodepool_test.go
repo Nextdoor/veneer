@@ -490,24 +490,15 @@ func TestNodePoolReconciler_Reconcile_OwnerReferences(t *testing.T) {
 		Spec: karpenterv1.NodePoolSpec{},
 	}
 
-	// Create a controller reference to simulate Deployment owner
-	controllerRef := &metav1.OwnerReference{
-		APIVersion: "apps/v1",
-		Kind:       "Deployment",
-		Name:       "veneer-controller",
-		UID:        types.UID("test-deployment-uid-67890"),
-	}
-
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(nodePool).
 		Build()
 
 	reconciler := &NodePoolReconciler{
-		Client:        client,
-		Logger:        logr.Discard(),
-		Generator:     preference.NewGenerator(),
-		ControllerRef: controllerRef,
+		Client:    client,
+		Logger:    logr.Discard(),
+		Generator: preference.NewGenerator(),
 	}
 
 	// Reconcile
@@ -529,89 +520,12 @@ func TestNodePoolReconciler_Reconcile_OwnerReferences(t *testing.T) {
 
 	overlay := overlayList.Items[0]
 
-	// Verify both owner references are set
-	if len(overlay.OwnerReferences) != 2 {
-		t.Errorf("expected 2 owner references, got %d", len(overlay.OwnerReferences))
-	}
-
-	// Verify NodePool owner reference
-	var hasNodePoolOwner, hasDeploymentOwner bool
-	for _, ref := range overlay.OwnerReferences {
-		if ref.Kind == "NodePool" && ref.Name == "owner-test-pool" {
-			hasNodePoolOwner = true
-			if ref.UID != nodePool.UID {
-				t.Errorf("NodePool owner reference has wrong UID: got %s, want %s", ref.UID, nodePool.UID)
-			}
-			if ref.APIVersion != "karpenter.sh/v1" {
-				t.Errorf("NodePool owner reference has wrong APIVersion: got %s, want karpenter.sh/v1", ref.APIVersion)
-			}
-		}
-		if ref.Kind == "Deployment" && ref.Name == "veneer-controller" {
-			hasDeploymentOwner = true
-			if ref.UID != controllerRef.UID {
-				t.Errorf("Deployment owner reference has wrong UID: got %s, want %s", ref.UID, controllerRef.UID)
-			}
-		}
-	}
-
-	if !hasNodePoolOwner {
-		t.Error("overlay is missing NodePool owner reference")
-	}
-	if !hasDeploymentOwner {
-		t.Error("overlay is missing Deployment owner reference")
-	}
-}
-
-func TestNodePoolReconciler_Reconcile_OwnerReferences_WithoutControllerRef(t *testing.T) {
-	scheme := setupTestScheme(t)
-
-	// Create a NodePool with UID
-	nodePool := &karpenterv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "owner-test-pool-2",
-			UID:  types.UID("test-nodepool-uid-abcde"),
-			Annotations: map[string]string{
-				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
-			},
-		},
-		Spec: karpenterv1.NodePoolSpec{},
-	}
-
-	client := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(nodePool).
-		Build()
-
-	// No ControllerRef set - simulates running outside of a Deployment (e.g., local dev)
-	reconciler := &NodePoolReconciler{
-		Client:        client,
-		Logger:        logr.Discard(),
-		Generator:     preference.NewGenerator(),
-		ControllerRef: nil,
-	}
-
-	// Reconcile
-	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "owner-test-pool-2"}}
-	_, err := reconciler.Reconcile(context.Background(), req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify overlay was created with only NodePool owner reference
-	var overlayList karpenterv1alpha1.NodeOverlayList
-	if err := client.List(context.Background(), &overlayList); err != nil {
-		t.Fatalf("failed to list overlays: %v", err)
-	}
-
-	if len(overlayList.Items) != 1 {
-		t.Fatalf("expected 1 overlay, got %d", len(overlayList.Items))
-	}
-
-	overlay := overlayList.Items[0]
-
-	// Verify only NodePool owner reference is set
+	// Verify NodePool owner reference is set.
+	// Note: We only set NodePool as owner (not the controller Deployment) because
+	// Kubernetes OwnerReferences don't support cross-scope ownership. NodeOverlays
+	// are cluster-scoped, but Deployments are namespace-scoped.
 	if len(overlay.OwnerReferences) != 1 {
-		t.Errorf("expected 1 owner reference (NodePool only), got %d", len(overlay.OwnerReferences))
+		t.Errorf("expected 1 owner reference, got %d", len(overlay.OwnerReferences))
 	}
 
 	if len(overlay.OwnerReferences) > 0 {
@@ -619,8 +533,14 @@ func TestNodePoolReconciler_Reconcile_OwnerReferences_WithoutControllerRef(t *te
 		if ref.Kind != "NodePool" {
 			t.Errorf("expected owner reference kind NodePool, got %s", ref.Kind)
 		}
-		if ref.Name != "owner-test-pool-2" {
-			t.Errorf("expected owner reference name owner-test-pool-2, got %s", ref.Name)
+		if ref.Name != "owner-test-pool" {
+			t.Errorf("expected owner reference name owner-test-pool, got %s", ref.Name)
+		}
+		if ref.UID != nodePool.UID {
+			t.Errorf("NodePool owner reference has wrong UID: got %s, want %s", ref.UID, nodePool.UID)
+		}
+		if ref.APIVersion != "karpenter.sh/v1" {
+			t.Errorf("NodePool owner reference has wrong APIVersion: got %s, want karpenter.sh/v1", ref.APIVersion)
 		}
 	}
 }
