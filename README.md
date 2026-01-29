@@ -31,6 +31,8 @@ Karpenter → Uses adjusted pricing for provisioning decisions
 
 **NodeOverlays are preferences, not rules.** When Veneer creates a NodeOverlay with a price adjustment (e.g., `-30%` for ARM64), it influences but does not guarantee instance selection. Karpenter passes the adjusted prices as Priority values to the AWS EC2 Fleet API, which makes the final instance selection. AWS first ensures spot capacity is available, then selects among available pools based on Priority. This means if your preferred instance type (e.g., ARM64) has no spot capacity in any availability zone, AWS will select an alternative even if it has a worse (higher) Priority value. For a detailed technical explanation of this flow, see [Karpenter Instance Selection Deep Dive](docs/karpenter-instance-selection-deep-dive.md).
 
+Additionally, Karpenter's bin-packing algorithm can filter out instance types *before* NodeOverlay adjustments are applied. For example, if bin-packing determines a large node is needed (e.g., 100+ vCPU), ARM64 options may be eliminated due to the Graviton size gap (no 32xlarge). See [Karpenter Bin-Packing and NodeOverlay](docs/karpenter-binpacking-and-nodeoverlay.md) for diagnosis and solutions.
+
 ## Features
 
 ### Cost-Aware Provisioning (Lumina Integration)
