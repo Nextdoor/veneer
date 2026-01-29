@@ -186,7 +186,17 @@ func main() {
 	// Discover the controller's Deployment for owner reference on NodeOverlays.
 	// This ensures all created overlays are garbage collected when the controller is uninstalled.
 	// Uses POD_NAMESPACE and POD_NAME environment variables (set via Downward API in Helm chart).
-	controllerRef := discoverControllerDeployment(context.Background(), mgr.GetClient(), setupLog)
+	// We use a direct client here (not the manager's cached client) because:
+	// 1. This is a one-time operation at startup
+	// 2. The cached client would set up cluster-wide watches requiring broader RBAC permissions
+	directClient, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "failed to create direct client for deployment discovery")
+	}
+	var controllerRef *metav1.OwnerReference
+	if directClient != nil {
+		controllerRef = discoverControllerDeployment(context.Background(), directClient, setupLog)
+	}
 	if controllerRef != nil {
 		setupLog.Info("controller owner reference configured for NodeOverlay garbage collection")
 	}
