@@ -42,6 +42,7 @@ const (
 	KeyOverlayNamingReservedInstancePrefix = "overlays.naming.reservedInstancePrefix"
 	KeyOverlayNamingEC2InstanceSPPrefix    = "overlays.naming.ec2InstanceSavingsPlanPrefix"
 	KeyOverlayNamingComputeSPPrefix        = "overlays.naming.computeSavingsPlanPrefix"
+	KeyPreferencesEnabled                  = "preferences.enabled"
 )
 
 // Environment variable name constants.
@@ -69,6 +70,7 @@ const (
 	DefaultOverlayNamingReservedInstancePrefix = "cost-aware-ri"         // RI overlay name prefix
 	DefaultOverlayNamingEC2InstanceSPPrefix    = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
 	DefaultOverlayNamingComputeSPPrefix        = "cost-aware-compute-sp" // Compute SP overlay name prefix
+	DefaultPreferencesEnabled                  = true                    // Instance preferences enabled by default
 )
 
 // Config represents the complete controller configuration.
@@ -91,6 +93,23 @@ type Config struct {
 
 	// Overlays configures NodeOverlay lifecycle behavior.
 	Overlays OverlayManagementConfig `yaml:"overlays,omitempty"`
+
+	// Preferences configures instance preference overlay behavior.
+	Preferences PreferencesConfig `yaml:"preferences,omitempty"`
+}
+
+// PreferencesConfig controls preference-based NodeOverlay generation.
+//
+// Preferences allow users to express instance type preferences via NodePool annotations.
+// Veneer watches NodePools and generates NodeOverlays with priceAdjustment to influence
+// Karpenter's provisioning decisions.
+type PreferencesConfig struct {
+	// Enabled controls whether preference-based overlays are processed.
+	// When false, the NodePool reconciler will not generate overlays from
+	// veneer.io/preference.N annotations.
+	//
+	// Default: true (preferences are enabled)
+	Enabled bool `yaml:"enabled,omitempty"`
 }
 
 // AWSConfig contains AWS-specific configuration for scoping Savings Plans and Reserved Instances.
@@ -212,6 +231,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault(KeyOverlayNamingReservedInstancePrefix, DefaultOverlayNamingReservedInstancePrefix)
 	v.SetDefault(KeyOverlayNamingEC2InstanceSPPrefix, DefaultOverlayNamingEC2InstanceSPPrefix)
 	v.SetDefault(KeyOverlayNamingComputeSPPrefix, DefaultOverlayNamingComputeSPPrefix)
+	v.SetDefault(KeyPreferencesEnabled, DefaultPreferencesEnabled)
 
 	// Enable environment variable overrides with VENEER_ prefix
 	v.SetEnvPrefix(EnvPrefix)

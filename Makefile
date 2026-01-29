@@ -71,7 +71,7 @@ test: deps fmt vet ## Run unit tests.
 
 .PHONY: test-e2e
 test-e2e: deps ## Run E2E tests (requires Kind cluster).
-	$(GO) test -v -tags=e2e -timeout=20m ./test/e2e/...
+	KIND_CLUSTER=$(KIND_CLUSTER_NAME) $(GO) test -v -tags=e2e -timeout=20m ./test/e2e/...
 
 .PHONY: cover
 cover: install-go ## Display test coverage report

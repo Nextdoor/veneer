@@ -142,6 +142,7 @@ const (
 	CapacityTypeComputeSP     CapacityType = "compute_savings_plan"
 	CapacityTypeEC2InstanceSP CapacityType = "ec2_instance_savings_plan"
 	CapacityTypeRI            CapacityType = "reserved_instance"
+	CapacityTypePreference    CapacityType = "preference"
 )
 
 // String returns the string representation of CapacityType.

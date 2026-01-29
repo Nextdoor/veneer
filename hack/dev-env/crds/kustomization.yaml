@@ -3,3 +3,4 @@ kind: Kustomization
 
 resources:
   - karpenter.sh_nodeoverlays.yaml
+  - karpenter.sh_nodepools.yaml
