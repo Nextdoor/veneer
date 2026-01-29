@@ -32,7 +32,7 @@ flowchart LR
 
     Filter -->|"If all ARM64<br/>filtered out"| NoInfluence["NodeOverlay<br/>cannot help"]
 
-    style NoInfluence fill:#FFB6C1
+    style NoInfluence fill:#FFB6C1,color:#000
 ```
 
 ---
@@ -246,8 +246,8 @@ flowchart TB
     ARM64_1 -.->|"96 < 120 ❌"| Filter
     x86_1 -.->|"96 < 120 ❌"| Filter
 
-    style ARM64_1 fill:#FFB6C1
-    style x86_1 fill:#FFB6C1
+    style ARM64_1 fill:#FFB6C1,color:#000
+    style x86_1 fill:#FFB6C1,color:#000
 ```
 
 In this example, both architectures still have eligible instances (48xlarge), so NodeOverlay can influence the selection.
@@ -302,10 +302,10 @@ flowchart TB
     Available --> BinPack
     BinPack --> Result
 
-    style ARM64_24 fill:#FFB6C1
-    style ARM64_48 fill:#FFB6C1
-    style x86_24 fill:#FFB6C1
-    style Only fill:#FFB6C1
+    style ARM64_24 fill:#FFB6C1,color:#000
+    style ARM64_48 fill:#FFB6C1,color:#000
+    style x86_24 fill:#FFB6C1,color:#000
+    style Only fill:#FFB6C1,color:#000
 ```
 
 **Result**: ARM64 is completely filtered out. NodeOverlay's `-50%` price adjustment on ARM64 has no effect because there are no ARM64 candidates.
@@ -376,7 +376,7 @@ flowchart TB
 
     Phase2 -.-> Note1
 
-    style Note1 fill:#FFFACD
+    style Note1 fill:#FFFACD,color:#000
 ```
 
 ---
