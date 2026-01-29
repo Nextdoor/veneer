@@ -79,6 +79,12 @@ var _ = BeforeSuite(func() {
 	err = utils.LoadImageToKindClusterWithName("mock-lumina-exporter:test")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load mock exporter image to Kind cluster")
 
+	By("installing Karpenter CRDs")
+	cmd = exec.Command("kubectl", "apply", "-k", "hack/dev-env/crds")
+	cmd.Dir = "../.."
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install Karpenter CRDs")
+
 	By("creating manager namespace")
 	client, err := NewResourceClient("")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create resource client")
