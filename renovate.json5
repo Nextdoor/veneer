@@ -1,0 +1,172 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>nextdoor/renovate:defaults",
+    "github>nextdoor/renovate:gentle-onboarding",
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "labels": ["dependencies"],
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "chore(deps):",
+  "separateMinorPatch": true,
+  "separateMajorMinor": true,
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 0,
+  "prCreation": "immediate",
+  "platformAutomerge": true,
+  "schedule": [
+    "before 10am on monday"
+  ],
+  "timezone": "America/Los_Angeles",
+  "packageRules": [
+    // Go module updates
+    {
+      "description": "Auto-merge all Go module patch updates",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Go module patch updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge all Go module minor updates",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Go module minor updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge major Go module updates",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["major"],
+      "automerge": true
+    },
+    // GitHub Actions updates
+    {
+      "description": "Auto-merge all GitHub Actions patch updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "GitHub Actions patch updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge all GitHub Actions minor updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "GitHub Actions minor updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge major GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "automerge": true
+    },
+    {
+      "description": "Pin GitHub Actions to exact commits for security",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
+    // Helm chart updates
+    {
+      "description": "Auto-merge Helm chart patch updates",
+      "matchManagers": ["helmv3"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Helm chart patch updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge Helm chart minor updates",
+      "matchManagers": ["helmv3"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Helm chart minor updates",
+      "automerge": true
+    },
+    // Docker image updates
+    {
+      "description": "Auto-merge Docker base image patch updates",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Docker image patch updates",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge Docker base image minor updates",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Docker image minor updates",
+      "automerge": true
+    },
+    {
+      "description": "Pin Docker images to digests for reproducibility",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["golang", "alpine"],
+      "pinDigests": true
+    },
+    // Security priority
+    {
+      "description": "Critical security updates - create immediately",
+      "matchDatasources": ["go", "github-actions"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "prPriority": 10,
+      "labels": ["dependencies", "security"]
+    },
+    // Package groupings - Kubernetes ecosystem
+    {
+      "description": "Kubernetes ecosystem packages - group together",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["k8s.io/{/,}**", "sigs.k8s.io/{/,}**"],
+      "groupName": "Kubernetes packages",
+      "additionalBranchPrefix": "k8s-"
+    },
+    // Package groupings - AWS SDK
+    {
+      "description": "AWS SDK packages - group together",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["github.com/aws/aws-sdk-go-v2/{/,}**"],
+      "groupName": "AWS SDK packages",
+      "additionalBranchPrefix": "aws-"
+    },
+    // Package groupings - Prometheus
+    {
+      "description": "Prometheus packages - group together",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["github.com/prometheus/{/,}**"],
+      "groupName": "Prometheus packages",
+      "additionalBranchPrefix": "prometheus-"
+    },
+    // Package groupings - controller-runtime and related
+    {
+      "description": "Controller-runtime packages - group together",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["sigs.k8s.io/controller-runtime{/,}**"],
+      "groupName": "Controller-runtime packages",
+      "additionalBranchPrefix": "controller-runtime-"
+    },
+    // Package groupings - Testing frameworks
+    {
+      "description": "Ginkgo/Gomega testing packages - group together",
+      "matchDatasources": ["go"],
+      "matchPackageNames": ["github.com/onsi/{/,}**"],
+      "groupName": "Testing framework packages",
+      "additionalBranchPrefix": "testing-"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "assignees": []
+  },
+  "osvVulnerabilityAlerts": true,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "enabledManagers": [
+    "gomod",
+    "github-actions",
+    "helmv3",
+    "dockerfile"
+  ]
+}
