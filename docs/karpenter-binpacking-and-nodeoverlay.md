@@ -11,6 +11,7 @@ This document explains how Karpenter's bin-packing algorithm can affect—and so
 - [When NodeOverlay Cannot Help](#when-nodeoverlay-cannot-help)
 - [Diagnosing the Issue](#diagnosing-the-issue)
 - [Solutions and Workarounds](#solutions-and-workarounds)
+- [Code References](#code-references)
 
 ---
 
@@ -47,6 +48,89 @@ Karpenter uses a **First-Fit Decreasing (FFD)** bin-packing algorithm to minimiz
 3. **If no existing node can fit the pod**, create a new virtual node
 4. **Select the smallest instance type** that can satisfy each virtual node's aggregate requirements
 
+### Code: Pod Sorting
+
+Pods are sorted by CPU and memory in descending order before scheduling begins. This is the first step of the FFD algorithm.
+
+From [`queue.go:37-43`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L37-L43):
+
+```go
+// NewQueue constructs a new queue given the input pods, sorting them to optimize for bin-packing into nodes.
+func NewQueue(pods []*v1.Pod, podData map[types.UID]*PodData) *Queue {
+    sort.Slice(pods, byCPUAndMemoryDescending(pods, podData))
+    return &Queue{
+        pods:    pods,
+        lastLen: map[types.UID]int{},
+    }
+}
+```
+
+The sorting function prioritizes CPU, then memory. From [`queue.go:72-108`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L72-L108):
+
+```go
+func byCPUAndMemoryDescending(pods []*v1.Pod, podData map[types.UID]*PodData) func(i int, j int) bool {
+    return func(i, j int) bool {
+        lhs := podData[lhsPod.UID].Requests
+        rhs := podData[rhsPod.UID].Requests
+
+        cpuCmp := resources.Cmp(lhs[v1.ResourceCPU], rhs[v1.ResourceCPU])
+        if cpuCmp < 0 {
+            // LHS has less CPU, so it should be sorted after
+            return false
+        } else if cpuCmp > 0 {
+            return true
+        }
+        // ... memory comparison follows
+    }
+}
+```
+
+### Code: Scheduling Loop
+
+The main scheduling loop in [`scheduler.go:381-436`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L381-L436) processes pods in order:
+
+```go
+func (s *Scheduler) Solve(ctx context.Context, pods []*corev1.Pod) (Results, error) {
+    // ...
+    q := NewQueue(pods, s.cachedPodData)
+
+    for {
+        pod, ok := q.Pop()
+        if !ok {
+            break
+        }
+        if err := s.trySchedule(ctx, pod.DeepCopy()); err != nil {
+            // ... handle error, relax preferences, retry
+        }
+    }
+    // ...
+}
+```
+
+### Code: Adding Pods to NodeClaims
+
+When adding a pod, Karpenter tries existing nodes first, then in-flight NodeClaims, then creates new ones. From [`scheduler.go:493-518`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L493-L518):
+
+```go
+func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
+    // first try to schedule against an in-flight real node
+    if err := s.addToExistingNode(ctx, pod); err == nil {
+        return nil
+    }
+    // Sort NodeClaims by number of pods (fewer pods = more room)
+    sort.Slice(s.newNodeClaims, func(a, b int) bool {
+        return len(s.newNodeClaims[a].Pods) < len(s.newNodeClaims[b].Pods)
+    })
+
+    // Pick existing node that we are about to create
+    if err := s.addToInflightNode(ctx, pod); err == nil {
+        return nil
+    }
+    // Create a new NodeClaim
+    return s.addToNewNodeClaim(ctx, pod)
+}
+```
+
 ### Example: Bin-Packing in Action
 
 Consider 10 pending pods, each requesting 12 vCPUs:
@@ -67,6 +151,72 @@ The algorithm prefers **Option B** because it minimizes node count, even though 
 
 When Karpenter determines that a single node with 120+ vCPU is optimal, it filters the instance type list to only include types that can satisfy this requirement.
 
+### Code: Instance Type Filtering
+
+The filtering happens in [`nodeclaim.go:383-451`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L383-L451):
+
+```go
+func filterInstanceTypesByRequirements(
+    instanceTypes []*cloudprovider.InstanceType,
+    requirements scheduling.Requirements,
+    podRequests, daemonRequests, totalRequests corev1.ResourceList,
+    relaxMinValues bool,
+) (cloudprovider.InstanceTypes, map[string]int, error) {
+    remaining := cloudprovider.InstanceTypes{}
+
+    for _, it := range instanceTypes {
+        itCompat := compatible(it, requirements)
+        itFits := fits(it, totalRequests)  // <-- This checks if instance can fit total resources
+        itHasOffering := false
+        for _, of := range it.Offerings {
+            if of.Available && requirements.IsCompatible(of.Requirements, ...) {
+                itHasOffering = true
+                break
+            }
+        }
+
+        // Only keep instance types that meet ALL criteria
+        if itCompat && itFits && itHasOffering {
+            remaining = append(remaining, it)
+        }
+    }
+    // ...
+}
+```
+
+The `fits()` function at [`nodeclaim.go:457-459`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L457-L459) checks if an instance type can accommodate the total resource requests:
+
+```go
+func fits(instanceType *cloudprovider.InstanceType, requests corev1.ResourceList) bool {
+    return resources.Fits(requests, instanceType.Allocatable())
+}
+```
+
+### Code: CanAdd Method
+
+When a pod is added to a NodeClaim, the aggregate resources are recalculated and instance types are re-filtered. From [`nodeclaim.go:112-173`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L112-L173):
+
+```go
+func (n *NodeClaim) CanAdd(ctx context.Context, pod *corev1.Pod, podData *PodData, relaxMinValues bool) (...) {
+    // ...
+    // Merge existing requests with new pod's requests
+    requests := resources.Merge(n.Spec.Resources.Requests, podData.Requests)
+
+    // Filter instance types that can fit the TOTAL requests
+    remaining, unsatisfiableKeys, err := filterInstanceTypesByRequirements(
+        n.InstanceTypeOptions,
+        nodeClaimRequirements,
+        podData.Requests,
+        n.daemonResources,
+        requests,  // <-- Total aggregate requests
+        relaxMinValues,
+    )
+    // ...
+}
+```
+
+### Visualization
+
 ```mermaid
 flowchart TB
     subgraph Before["Before Bin-Packing Filter"]
@@ -80,7 +230,7 @@ flowchart TB
     end
 
     subgraph Filter["Bin-Pack Requirement: ≥120 vCPU"]
-        Check{"Can fit<br/>120 vCPU?"}
+        Check{"fits(it, totalRequests)<br/>Can fit 120 vCPU?"}
     end
 
     subgraph After["After Bin-Packing Filter"]
@@ -141,7 +291,7 @@ flowchart TB
     end
 
     subgraph BinPack["Bin-Packing: Need 100 vCPU"]
-        Need["Minimum: 100 vCPU"]
+        Need["fits(it, 100 vCPU)<br/>Minimum: 100 vCPU"]
     end
 
     subgraph Result["Eligible After Filtering"]
@@ -170,6 +320,27 @@ NodeOverlay adjusts the *priority* of instance types in the CreateFleet request.
 2. **Change NodePool requirements** (like maxVcpu)
 3. **Override Karpenter's bin-packing decisions**
 
+### Where NodeOverlay Takes Effect
+
+NodeOverlay influences selection in the AWS provider when building the CreateFleet request. From [`instance.go:456-486`](https://github.com/aws/karpenter-provider-aws/blob/v1.1.0/pkg/providers/instance/instance.go#L456-L486) (approximate):
+
+```go
+func (p *DefaultProvider) getOverrides(...) []ec2types.FleetLaunchTemplateOverridesRequest {
+    var overrides []ec2types.FleetLaunchTemplateOverridesRequest
+    for _, offering := range offerings {
+        overrides = append(overrides, ec2types.FleetLaunchTemplateOverridesRequest{
+            InstanceType:     ec2types.InstanceType(instanceType.Name),
+            // ...
+            // CRITICAL: Priority is set to the offering price (adjusted by NodeOverlay)
+            Priority: lo.ToPtr(float64(offering.Price)),
+        })
+    }
+    return overrides
+}
+```
+
+But this only affects instance types that **already passed** the bin-packing filter.
+
 ### The Decision Flow
 
 ```mermaid
@@ -177,16 +348,17 @@ flowchart TB
     subgraph Phase1["Phase 1: Karpenter Filtering"]
         direction TB
         P1_1["NodePool requirements filter"]
-        P1_2["Bin-packing size requirements"]
+        P1_2["Bin-packing: fits(it, totalRequests)"]
         P1_3["AMI compatibility filter"]
         P1_1 --> P1_2 --> P1_3
     end
 
     subgraph Phase2["Phase 2: NodeOverlay Influence"]
         direction TB
-        P2_1["Apply price adjustments"]
+        P2_1["Apply price adjustments<br/>(AdjustedPrice())"]
         P2_2["Set Priority values"]
         P2_3["Choose allocation strategy"]
+        P2_1 --> P2_2 --> P2_3
     end
 
     subgraph Phase3["Phase 3: AWS Selection"]
@@ -194,6 +366,7 @@ flowchart TB
         P3_1["Check spot capacity"]
         P3_2["Apply allocation strategy"]
         P3_3["Select instance"]
+        P3_1 --> P3_2 --> P3_3
     end
 
     Phase1 -->|"Filtered list"| Phase2
@@ -231,7 +404,7 @@ If you've configured a NodeOverlay to prefer ARM64 but are still seeing x86 inst
 
    Sum up the CPU requests of pods that triggered the NodeClaim. If it exceeds the ARM64 size threshold (e.g., 96 vCPU for 24xlarge), that's likely the cause.
 
-### Example: Identifying the Problem
+### Example: Identifying the Problem in NodeClaim
 
 ```bash
 # Get the NodeClaim
@@ -251,6 +424,42 @@ spec:
 ```
 
 This NodeClaim has already been filtered to only include 32xlarge x86 instances.
+
+### Example: CloudTrail Request Analysis
+
+**With NodeOverlay working (both architectures present):**
+```json
+{
+  "LaunchTemplateConfigs": [
+    {
+      "LaunchTemplateSpecification": { "LaunchTemplateName": "arm64-template" },
+      "Overrides": [
+        { "InstanceType": "m8g.24xlarge", "Priority": 0.635 }
+      ]
+    },
+    {
+      "LaunchTemplateSpecification": { "LaunchTemplateName": "x86-template" },
+      "Overrides": [
+        { "InstanceType": "m7i.24xlarge", "Priority": 0.78 }
+      ]
+    }
+  ]
+}
+```
+
+**Without ARM64 (bin-packing filtered it out):**
+```json
+{
+  "LaunchTemplateConfigs": [
+    {
+      "LaunchTemplateSpecification": { "LaunchTemplateName": "x86-template" },
+      "Overrides": [
+        { "InstanceType": "m7i.32xlarge", "Priority": 0.95 }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
@@ -312,19 +521,37 @@ requirements:
 
 ---
 
+## Code References
+
+| Component | Repository | File | Line |
+|-----------|------------|------|------|
+| Pod sorting (FFD) | karpenter | [`queue.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L37-L43) | 37-43 |
+| Sorting by CPU/memory | karpenter | [`queue.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L72-L108) | 72-108 |
+| Main scheduling loop | karpenter | [`scheduler.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L381-L436) | 381-436 |
+| Add pod to NodeClaim | karpenter | [`scheduler.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L493-L518) | 493-518 |
+| Instance type filtering | karpenter | [`nodeclaim.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L383-L451) | 383-451 |
+| fits() function | karpenter | [`nodeclaim.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L457-L459) | 457-459 |
+| CanAdd method | karpenter | [`nodeclaim.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L112-L173) | 112-173 |
+| Priority assignment | karpenter-provider-aws | [`instance.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.1.0/pkg/providers/instance/instance.go#L456-L486) | 456-486 |
+| Allocation strategy | karpenter-provider-aws | [`types.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.1.0/pkg/providers/instance/types.go#L209-L217) | 209-217 |
+
+---
+
 ## Summary
 
-| Stage | What Happens | Can NodeOverlay Influence? |
-|-------|--------------|---------------------------|
-| **NodePool Requirements** | Filter by CPU, memory, family, etc. | No |
-| **Bin-Packing** | Determine minimum node size needed | No |
-| **AMI Mapping** | Group instance types by architecture | No |
-| **Price Adjustment** | Apply NodeOverlay adjustments | **Yes** |
-| **CreateFleet** | AWS selects from eligible instances | **Yes** (via Priority) |
+| Stage | What Happens | Code Location | Can NodeOverlay Influence? |
+|-------|--------------|---------------|---------------------------|
+| **Pod Sorting** | Sort by CPU/memory descending | `queue.go:37-43` | No |
+| **NodePool Requirements** | Filter by CPU, memory, family, etc. | `scheduler.go:144-147` | No |
+| **Bin-Packing** | `fits(it, totalRequests)` | `nodeclaim.go:457-459` | No |
+| **AMI Mapping** | Group instance types by architecture | `resolver.go:145-196` | No |
+| **Price Adjustment** | Apply NodeOverlay adjustments | `types.go:369-384` | **Yes** |
+| **CreateFleet** | AWS selects from eligible instances | `instance.go:456-486` | **Yes** (via Priority) |
 
 **Key Takeaways**:
 
 1. NodeOverlay influences selection *among eligible candidates*, not the filtering process
-2. The ARM64 size gap (no 32xlarge Graviton) can eliminate ARM64 from consideration
-3. Check NodeClaim requirements and CloudTrail to diagnose unexpected selections
-4. Adjust `maxVcpu` or exclude specific sizes to ensure ARM64 remains eligible
+2. The bin-packing `fits()` check happens before NodeOverlay can influence selection
+3. The ARM64 size gap (no 32xlarge Graviton) can eliminate ARM64 from consideration
+4. Check NodeClaim requirements and CloudTrail to diagnose unexpected selections
+5. Adjust `maxVcpu` or exclude specific sizes to ensure ARM64 remains eligible
