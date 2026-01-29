@@ -638,9 +638,9 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pref-test-1",
 					Labels: map[string]string{
-						"managed-by":                 "veneer",
-						"veneer.io/type":             "preference",
-						"veneer.io/source-nodepool":  "test",
+						"managed-by":                  "veneer",
+						"veneer.io/type":              "preference",
+						"veneer.io/source-nodepool":   "test",
 						"veneer.io/preference-number": "1",
 					},
 				},
@@ -660,9 +660,9 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pref-test-1",
 					Labels: map[string]string{
-						"managed-by":                 "veneer",
-						"veneer.io/type":             "preference",
-						"veneer.io/source-nodepool":  "test",
+						"managed-by":                  "veneer",
+						"veneer.io/type":              "preference",
+						"veneer.io/source-nodepool":   "test",
 						"veneer.io/preference-number": "1",
 					},
 				},
@@ -787,7 +787,7 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pref-test-1",
 					Labels: map[string]string{
-						"managed-by": "veneer",
+						"managed-by":  "veneer",
 						"extra-label": "extra-value",
 					},
 				},
