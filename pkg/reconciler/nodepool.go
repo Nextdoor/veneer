@@ -53,11 +53,6 @@ type NodePoolReconciler struct {
 
 	// Metrics holds the Prometheus metrics for recording reconciler behavior
 	Metrics *metrics.Metrics
-
-	// ControllerRef is the OwnerReference for the controller Deployment.
-	// When set, all created overlays will have this as an owner, ensuring
-	// they are garbage collected when the controller is uninstalled.
-	ControllerRef *metav1.OwnerReference
 }
 
 // Reconcile handles NodePool create/update/delete events.
@@ -231,29 +226,25 @@ func (r *NodePoolReconciler) reconcileOverlays(
 }
 
 // setOwnerReferences sets the owner references on a NodeOverlay.
-// The overlay will be owned by both the NodePool (source of the preference)
-// and optionally the controller Deployment (if ControllerRef is set).
-// This ensures overlays are garbage collected when either owner is deleted.
+// The overlay will be owned by the NodePool (source of the preference).
+// This ensures overlays are garbage collected when the NodePool is deleted.
+//
+// Note: We only set NodePool as owner (not the controller Deployment) because
+// Kubernetes OwnerReferences don't support cross-scope ownership. NodeOverlays
+// are cluster-scoped, but Deployments are namespace-scoped. The OwnerReference
+// struct has no namespace field, so the garbage collector cannot resolve
+// namespace-scoped owners for cluster-scoped resources.
 func (r *NodePoolReconciler) setOwnerReferences(
 	overlay *karpenterv1alpha1.NodeOverlay, nodePool *karpenterv1.NodePool,
 ) {
-	// Create NodePool owner reference
-	nodePoolRef := metav1.OwnerReference{
-		APIVersion: "karpenter.sh/v1",
-		Kind:       "NodePool",
-		Name:       nodePool.Name,
-		UID:        nodePool.UID,
+	overlay.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: "karpenter.sh/v1",
+			Kind:       "NodePool",
+			Name:       nodePool.Name,
+			UID:        nodePool.UID,
+		},
 	}
-
-	// Build owner references list
-	ownerRefs := []metav1.OwnerReference{nodePoolRef}
-
-	// Add controller deployment owner reference if set
-	if r.ControllerRef != nil {
-		ownerRefs = append(ownerRefs, *r.ControllerRef)
-	}
-
-	overlay.OwnerReferences = ownerRefs
 }
 
 // cleanupOverlaysForNodePool deletes all preference overlays generated from a deleted NodePool.

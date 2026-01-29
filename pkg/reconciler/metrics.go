@@ -31,7 +31,6 @@ import (
 	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
@@ -78,11 +77,6 @@ type MetricsReconciler struct {
 	// Metrics holds the Prometheus metrics for recording reconciler behavior.
 	// This follows Lumina's pattern of passing metrics struct to reconcilers.
 	Metrics *veneermetrics.Metrics
-
-	// ControllerRef is the OwnerReference for the controller Deployment.
-	// When set, all created overlays will have this as an owner, ensuring
-	// they are garbage collected when the controller is uninstalled.
-	ControllerRef *metav1.OwnerReference
 }
 
 // Start begins the metrics reconciliation loop.
@@ -476,11 +470,6 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					}
 					errorCount++
 					continue
-				}
-
-				// Set owner reference if controller ref is configured
-				if r.ControllerRef != nil {
-					gen.Overlay.OwnerReferences = []metav1.OwnerReference{*r.ControllerRef}
 				}
 
 				// Check if overlay already exists
