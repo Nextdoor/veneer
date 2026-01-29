@@ -18,6 +18,7 @@ package reconciler
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/pkg/metrics"
@@ -173,7 +174,12 @@ func (r *NodePoolReconciler) reconcileOverlays(
 			}
 			createCount++
 		} else {
-			// Update existing overlay if spec differs
+			// Update existing overlay only if spec or labels actually differ
+			if !overlayNeedsUpdate(existingOverlay, desiredOverlay) {
+				log.V(2).Info("Preference overlay already up to date", "overlay", name)
+				continue
+			}
+
 			// Copy resource version to allow update
 			desiredOverlay.ResourceVersion = existingOverlay.ResourceVersion
 			if err := r.Update(ctx, desiredOverlay); err != nil {
@@ -297,4 +303,24 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&karpenterv1.NodePool{}).
 		Complete(r)
+}
+
+// overlayNeedsUpdate returns true if the existing overlay differs from the desired overlay
+// in any meaningful way (spec or labels). This prevents unnecessary updates that would
+// trigger additional reconciliation loops.
+func overlayNeedsUpdate(existing, desired *karpenterv1alpha1.NodeOverlay) bool {
+	// Compare specs using reflect.DeepEqual for the full spec comparison
+	if !reflect.DeepEqual(existing.Spec, desired.Spec) {
+		return true
+	}
+
+	// Compare labels - only the labels we manage
+	// We need to check if all desired labels exist with correct values
+	for key, desiredValue := range desired.Labels {
+		if existingValue, ok := existing.Labels[key]; !ok || existingValue != desiredValue {
+			return true
+		}
+	}
+
+	return false
 }

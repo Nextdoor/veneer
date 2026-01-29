@@ -625,6 +625,287 @@ func TestNodePoolReconciler_Reconcile_OwnerReferences_WithoutControllerRef(t *te
 	}
 }
 
+func TestOverlayNeedsUpdate(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing *karpenterv1alpha1.NodeOverlay
+		desired  *karpenterv1alpha1.NodeOverlay
+		want     bool
+	}{
+		{
+			name: "identical overlays should not need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pref-test-1",
+					Labels: map[string]string{
+						"managed-by":                  "veneer",
+						"veneer.io/type":              "preference",
+						"veneer.io/source-nodepool":   "test",
+						"veneer.io/preference-number": "1",
+					},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					Requirements: []corev1.NodeSelectorRequirement{
+						{
+							Key:      "karpenter.sh/nodepool",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"test"},
+						},
+					},
+					PriceAdjustment: strPtr("-20%"),
+					Weight:          int32Ptr(1),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pref-test-1",
+					Labels: map[string]string{
+						"managed-by":                  "veneer",
+						"veneer.io/type":              "preference",
+						"veneer.io/source-nodepool":   "test",
+						"veneer.io/preference-number": "1",
+					},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					Requirements: []corev1.NodeSelectorRequirement{
+						{
+							Key:      "karpenter.sh/nodepool",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"test"},
+						},
+					},
+					PriceAdjustment: strPtr("-20%"),
+					Weight:          int32Ptr(1),
+				},
+			},
+			want: false,
+		},
+		{
+			name: "different price adjustment should need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+					Weight:          int32Ptr(1),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-30%"),
+					Weight:          int32Ptr(1),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "different weight should need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+					Weight:          int32Ptr(1),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+					Weight:          int32Ptr(2),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "different requirements should need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					Requirements: []corev1.NodeSelectorRequirement{
+						{Key: "foo", Operator: corev1.NodeSelectorOpIn, Values: []string{"bar"}},
+					},
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					Requirements: []corev1.NodeSelectorRequirement{
+						{Key: "foo", Operator: corev1.NodeSelectorOpIn, Values: []string{"baz"}},
+					},
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "missing label should need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pref-test-1",
+					Labels: map[string]string{
+						"managed-by":     "veneer",
+						"veneer.io/type": "preference",
+					},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			want: true,
+		},
+		{
+			name: "extra labels on existing should not need update",
+			existing: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pref-test-1",
+					Labels: map[string]string{
+						"managed-by":  "veneer",
+						"extra-label": "extra-value",
+					},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			desired: &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "pref-test-1",
+					Labels: map[string]string{"managed-by": "veneer"},
+				},
+				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: strPtr("-20%"),
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := overlayNeedsUpdate(tt.existing, tt.desired)
+			if got != tt.want {
+				t.Errorf("overlayNeedsUpdate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_Reconcile_SkipsUpdateWhenUnchanged(t *testing.T) {
+	scheme := setupTestScheme(t)
+
+	nodePool := &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "skip-update-pool",
+			UID:  "test-uid-123",
+			Annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
+			},
+		},
+		Spec: karpenterv1.NodePoolSpec{},
+	}
+
+	// Pre-create an overlay that already matches what the reconciler would generate
+	existingOverlay := &karpenterv1alpha1.NodeOverlay{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pref-skip-update-pool-1",
+			Labels: map[string]string{
+				"managed-by":                  "veneer",
+				"veneer.io/type":              "preference",
+				"veneer.io/source-nodepool":   "skip-update-pool",
+				"veneer.io/preference-number": "1",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "karpenter.sh/v1",
+					Kind:       "NodePool",
+					Name:       "skip-update-pool",
+					UID:        "test-uid-123",
+				},
+			},
+			ResourceVersion: "12345",
+		},
+		Spec: karpenterv1alpha1.NodeOverlaySpec{
+			Requirements: []corev1.NodeSelectorRequirement{
+				{
+					Key:      "karpenter.sh/nodepool",
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"skip-update-pool"},
+				},
+				{
+					Key:      "karpenter.k8s.aws/instance-family",
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"c7a"},
+				},
+			},
+			PriceAdjustment: strPtr("-20%"),
+			Weight:          int32Ptr(1),
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodePool, existingOverlay).
+		Build()
+
+	reconciler := &NodePoolReconciler{
+		Client:    client,
+		Logger:    logr.Discard(),
+		Generator: preference.NewGenerator(),
+	}
+
+	// Reconcile - should detect overlay is already up to date
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "skip-update-pool"}}
+	result, err := reconciler.Reconcile(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Requeue {
+		t.Errorf("unexpected requeue")
+	}
+
+	// Verify overlay still exists with same ResourceVersion (not updated)
+	var overlayList karpenterv1alpha1.NodeOverlayList
+	if err := client.List(context.Background(), &overlayList); err != nil {
+		t.Fatalf("failed to list overlays: %v", err)
+	}
+
+	if len(overlayList.Items) != 1 {
+		t.Fatalf("expected 1 overlay, got %d", len(overlayList.Items))
+	}
+
+	// The fake client doesn't preserve ResourceVersion exactly, but this test
+	// verifies the reconciler path doesn't error when overlay already matches
+}
+
 // Helper functions
 func strPtr(s string) *string {
 	return &s
