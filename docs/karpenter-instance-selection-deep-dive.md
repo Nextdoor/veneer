@@ -78,16 +78,16 @@ flowchart TB
 
 ### Code Location
 - **Repository**: [kubernetes-sigs/karpenter](https://github.com/kubernetes-sigs/karpenter)
-- **File**: [`pkg/controllers/provisioning/scheduling/scheduler.go`](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/provisioning/scheduling/scheduler.go)
+- **File**: [`pkg/controllers/provisioning/scheduling/scheduler.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/controllers/provisioning/scheduling/scheduler.go#L103-L150)
 
 ### What Happens
 
 The scheduler performs bin-packing simulation to determine which pods can fit on potential nodes. Critically, it does **not** select a specific instance type or architecture at this stage.
 
+> **Source**: [`scheduler.go#L103-L150`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/controllers/provisioning/scheduling/scheduler.go#L103-L150)
+
 ```go
-// From scheduler.go - the scheduler keeps ALL compatible instance types
-// It does not pick ARM vs x86 here
-// Source: https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/provisioning/scheduling/scheduler.go
+// The scheduler keeps ALL compatible instance types - it does not pick ARM vs x86 here
 func (s *Scheduler) Solve(ctx context.Context, pods []*corev1.Pod) Results {
     // ... bin-packing logic ...
     // Each NodeClaim contains ALL instance types that could satisfy the requirements
@@ -106,14 +106,15 @@ func (s *Scheduler) Solve(ctx context.Context, pods []*corev1.Pod) Results {
 
 ### Code Location
 - **Repository**: [aws/karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws)
-- **File**: [`pkg/providers/amifamily/resolver.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/amifamily/resolver.go)
+- **File**: [`pkg/providers/amifamily/resolver.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L145-L196)
 
 ### AMI-Based Grouping
 
 Since AMIs are architecture-specific (ARM64 vs x86), Karpenter creates **separate launch template configurations** for each AMI:
 
+> **Source**: [`resolver.go#L145-L196`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L145-L196)
+
 ```go
-// Source: https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/amifamily/resolver.go#L145-L196
 func (r DefaultResolver) Resolve(nodeClass *v1.EC2NodeClass, nodeClaim *karpv1.NodeClaim,
     instanceTypes []*cloudprovider.InstanceType, capacityType string, ...) ([]*LaunchTemplate, error) {
 
@@ -132,8 +133,9 @@ func (r DefaultResolver) Resolve(nodeClass *v1.EC2NodeClass, nodeClaim *karpv1.N
 
 ### MapToInstanceTypes Function
 
+> **Source**: [`ami.go#L228-L241`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/ami.go#L228-L241)
+
 ```go
-// Source: https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/amifamily/ami.go#L228-L241
 func MapToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, amis []v1.AMI) map[string][]*cloudprovider.InstanceType {
     amiIDs := map[string][]*cloudprovider.InstanceType{}
     for _, instanceType := range instanceTypes {
@@ -156,14 +158,15 @@ func MapToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, amis []v1.A
 
 ### Code Location
 - **Repository**: [aws/karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws)
-- **File**: [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/instance.go)
+- **File**: [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63)
 
 ### Instance Type Limit
 
 Karpenter enforces a maximum of **60 instance types** per CreateFleet request:
 
+> **Source**: [`instance.go#L63`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63)
+
 ```go
-// Source: https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/instance.go#L63
 const maxInstanceTypes = 60
 ```
 
@@ -171,8 +174,9 @@ const maxInstanceTypes = 60
 
 Before sending to AWS, instance types are sorted by price and truncated:
 
+> **Source**: [`types.go#L221-L233`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L221-L233)
+
 ```go
-// Source: https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L221-L233
 func (its InstanceTypes) OrderByPrice(reqs scheduling.Requirements) InstanceTypes {
     sort.Slice(its, func(i, j int) bool {
         iPrice := its[i].Offerings.Available().CompatibleFor(reqs).LowestPrice()
@@ -184,8 +188,11 @@ func (its InstanceTypes) OrderByPrice(reqs scheduling.Requirements) InstanceType
     })
     return its
 }
+```
 
-// Source: https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L322-L327
+> **Source**: [`types.go#L322-L327`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L322-L327)
+
+```go
 func (its InstanceTypes) Truncate(reqs scheduling.Requirements, maxItems int) InstanceTypes {
     its = its.OrderByPrice(reqs)
     if len(its) > maxItems {
@@ -197,8 +204,9 @@ func (its InstanceTypes) Truncate(reqs scheduling.Requirements, maxItems int) In
 
 ### Building the CreateFleet Request
 
+> **Source**: [`instance.go#L456-L486`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L456-L486)
+
 ```go
-// Source: https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/instance.go#L456-L486
 func (p *DefaultProvider) getOverrides(
     instanceTypes []*cloudprovider.InstanceType,
     offerings cloudprovider.Offerings,
@@ -227,12 +235,13 @@ func (p *DefaultProvider) getOverrides(
 
 ### Code Location
 - **Repository**: [aws/karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws)
-- **File**: [`pkg/providers/instance/types.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/types.go#L209-L217)
+- **File**: [`pkg/providers/instance/types.go#L209-L240`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L240)
 
 ### Strategy Selection Logic
 
+> **Source**: [`types.go#L209-L240`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L240)
+
 ```go
-// Source: https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/types.go#L209-L217
 func (b *CreateFleetInputBuilder) Build() *ec2.CreateFleetInput {
     input := &ec2.CreateFleetInput{
         Type: ec2types.FleetTypeInstant,
@@ -317,8 +326,9 @@ func (b *CreateFleetInputBuilder) Build() *ec2.CreateFleetInput {
 
 When a NodeOverlay specifies a price adjustment (e.g., `adjust=-50%`), Karpenter modifies the **offering price** before setting the Priority:
 
+> **Source**: [`types.go#L369-L384`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L369-L384)
+
 ```go
-// Source: https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L369-L384
 func (o Offering) AdjustedPrice() float64 {
     // If no overlay, return base price
     if o.Overlay == nil || o.Overlay.Adjustment == nil {
@@ -589,14 +599,14 @@ spec:
 
 | Component | Repository | File | Line |
 |-----------|------------|------|------|
-| Max instance types | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/instance.go#L63) | 63 |
-| Priority assignment | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/instance.go#L476) | 476 |
-| Allocation strategy | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/types.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/instance/types.go#L209-L217) | 209-217 |
-| Price adjustment | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L369-L384) | 369-384 |
-| Instance type sorting | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L221-L233) | 221-233 |
-| Instance type truncation | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/cloudprovider/types.go#L322-L327) | 322-327 |
-| AMI to instance mapping | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/amifamily/ami.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/amifamily/ami.go#L228-L241) | 228-241 |
-| Launch template resolution | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/amifamily/resolver.go`](https://github.com/aws/karpenter-provider-aws/blob/main/pkg/providers/amifamily/resolver.go#L135-L197) | 135-197 |
+| Max instance types | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63) | 63 |
+| Priority assignment | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/instance.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L476) | 476 |
+| Allocation strategy | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/instance/types.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L217) | 209-217 |
+| Price adjustment | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L369-L384) | 369-384 |
+| Instance type sorting | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L221-L233) | 221-233 |
+| Instance type truncation | [karpenter](https://github.com/kubernetes-sigs/karpenter) | [`pkg/cloudprovider/types.go`](https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L322-L327) | 322-327 |
+| AMI to instance mapping | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/amifamily/ami.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/ami.go#L228-L241) | 228-241 |
+| Launch template resolution | [karpenter-provider-aws](https://github.com/aws/karpenter-provider-aws) | [`pkg/providers/amifamily/resolver.go`](https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L135-L197) | 135-197 |
 
 ---
 
