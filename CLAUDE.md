@@ -73,7 +73,7 @@ Integration test priorities:
 - Follow conventional commit format for PR titles: `type(component): description`
 - Open PRs in draft mode initially
 - Include comprehensive descriptions explaining changes
-- Reference related issues or tickets (especially RFC-0003 phases)
+- Reference related issues or tickets
 - Ensure all CI checks pass (including coverage) before requesting review
 
 ### Commit Messages
@@ -185,7 +185,7 @@ Key principles for code comments:
 - Document **why decisions were made**
 - Call out **non-obvious implications**
 - Explain **edge cases and gotchas**
-- Reference **RFC-0003 sections or external docs** when relevant
+- Reference **external docs** when relevant
 
 ## Veneer-Specific Guidelines
 
@@ -205,7 +205,7 @@ Key principles for code comments:
 ### Cost Decision Logic
 
 - Document all threshold values (10% cost difference, 20% capacity buffer)
-- Explain why thresholds were chosen (reference RFC-0003)
+- Explain why thresholds were chosen
 - Comment on edge cases and failure modes
 
 ## Questions or Exceptions

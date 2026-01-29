@@ -552,7 +552,6 @@ See [CLAUDE.md](CLAUDE.md) for comprehensive style guidelines. Key points:
 - Explain **intent and reasoning**, not mechanics
 - Document **why decisions were made**
 - Call out **non-obvious implications**
-- Reference RFC-0003 sections when relevant
 
 ### Code Coverage
 
@@ -643,7 +642,6 @@ Note: golangci-lint is currently disabled due to Go 1.24 compatibility issues. T
 ## Getting Help
 
 - **Project Documentation**: See [README.md](README.md)
-- **RFC-0003**: [Karpenter Cost-Aware Provisioning Design](https://github.com/Nextdoor/cloudeng/blob/main/rfcs/RFC-0003-karpenter-cost-aware-provisioning.md)
 - **Development Guidelines**: See [CLAUDE.md](CLAUDE.md)
 - **Issues**: [GitHub Issues](https://github.com/Nextdoor/veneer/issues)
 
