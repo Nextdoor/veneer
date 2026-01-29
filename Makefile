@@ -13,7 +13,11 @@ LOCALBIN ?= $(shell pwd)/bin
 
 ## Go installation settings
 ## Extracts version from toolchain directive in go.mod (e.g., "toolchain go1.24.11" -> "1.24.11")
-GO_VERSION ?= $(shell grep '^toolchain' go.mod | sed 's/toolchain go//')
+## Falls back to go directive if toolchain is not present (e.g., "go 1.25.5" -> "1.25.5")
+GO_VERSION ?= $(shell grep '^toolchain' go.mod | sed 's/toolchain go//' || true)
+ifeq ($(GO_VERSION),)
+GO_VERSION := $(shell grep '^go ' go.mod | sed 's/go //')
+endif
 GO_INSTALL_DIR ?= $(LOCALBIN)/go
 GO ?= $(GO_INSTALL_DIR)/bin/go
 
