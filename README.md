@@ -4,12 +4,6 @@
 
 Veneer is a Kubernetes controller that optimizes Karpenter provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from [Lumina](https://github.com/Nextdoor/lumina).
 
-## Status
-
-**Phase 1: In Development** - Controller skeleton and Prometheus integration in progress.
-
-See [RFC-0003](https://github.com/Nextdoor/cloudeng/blob/main/rfcs/RFC-0003-karpenter-cost-aware-provisioning.md) for full design.
-
 ## Overview
 
 Veneer watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay CRs to:
@@ -20,9 +14,9 @@ Veneer watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay 
 ## Architecture
 
 ```
-Lumina (RFC-0002) → Exposes SP/RI metrics to Prometheus
+Lumina → Exposes SP/RI metrics to Prometheus
       ↓
-Veneer (RFC-0003) → Queries metrics, manages NodeOverlays
+Veneer → Queries metrics, manages NodeOverlays
       ↓
 Karpenter → Uses adjusted pricing for provisioning decisions
 ```
@@ -196,4 +190,4 @@ Apache 2.0 (to be confirmed)
 
 ## Credits
 
-Built by the Platform Engineering team as a companion to [Lumina](https://github.com/Nextdoor/lumina).
+Built by the Nextdoor Cloud Engineering team as a companion to [Lumina](https://github.com/Nextdoor/lumina).
