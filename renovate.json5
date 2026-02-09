@@ -64,6 +64,12 @@
       "automerge": true
     },
     {
+      "description": "Auto-merge GitHub Actions digest/pin updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "pin"],
+      "automerge": true
+    },
+    {
       "description": "Pin GitHub Actions to exact commits for security",
       "matchManagers": ["github-actions"],
       "pinDigests": true
