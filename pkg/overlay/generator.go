@@ -259,14 +259,14 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 // requires the label "veneer.io/disabled: true" to be present on nodes. Since no nodes
 // have this label, the overlay will never match any instances, effectively disabling it
 // while still allowing the overlay to be created in the cluster for testing/validation.
-func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelectorRequirement {
-	var requirements []corev1.NodeSelectorRequirement
+func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.NodeSelectorRequirement {
+	var requirements []karpenterv1alpha1.NodeSelectorRequirement
 
 	// If disabled mode is enabled, add an impossible requirement first.
 	// This requirement demands that nodes have a label that no node will ever have,
 	// ensuring the overlay never matches any instances while still being valid YAML.
 	if g.Disabled {
-		requirements = append(requirements, corev1.NodeSelectorRequirement{
+		requirements = append(requirements, karpenterv1alpha1.NodeSelectorRequirement{
 			Key:      LabelDisabledKey,
 			Operator: corev1.NodeSelectorOpIn,
 			Values:   []string{LabelDisabledValue},
@@ -275,7 +275,7 @@ func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelecto
 
 	// All overlays target on-demand instances only
 	// SPs and RIs don't apply to spot instances
-	capacityTypeReq := corev1.NodeSelectorRequirement{
+	capacityTypeReq := karpenterv1alpha1.NodeSelectorRequirement{
 		Key:      LabelCapacityTypeKarpenter,
 		Operator: corev1.NodeSelectorOpIn,
 		Values:   []string{"on-demand"},
@@ -286,7 +286,7 @@ func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelecto
 		// Global Compute SPs apply to all instance families
 		// Use Exists operator to match any instance family
 		requirements = append(requirements,
-			corev1.NodeSelectorRequirement{
+			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
 				Operator: corev1.NodeSelectorOpExists,
 			},
@@ -297,7 +297,7 @@ func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelecto
 		// EC2 Instance SPs are scoped to a specific instance family
 		family, _ := parseEC2InstanceSPName(decision.Name)
 		requirements = append(requirements,
-			corev1.NodeSelectorRequirement{
+			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{family},
@@ -309,7 +309,7 @@ func (g *Generator) generateRequirements(decision Decision) []corev1.NodeSelecto
 		// RIs are scoped to a specific instance type
 		instanceType, _ := parseRIName(decision.Name)
 		requirements = append(requirements,
-			corev1.NodeSelectorRequirement{
+			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceTypeK8s,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{instanceType},
