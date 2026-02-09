@@ -565,7 +565,7 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 					},
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      "karpenter.sh/nodepool",
 							Operator: corev1.NodeSelectorOpIn,
@@ -587,7 +587,7 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 					},
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      "karpenter.sh/nodepool",
 							Operator: corev1.NodeSelectorOpIn,
@@ -656,7 +656,7 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 					Labels: map[string]string{"managed-by": "veneer"},
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{Key: "foo", Operator: corev1.NodeSelectorOpIn, Values: []string{"bar"}},
 					},
 					PriceAdjustment: strPtr("-20%"),
@@ -668,7 +668,7 @@ func TestOverlayNeedsUpdate(t *testing.T) {
 					Labels: map[string]string{"managed-by": "veneer"},
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{Key: "foo", Operator: corev1.NodeSelectorOpIn, Values: []string{"baz"}},
 					},
 					PriceAdjustment: strPtr("-20%"),
@@ -773,7 +773,7 @@ func TestNodePoolReconciler_Reconcile_SkipsUpdateWhenUnchanged(t *testing.T) {
 			ResourceVersion: "12345",
 		},
 		Spec: karpenterv1alpha1.NodeOverlaySpec{
-			Requirements: []corev1.NodeSelectorRequirement{
+			Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 				{
 					Key:      "karpenter.sh/nodepool",
 					Operator: corev1.NodeSelectorOpIn,

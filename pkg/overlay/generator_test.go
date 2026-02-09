@@ -465,7 +465,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpExists,
@@ -481,7 +481,7 @@ func TestValidateOverlay(t *testing.T) {
 			name: "missing name",
 			overlay: &karpenterv1alpha1.NodeOverlay{
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpExists,
@@ -513,7 +513,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpIn,
@@ -532,7 +532,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpExists,
@@ -551,7 +551,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpExists,
@@ -570,7 +570,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Requirements: []corev1.NodeSelectorRequirement{
+					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
 							Operator: corev1.NodeSelectorOpExists,
@@ -620,7 +620,7 @@ func TestFormatOverlayYAML(t *testing.T) {
 			},
 		},
 		Spec: karpenterv1alpha1.NodeOverlaySpec{
-			Requirements: []corev1.NodeSelectorRequirement{
+			Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 				{
 					Key:      LabelInstanceFamilyKarpenter,
 					Operator: corev1.NodeSelectorOpExists,

@@ -127,18 +127,18 @@ func (g *Generator) generateLabels(pref Preference) map[string]string {
 //   - karpenter.sh/nodepool In [nodepool name] - scope to source NodePool
 //   - user-specified matchers converted to requirements
 //   - veneer.io/disabled: "true" (if disabled mode is enabled)
-func (g *Generator) generateRequirements(pref Preference) []corev1.NodeSelectorRequirement {
+func (g *Generator) generateRequirements(pref Preference) []karpenterv1alpha1.NodeSelectorRequirement {
 	// Pre-allocate: 1 for nodepool + matchers + potentially 1 for disabled
 	capacity := 1 + len(pref.Matchers)
 	if g.Disabled {
 		capacity++
 	}
-	requirements := make([]corev1.NodeSelectorRequirement, 0, capacity)
+	requirements := make([]karpenterv1alpha1.NodeSelectorRequirement, 0, capacity)
 
 	// If disabled mode is enabled, add an impossible requirement first.
 	// This prevents the overlay from ever matching any instances.
 	if g.Disabled {
-		requirements = append(requirements, corev1.NodeSelectorRequirement{
+		requirements = append(requirements, karpenterv1alpha1.NodeSelectorRequirement{
 			Key:      LabelDisabledKey,
 			Operator: corev1.NodeSelectorOpIn,
 			Values:   []string{LabelDisabledValue},
@@ -146,7 +146,7 @@ func (g *Generator) generateRequirements(pref Preference) []corev1.NodeSelectorR
 	}
 
 	// Always scope to the source NodePool
-	requirements = append(requirements, corev1.NodeSelectorRequirement{
+	requirements = append(requirements, karpenterv1alpha1.NodeSelectorRequirement{
 		Key:      LabelNodePool,
 		Operator: corev1.NodeSelectorOpIn,
 		Values:   []string{pref.NodePoolName},
@@ -154,7 +154,7 @@ func (g *Generator) generateRequirements(pref Preference) []corev1.NodeSelectorR
 
 	// Convert user matchers to requirements
 	for _, matcher := range pref.Matchers {
-		req := corev1.NodeSelectorRequirement{
+		req := karpenterv1alpha1.NodeSelectorRequirement{
 			Key:    matcher.Key,
 			Values: matcher.Values,
 		}

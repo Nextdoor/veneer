@@ -199,7 +199,7 @@ func TestGenerator_Generate(t *testing.T) {
 			},
 			check: func(t *testing.T, o *karpenterv1alpha1.NodeOverlay) {
 				// Find the user matcher
-				var userReq corev1.NodeSelectorRequirement
+				var userReq karpenterv1alpha1.NodeSelectorRequirement
 				for _, req := range o.Spec.Requirements {
 					if req.Key == LabelInstanceFamily {
 						userReq = req
@@ -227,7 +227,7 @@ func TestGenerator_Generate(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, o *karpenterv1alpha1.NodeOverlay) {
-				var userReq corev1.NodeSelectorRequirement
+				var userReq karpenterv1alpha1.NodeSelectorRequirement
 				for _, req := range o.Spec.Requirements {
 					if req.Key == LabelInstanceCPU {
 						userReq = req
@@ -258,7 +258,7 @@ func TestGenerator_Generate(t *testing.T) {
 				},
 			},
 			check: func(t *testing.T, o *karpenterv1alpha1.NodeOverlay) {
-				var userReq corev1.NodeSelectorRequirement
+				var userReq karpenterv1alpha1.NodeSelectorRequirement
 				for _, req := range o.Spec.Requirements {
 					if req.Key == LabelInstanceMemory {
 						userReq = req
