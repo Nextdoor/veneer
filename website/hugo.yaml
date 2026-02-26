@@ -1,4 +1,4 @@
-baseURL: /veneer/
+baseURL: https://oss.nextdoor.com/veneer/
 title: Veneer
 languageCode: en-us
 defaultContentLanguage: en
@@ -35,7 +35,8 @@ params:
   ui:
     navbar_logo: false
     sidebar_menu_compact: true
-    breadcrumb_disable: true
+    breadcrumb_disable: false
+    sidebar_menu_foldable: true
     feedback:
       enable: false
     readingtime:
@@ -47,10 +48,15 @@ params:
         icon: fab fa-github
         desc: Veneer on GitHub
   description: Cost-Aware Karpenter Provisioning
-  offlineSearch: false
+  offlineSearch: true
+  copyright: "The Veneer Authors"
 
 menu:
   main:
+    - name: Documentation
+      weight: 10
+      url: /docs/
+      pre: <i class='fas fa-book'></i>
     - name: GitHub
       weight: 50
       url: https://github.com/nextdoor/veneer
