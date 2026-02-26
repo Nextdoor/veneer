@@ -1,13 +1,11 @@
 baseURL: /veneer/
 title: Veneer
 languageCode: en-us
-defaultContentLanguage: en
-defaultContentLanguageInSubdir: false
 
 module:
   hugoVersion:
     extended: true
-    min: "0.146.0"
+    min: "0.145.0"
   imports:
     - path: github.com/google/docsy
       disable: false
@@ -16,7 +14,6 @@ languages:
   en:
     languageName: English
     weight: 1
-    contentDir: content/en
 
 markup:
   goldmark:
@@ -55,3 +52,4 @@ menu:
       weight: 50
       url: https://github.com/nextdoor/veneer
       pre: <i class='fab fa-github'></i>
+      post: <span class='alert'>External</span>
