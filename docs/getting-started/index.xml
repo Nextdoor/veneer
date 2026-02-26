@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Getting Started on Veneer</title><link>https://oss.nextdoor.com/veneer/docs/getting-started/</link><description>Recent content in Getting Started on Veneer</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/veneer/docs/getting-started/index.xml" rel="self" type="application/rss+xml"/><item><title>Installation</title><link>https://oss.nextdoor.com/veneer/docs/getting-started/installation/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/getting-started/installation/</guid><description>&lt;h2 id="prerequisites">Prerequisites&lt;/h2>
+&lt;p>Veneer requires the following components in your Kubernetes cluster:&lt;/p>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Component&lt;/th>
+ &lt;th>Version&lt;/th>
+ &lt;th>Purpose&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;strong>Karpenter&lt;/strong>&lt;/td>
+ &lt;td>v1.0+ (with NodeOverlay support)&lt;/td>
+ &lt;td>Node provisioning with NodeOverlay CRD&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Lumina&lt;/strong>&lt;/td>
+ &lt;td>Latest&lt;/td>
+ &lt;td>Exposes RI/SP metrics to Prometheus&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;strong>Prometheus&lt;/strong>&lt;/td>
+ &lt;td>Any&lt;/td>
+ &lt;td>Scrapes and stores Lumina metrics&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="karpenter-with-nodeoverlay-support">Karpenter with NodeOverlay Support&lt;/h3>
+&lt;p>Veneer manages &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/nodeoverlay/">NodeOverlay&lt;/a> custom resources, which are part of the Karpenter &lt;code>v1alpha1&lt;/code> API group. Ensure your Karpenter installation includes the NodeOverlay CRD:&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>kubectl get crd nodeoverlays.karpenter.sh
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h3 id="lumina">Lumina&lt;/h3>
+&lt;p>&lt;a href="https://github.com/Nextdoor/lumina">Lumina&lt;/a> must be deployed and actively exposing Savings Plans and Reserved Instance metrics. Verify Lumina is running:&lt;/p></description></item></channel></rss>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Concepts on Veneer</title><link>https://oss.nextdoor.com/veneer/docs/concepts/</link><description>Recent content in Concepts on Veneer</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/veneer/docs/concepts/index.xml" rel="self" type="application/rss+xml"/><item><title>Architecture</title><link>https://oss.nextdoor.com/veneer/docs/concepts/architecture/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/concepts/architecture/</guid><description>&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>Veneer is a Kubernetes controller that bridges the gap between AWS cost data and Karpenter provisioning decisions. It continuously monitors Savings Plans and Reserved Instance utilization via &lt;a href="https://github.com/Nextdoor/lumina">Lumina&lt;/a> metrics in Prometheus, then manages &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/nodeoverlay/">NodeOverlay&lt;/a> custom resources to steer Karpenter toward cost-optimal instance types.&lt;/p>
+&lt;h2 id="data-flow">Data Flow&lt;/h2>
+&lt;pre class="mermaid">flowchart LR
+ Lumina[&amp;#34;Lumina&amp;#34;]
+ Prom[&amp;#34;Prometheus&amp;#34;]
+ Veneer[&amp;#34;Veneer&amp;#34;]
+ NO[&amp;#34;NodeOverlays&amp;#34;]
+ Karpenter[&amp;#34;Karpenter&amp;#34;]
+ Fleet[&amp;#34;AWS CreateFleet&amp;#34;]
+
+ Lumina --&amp;gt;|&amp;#34;expose SP/RI metrics&amp;#34;| Prom
+ Prom --&amp;gt;|&amp;#34;query cost data&amp;#34;| Veneer
+ Veneer --&amp;gt;|&amp;#34;create/update/delete&amp;#34;| NO
+ NO --&amp;gt;|&amp;#34;adjust pricing&amp;#34;| Karpenter
+ Karpenter --&amp;gt;|&amp;#34;Priority values&amp;#34;| Fleet
+
+ style Lumina fill:#e3f2fd,stroke:#1565c0,color:#1565c0
+ style Prom fill:#fbe9e7,stroke:#bf360c,color:#bf360c
+ style Veneer fill:#e0f2f1,stroke:#00695c,color:#00695c
+ style NO fill:#f1f8e9,stroke:#33691e,color:#33691e
+ style Karpenter fill:#ede7f6,stroke:#4527a0,color:#4527a0
+ style Fleet fill:#fff3e0,stroke:#e65100,color:#e65100&lt;/pre>
+&lt;ol>
+&lt;li>&lt;strong>Lumina&lt;/strong> discovers AWS Savings Plans, Reserved Instances, and running EC2 instances. It computes utilization and remaining capacity, then exposes these as Prometheus metrics.&lt;/li>
+&lt;li>&lt;strong>Veneer&lt;/strong> queries Prometheus on a 5-minute interval (matching Lumina&amp;rsquo;s refresh cycle). The decision engine analyzes capacity data and determines which NodeOverlays should exist.&lt;/li>
+&lt;li>&lt;strong>Karpenter&lt;/strong> reads NodeOverlay resources and applies price adjustments to its instance type offerings. Adjusted prices become Priority values in the AWS CreateFleet API call.&lt;/li>
+&lt;li>&lt;strong>AWS&lt;/strong> selects instances based on the allocation strategy and Priority values. See &lt;a href="https://oss.nextdoor.com/veneer/docs/concepts/instance-selection/">Instance Selection Deep Dive&lt;/a> for details.&lt;/li>
+&lt;/ol>
+&lt;h2 id="two-reconcilers">Two Reconcilers&lt;/h2>
+&lt;p>Veneer runs two independent reconciliation loops:&lt;/p></description></item><item><title>Instance Selection Deep Dive</title><link>https://oss.nextdoor.com/veneer/docs/concepts/instance-selection/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/concepts/instance-selection/</guid><description>&lt;p>This document provides a detailed technical explanation of how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call. Understanding this flow is essential for configuring Veneer&amp;rsquo;s NodeOverlay feature to influence instance selection.&lt;/p>
+&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>Karpenter does &lt;strong>not&lt;/strong> make the final instance type selection. Instead, it:&lt;/p>
+&lt;ol>
+&lt;li>&lt;strong>Filters&lt;/strong> instance types based on NodePool requirements and pod constraints&lt;/li>
+&lt;li>&lt;strong>Sorts&lt;/strong> instance types by adjusted price&lt;/li>
+&lt;li>&lt;strong>Truncates&lt;/strong> to a maximum of 60 instance types&lt;/li>
+&lt;li>&lt;strong>Delegates&lt;/strong> the final selection to AWS via the CreateFleet API&lt;/li>
+&lt;/ol>
+&lt;p>AWS CreateFleet makes the ultimate decision based on:&lt;/p></description></item><item><title>Bin-Packing and NodeOverlay</title><link>https://oss.nextdoor.com/veneer/docs/concepts/binpacking/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/concepts/binpacking/</guid><description>&lt;p>This document explains how Karpenter&amp;rsquo;s bin-packing algorithm can affect &amp;ndash; and sometimes bypass &amp;ndash; NodeOverlay price adjustments, leading to unexpected instance selection behavior.&lt;/p>
+&lt;h2 id="overview">Overview&lt;/h2>
+&lt;p>Veneer&amp;rsquo;s NodeOverlay feature influences instance selection by adjusting prices, which become Priority values in AWS CreateFleet requests. However, this influence only works when multiple instance types are eligible candidates.&lt;/p>
+&lt;p>&lt;strong>The key insight&lt;/strong>: Karpenter&amp;rsquo;s bin-packing algorithm filters instance types &lt;em>before&lt;/em> NodeOverlay can influence selection. If bin-packing eliminates all instances of a particular architecture, NodeOverlay has nothing to prefer.&lt;/p></description></item><item><title>Instance Preferences</title><link>https://oss.nextdoor.com/veneer/docs/concepts/preferences/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/concepts/preferences/</guid><description>&lt;p>Instance preferences allow you to express instance type preferences directly on Karpenter NodePools using annotations. Veneer watches NodePools and generates &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/nodeoverlay/">NodeOverlay&lt;/a> resources for each preference, influencing Karpenter&amp;rsquo;s provisioning decisions.&lt;/p>
+
+
+&lt;div class="pageinfo pageinfo-primary">
+&lt;p>&lt;strong>NodeOverlays are preferences, not rules.&lt;/strong> When Veneer creates a NodeOverlay with a price adjustment, it influences but does not guarantee instance selection. See &lt;a href="https://oss.nextdoor.com/veneer/docs/concepts/instance-selection/">Instance Selection Deep Dive&lt;/a> for how AWS makes the final decision.&lt;/p>
+
+&lt;/div>
+
+&lt;h2 id="annotation-format">Annotation Format&lt;/h2>
+&lt;pre tabindex="0">&lt;code>veneer.io/preference.N: &amp;#34;&amp;lt;matcher&amp;gt; [&amp;lt;matcher&amp;gt;...] adjust=[+-]N%&amp;#34;
+&lt;/code>&lt;/pre>&lt;p>Where:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>N&lt;/code> is a positive integer (1-9 recommended) that determines overlay weight/priority&lt;/li>
+&lt;li>&lt;code>&amp;lt;matcher&amp;gt;&lt;/code> is &lt;code>key=value1,value2&lt;/code> or &lt;code>key!=value&lt;/code> or &lt;code>key&amp;gt;value&lt;/code> or &lt;code>key&amp;lt;value&lt;/code>&lt;/li>
+&lt;li>&lt;code>adjust&lt;/code> specifies the price adjustment percentage&lt;/li>
+&lt;/ul>
+&lt;h2 id="example-nodepool">Example NodePool&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">karpenter.sh/v1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">NodePool&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metadata&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">my-workload&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">annotations&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Prefer c7a/c7g families with 20% discount&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">veneer.io/preference.1&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;karpenter.k8s.aws/instance-family=c7a,c7g adjust=-20%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Prefer ARM64 architecture with 30% discount&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">veneer.io/preference.2&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;kubernetes.io/arch=arm64 adjust=-30%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Combined matcher: m7g on ARM64 with 40% discount&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">veneer.io/preference.3&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;karpenter.k8s.aws/instance-family=m7g kubernetes.io/arch=arm64 adjust=-40%&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="generated-nodeoverlay">Generated NodeOverlay&lt;/h2>
+&lt;p>For preference &lt;code>veneer.io/preference.1&lt;/code> on the NodePool above, Veneer generates:&lt;/p></description></item></channel></rss>

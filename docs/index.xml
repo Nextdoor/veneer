@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Documentation on Veneer</title><link>https://oss.nextdoor.com/veneer/docs/</link><description>Recent content in Documentation on Veneer</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/veneer/docs/index.xml" rel="self" type="application/rss+xml"/><item><title>Troubleshooting</title><link>https://oss.nextdoor.com/veneer/docs/troubleshooting/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/troubleshooting/</guid><description>&lt;h2 id="common-issues">Common Issues&lt;/h2>
+&lt;h3 id="no-nodeoverlays-created">No NodeOverlays Created&lt;/h3>
+&lt;p>&lt;strong>Symptom:&lt;/strong> Veneer is running but no NodeOverlays appear.&lt;/p>
+&lt;p>&lt;strong>Check data availability:&lt;/strong>&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Check if Lumina data is available&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>kubectl port-forward -n veneer-system svc/veneer-metrics 8080:8080
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>curl -s http://localhost:8080/metrics | grep veneer_lumina_data_available
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Expected: veneer_lumina_data_available 1&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>If &lt;code>veneer_lumina_data_available&lt;/code> is &lt;code>0&lt;/code>:&lt;/p>
+&lt;ol>
+&lt;li>Verify Lumina is running: &lt;code>kubectl get pods -n lumina-system&lt;/code>&lt;/li>
+&lt;li>Verify Prometheus is scraping Lumina: check Prometheus targets UI&lt;/li>
+&lt;li>Verify the Prometheus URL is correct in Veneer&amp;rsquo;s &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/configuration/">configuration&lt;/a>&lt;/li>
+&lt;/ol>
+&lt;p>&lt;strong>Check utilization threshold:&lt;/strong>&lt;/p></description></item><item><title>Development</title><link>https://oss.nextdoor.com/veneer/docs/development/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/development/</guid><description>&lt;h2 id="prerequisites">Prerequisites&lt;/h2>
+&lt;h3 id="required-tools">Required Tools&lt;/h3>
+&lt;ul>
+&lt;li>&lt;strong>make&lt;/strong>: Build automation (usually pre-installed on macOS/Linux)&lt;/li>
+&lt;li>&lt;strong>curl&lt;/strong>: For downloading Go (usually pre-installed)&lt;/li>
+&lt;li>&lt;strong>kubectl&lt;/strong>: Kubernetes CLI configured with access to a cluster&lt;/li>
+&lt;li>&lt;strong>git&lt;/strong>: Version control&lt;/li>
+&lt;/ul>
+&lt;p>Go is installed automatically by &lt;code>make&lt;/code> targets &amp;ndash; no manual installation required.&lt;/p>
+&lt;h3 id="optional-tools">Optional Tools&lt;/h3>
+&lt;ul>
+&lt;li>&lt;strong>kind&lt;/strong>: For local Kubernetes testing&lt;/li>
+&lt;li>&lt;strong>golangci-lint&lt;/strong>: For full linting (currently disabled due to Go 1.24 compatibility)&lt;/li>
+&lt;/ul>
+&lt;h2 id="quick-start">Quick Start&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Clone the repository&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>git clone https://github.com/Nextdoor/veneer.git
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>cd veneer
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Build (automatically installs Go and downloads dependencies)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make build
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Run tests&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>make test
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;p>The first run of &lt;code>make build&lt;/code> or &lt;code>make test&lt;/code> will:&lt;/p></description></item></channel></rss>

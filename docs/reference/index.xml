@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Reference on Veneer</title><link>https://oss.nextdoor.com/veneer/docs/reference/</link><description>Recent content in Reference on Veneer</description><generator>Hugo</generator><language>en</language><atom:link href="https://oss.nextdoor.com/veneer/docs/reference/index.xml" rel="self" type="application/rss+xml"/><item><title>Configuration</title><link>https://oss.nextdoor.com/veneer/docs/reference/configuration/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/reference/configuration/</guid><description>&lt;p>Veneer is configured via YAML file, environment variables, or CLI flags. For Helm-based deployments, configuration values are passed through the &lt;code>config&lt;/code> section of the &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/helm-chart/">Helm chart values&lt;/a>. Configuration precedence (highest to lowest):&lt;/p>
+&lt;ol>
+&lt;li>CLI flags&lt;/li>
+&lt;li>Environment variables (&lt;code>VENEER_*&lt;/code> prefix)&lt;/li>
+&lt;li>Configuration file values&lt;/li>
+&lt;li>Default values&lt;/li>
+&lt;/ol>
+&lt;h2 id="configuration-file">Configuration File&lt;/h2>
+&lt;p>Create a &lt;code>config.yaml&lt;/code> (or use &lt;code>config.example.yaml&lt;/code> as a starting point):&lt;/p>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Prometheus URL for querying Lumina metrics&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">prometheusUrl&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;http://prometheus:9090&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Log level: debug, info, warn, or error&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">logLevel&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;info&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Metrics endpoint bind address&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metricsBindAddress&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;:8080&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Health probe endpoint bind address&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">healthProbeBindAddress&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;:8081&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># AWS configuration (REQUIRED)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">aws&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">accountId&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;123456789012&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">region&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;us-west-2&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Overlay management configuration&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">overlays&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Disabled mode: overlays created but won&amp;#39;t match nodes&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">disabled&lt;/span>: &lt;span style="color:#66d9ef">false&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Utilization threshold for overlay deletion (0-100)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">utilizationThreshold&lt;/span>: &lt;span style="color:#ae81ff">95.0&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Overlay priority weights&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">weights&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">reservedInstance&lt;/span>: &lt;span style="color:#ae81ff">30&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">ec2InstanceSavingsPlan&lt;/span>: &lt;span style="color:#ae81ff">20&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">computeSavingsPlan&lt;/span>: &lt;span style="color:#ae81ff">10&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Overlay naming prefixes&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">naming&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">reservedInstancePrefix&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;cost-aware-ri&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">ec2InstanceSavingsPlanPrefix&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;cost-aware-ec2-sp&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">computeSavingsPlanPrefix&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;cost-aware-compute-sp&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#75715e"># Instance preference configuration&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">preferences&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">enabled&lt;/span>: &lt;span style="color:#66d9ef">true&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="all-configuration-options">All Configuration Options&lt;/h2>
+&lt;h3 id="core-settings">Core Settings&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Option&lt;/th>
+ &lt;th>YAML Key&lt;/th>
+ &lt;th>Env Variable&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>Prometheus URL&lt;/td>
+ &lt;td>&lt;code>prometheusUrl&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_PROMETHEUS_URL&lt;/code>&lt;/td>
+ &lt;td>&lt;code>http://prometheus:9090&lt;/code>&lt;/td>
+ &lt;td>URL of the Prometheus server for Lumina metrics&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>Log Level&lt;/td>
+ &lt;td>&lt;code>logLevel&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_LOG_LEVEL&lt;/code>&lt;/td>
+ &lt;td>&lt;code>info&lt;/code>&lt;/td>
+ &lt;td>Log verbosity: &lt;code>debug&lt;/code>, &lt;code>info&lt;/code>, &lt;code>warn&lt;/code>, &lt;code>error&lt;/code>&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>Metrics Bind Address&lt;/td>
+ &lt;td>&lt;code>metricsBindAddress&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_METRICS_BIND_ADDRESS&lt;/code>&lt;/td>
+ &lt;td>&lt;code>:8080&lt;/code>&lt;/td>
+ &lt;td>Address for the Prometheus metrics endpoint&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>Health Probe Bind Address&lt;/td>
+ &lt;td>&lt;code>healthProbeBindAddress&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_HEALTH_PROBE_BIND_ADDRESS&lt;/code>&lt;/td>
+ &lt;td>&lt;code>:8081&lt;/code>&lt;/td>
+ &lt;td>Address for health and readiness probes&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="aws-settings-required">AWS Settings (Required)&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Option&lt;/th>
+ &lt;th>YAML Key&lt;/th>
+ &lt;th>Env Variable&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>Account ID&lt;/td>
+ &lt;td>&lt;code>aws.accountId&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_AWS_ACCOUNT_ID&lt;/code>&lt;/td>
+ &lt;td>(none)&lt;/td>
+ &lt;td>12-digit AWS account ID where this cluster runs&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>Region&lt;/td>
+ &lt;td>&lt;code>aws.region&lt;/code>&lt;/td>
+ &lt;td>&lt;code>VENEER_AWS_REGION&lt;/code>&lt;/td>
+ &lt;td>(none)&lt;/td>
+ &lt;td>AWS region where this cluster runs&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+
+
+&lt;div class="pageinfo pageinfo-warning">
+&lt;p>Both &lt;code>aws.accountId&lt;/code> and &lt;code>aws.region&lt;/code> are &lt;strong>required&lt;/strong>. Veneer uses them to scope Prometheus queries to only return RI/SP data from this specific account and region.&lt;/p></description></item><item><title>Metrics</title><link>https://oss.nextdoor.com/veneer/docs/reference/metrics/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/reference/metrics/</guid><description>&lt;p>Veneer exposes Prometheus metrics on the metrics endpoint (default &lt;code>:8080/metrics&lt;/code>, configurable via &lt;a href="https://oss.nextdoor.com/veneer/docs/reference/configuration/">&lt;code>metricsBindAddress&lt;/code>&lt;/a>). All metrics use the &lt;code>veneer_&lt;/code> namespace prefix.&lt;/p>
+&lt;p>Veneer intentionally does &lt;strong>not&lt;/strong> duplicate Lumina metrics (which are already in Prometheus). Instead, it focuses on what Veneer decided and what actions it took.&lt;/p>
+&lt;h2 id="metrics-at-a-glance">Metrics at a Glance&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#reconciliation-metrics">&lt;code>veneer_reconciliation_duration_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Histogram&lt;/td>
+ &lt;td>Duration of reconciliation cycles&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#reconciliation-metrics">&lt;code>veneer_reconciliation_total&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>Total reconciliation cycles&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#data-source-health-metrics">&lt;code>veneer_lumina_data_freshness_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Age of Lumina data&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#data-source-health-metrics">&lt;code>veneer_lumina_data_available&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Whether Lumina data is fresh&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#decision-metrics">&lt;code>veneer_decision_total&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>Decisions made by the engine&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#reserved-instance-metrics">&lt;code>veneer_reserved_instance_data_available&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Whether RI metrics are available&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#reserved-instance-metrics">&lt;code>veneer_reserved_instance_count&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>RI count by type and region&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#savings-plan-metrics">&lt;code>veneer_savings_plan_utilization_percent&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>SP utilization percentage&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#savings-plan-metrics">&lt;code>veneer_savings_plan_remaining_capacity_dollars&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>SP remaining capacity ($/hr)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#nodeoverlay-lifecycle-metrics">&lt;code>veneer_overlay_operations_total&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>Total overlay operations&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#nodeoverlay-lifecycle-metrics">&lt;code>veneer_overlay_operation_errors_total&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>Total overlay operation errors&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#nodeoverlay-lifecycle-metrics">&lt;code>veneer_overlay_count&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Current overlay count&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#prometheus-query-metrics">&lt;code>veneer_prometheus_query_duration_seconds&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Histogram&lt;/td>
+ &lt;td>Prometheus query duration&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#prometheus-query-metrics">&lt;code>veneer_prometheus_query_errors_total&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>Prometheus query errors&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#prometheus-query-metrics">&lt;code>veneer_prometheus_query_result_count&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Prometheus query result count&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#configuration-metrics">&lt;code>veneer_config_overlays_disabled&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Whether overlays are disabled&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#configuration-metrics">&lt;code>veneer_config_utilization_threshold_percent&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Configured utilization threshold&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#info-metric">&lt;code>veneer_info&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Controller version info&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h2 id="reconciliation-metrics">Reconciliation Metrics&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Labels&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>veneer_reconciliation_duration_seconds&lt;/code>&lt;/td>
+ &lt;td>Histogram&lt;/td>
+ &lt;td>&amp;ndash;&lt;/td>
+ &lt;td>Duration of metrics reconciliation cycles. Buckets: 0.1s to ~51s (exponential).&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>veneer_reconciliation_total&lt;/code>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>&lt;code>result&lt;/code>&lt;/td>
+ &lt;td>Total number of reconciliation cycles. Labels: &lt;code>result=success|error&lt;/code>.&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h2 id="data-source-health-metrics">Data Source Health Metrics&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Labels&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>veneer_lumina_data_freshness_seconds&lt;/code>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>&amp;ndash;&lt;/td>
+ &lt;td>Age of Lumina data in seconds.&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>veneer_lumina_data_available&lt;/code>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>&amp;ndash;&lt;/td>
+ &lt;td>&lt;code>1&lt;/code> if Lumina data is available and fresh, &lt;code>0&lt;/code> if stale or unavailable.&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h2 id="decision-metrics">Decision Metrics&lt;/h2>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Metric&lt;/th>
+ &lt;th>Type&lt;/th>
+ &lt;th>Labels&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>veneer_decision_total&lt;/code>&lt;/td>
+ &lt;td>Counter&lt;/td>
+ &lt;td>&lt;code>capacity_type&lt;/code>, &lt;code>should_exist&lt;/code>, &lt;code>reason&lt;/code>&lt;/td>
+ &lt;td>Total decisions made by the decision engine.&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;p>&lt;strong>Label values for &lt;code>veneer_decision_total&lt;/code>:&lt;/strong>&lt;/p></description></item><item><title>Helm Chart</title><link>https://oss.nextdoor.com/veneer/docs/reference/helm-chart/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/reference/helm-chart/</guid><description>&lt;p>The Veneer Helm chart deploys the controller to a Kubernetes cluster. This page documents all available Helm values.&lt;/p>
+&lt;h2 id="installation">Installation&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-bash" data-lang="bash">&lt;span style="display:flex;">&lt;span>helm install veneer veneer/veneer &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> --namespace veneer-system &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> --create-namespace &lt;span style="color:#ae81ff">\
+&lt;/span>&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#ae81ff">&lt;/span> -f values.yaml
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="values-reference">Values Reference&lt;/h2>
+&lt;h3 id="replica-and-image">Replica and Image&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Value&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>replicaCount&lt;/code>&lt;/td>
+ &lt;td>&lt;code>2&lt;/code>&lt;/td>
+ &lt;td>Number of controller replicas (leader election handles HA)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>image.repository&lt;/code>&lt;/td>
+ &lt;td>&lt;code>ghcr.io/nextdoor/veneer&lt;/code>&lt;/td>
+ &lt;td>Container image repository&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>image.pullPolicy&lt;/code>&lt;/td>
+ &lt;td>&lt;code>IfNotPresent&lt;/code>&lt;/td>
+ &lt;td>Image pull policy&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>image.tag&lt;/code>&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Image tag (defaults to chart &lt;code>appVersion&lt;/code>)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>imagePullSecrets&lt;/code>&lt;/td>
+ &lt;td>&lt;code>[]&lt;/code>&lt;/td>
+ &lt;td>Image pull secrets for private registries&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="naming">Naming&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Value&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>nameOverride&lt;/code>&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Override the name of the chart&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>fullnameOverride&lt;/code>&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Override the full name of the release&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="service-account">Service Account&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Value&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.create&lt;/code>&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Create a service account&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.automount&lt;/code>&lt;/td>
+ &lt;td>&lt;code>true&lt;/code>&lt;/td>
+ &lt;td>Automatically mount API credentials&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.annotations&lt;/code>&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Annotations (e.g., &lt;code>eks.amazonaws.com/role-arn&lt;/code> for IRSA)&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>serviceAccount.name&lt;/code>&lt;/td>
+ &lt;td>&lt;code>&amp;quot;&amp;quot;&lt;/code>&lt;/td>
+ &lt;td>Service account name (auto-generated if empty)&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="pod-configuration">Pod Configuration&lt;/h3>
+&lt;table>
+ &lt;thead>
+ &lt;tr>
+ &lt;th>Value&lt;/th>
+ &lt;th>Default&lt;/th>
+ &lt;th>Description&lt;/th>
+ &lt;/tr>
+ &lt;/thead>
+ &lt;tbody>
+ &lt;tr>
+ &lt;td>&lt;code>podAnnotations&lt;/code>&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Annotations to add to the pod&lt;/td>
+ &lt;/tr>
+ &lt;tr>
+ &lt;td>&lt;code>podLabels&lt;/code>&lt;/td>
+ &lt;td>&lt;code>{}&lt;/code>&lt;/td>
+ &lt;td>Labels to add to the pod&lt;/td>
+ &lt;/tr>
+ &lt;/tbody>
+&lt;/table>
+&lt;h3 id="security-context">Security Context&lt;/h3>
+&lt;p>The chart enforces a restrictive security posture by default:&lt;/p></description></item><item><title>NodeOverlay CRD</title><link>https://oss.nextdoor.com/veneer/docs/reference/nodeoverlay/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://oss.nextdoor.com/veneer/docs/reference/nodeoverlay/</guid><description>&lt;p>NodeOverlay is a Karpenter custom resource (&lt;code>karpenter.sh/v1alpha1&lt;/code>) that allows adjusting instance type pricing used during provisioning. Veneer creates and manages NodeOverlay resources to influence which instances Karpenter selects.&lt;/p>
+&lt;h2 id="api-definition">API Definition&lt;/h2>
+&lt;div class="highlight">&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;">&lt;code class="language-yaml" data-lang="yaml">&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">apiVersion&lt;/span>: &lt;span style="color:#ae81ff">karpenter.sh/v1alpha1&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">kind&lt;/span>: &lt;span style="color:#ae81ff">NodeOverlay&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">metadata&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">name&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;overlay-name&amp;gt;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">labels&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">app.kubernetes.io/managed-by&lt;/span>: &lt;span style="color:#ae81ff">veneer&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">veneer.io/type&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;cost-aware|preference&amp;gt;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">veneer.io/source-nodepool&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;nodepool-name&amp;gt; &lt;/span> &lt;span style="color:#75715e"># For preference overlays&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>&lt;span style="color:#f92672">spec&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Requirements that an instance must match for this overlay to apply&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">requirements&lt;/span>:
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> - &lt;span style="color:#f92672">key&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;label-key&amp;gt;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">operator&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;In|NotIn|Gt|Lt|Exists|DoesNotExist&amp;gt;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">values&lt;/span>: [&lt;span style="color:#ae81ff">&amp;lt;value1&amp;gt;, &amp;lt;value2&amp;gt;, ...]&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Price adjustment (percentage string)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">priceAdjustment&lt;/span>: &lt;span style="color:#e6db74">&amp;#34;&amp;lt;adjustment&amp;gt;&amp;#34;&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#75715e"># Weight for overlay precedence (higher = higher priority)&lt;/span>
+&lt;/span>&lt;/span>&lt;span style="display:flex;">&lt;span> &lt;span style="color:#f92672">weight&lt;/span>: &lt;span style="color:#ae81ff">&amp;lt;integer&amp;gt;&lt;/span>
+&lt;/span>&lt;/span>&lt;/code>&lt;/pre>&lt;/div>&lt;h2 id="spec-fields">Spec Fields&lt;/h2>
+&lt;h3 id="specrequirements">&lt;code>spec.requirements&lt;/code>&lt;/h3>
+&lt;p>A list of node selector requirements that an instance type must match for this overlay&amp;rsquo;s price adjustment to apply. Uses the same requirement format as Karpenter NodePool requirements.&lt;/p></description></item></channel></rss>

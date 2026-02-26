@@ -1,0 +1,381 @@
+<!doctype html><html itemscope itemtype=http://schema.org/WebPage lang=en class=no-js><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><link rel="shortcut icon" href=/veneer/favicons/favicon.ico><link rel=apple-touch-icon href=/veneer/favicons/apple-touch-icon-180x180.png sizes=180x180><link rel=icon type=image/png href=/veneer/favicons/favicon-16x16.png sizes=16x16><link rel=icon type=image/png href=/veneer/favicons/favicon-32x32.png sizes=32x32><link rel=icon type=image/png href=/veneer/favicons/android-36x36.png sizes=36x36><link rel=icon type=image/png href=/veneer/favicons/android-48x48.png sizes=48x48><link rel=icon type=image/png href=/veneer/favicons/android-72x72.png sizes=72x72><link rel=icon type=image/png href=/veneer/favicons/android-96x96.png sizes=96x96><link rel=icon type=image/png href=/veneer/favicons/android-144x144.png sizes=144x144><link rel=icon type=image/png href=/veneer/favicons/android-192x192.png sizes=192x192><title>Instance Selection Deep Dive | Veneer</title>
+<meta name=description content="Technical deep dive into how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call."><meta property="og:url" content="https://oss.nextdoor.com/veneer/docs/concepts/instance-selection/"><meta property="og:site_name" content="Veneer"><meta property="og:title" content="Instance Selection Deep Dive"><meta property="og:description" content="Technical deep dive into how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call."><meta property="og:locale" content="en"><meta property="og:type" content="article"><meta property="article:section" content="docs"><meta itemprop=name content="Instance Selection Deep Dive"><meta itemprop=description content="Technical deep dive into how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call."><meta itemprop=wordCount content="1757"><meta name=twitter:card content="summary"><meta name=twitter:title content="Instance Selection Deep Dive"><meta name=twitter:description content="Technical deep dive into how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call."><link rel=preload href=/veneer/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css as=style integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><link href=/veneer/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css rel=stylesheet integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><script src=https://code.jquery.com/jquery-3.7.1.min.js integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin=anonymous></script><script defer src=https://unpkg.com/lunr@2.3.9/lunr.min.js integrity=sha384-203J0SNzyqHby3iU6hzvzltrWi/M41wOP5Gu+BiJMz5nwKykbkUx8Kp7iti0Lpli crossorigin=anonymous></script></head><body class=td-page><header><nav class="td-navbar js-navbar-scroll" data-bs-theme=dark><div class="container-fluid flex-column flex-md-row"><a class=navbar-brand href=/veneer/><span class="navbar-brand__logo navbar-logo"></span><span class=navbar-brand__name>Veneer</span></a><div class="td-navbar-nav-scroll ms-md-auto" id=main_navbar><ul class=navbar-nav><li class=nav-item><a class=nav-link href=/veneer/docs/><i class='fas fa-book'></i><span>Documentation</span></a></li><li class=nav-item><a class=nav-link href=https://github.com/nextdoor/veneer target=_blank rel=noopener><i class='fab fa-github'></i><span>GitHub</span></a></li></ul></div><div class="d-none d-lg-block"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/veneer/offline-search-index.67536b79b1e8092965527dcf4941e8ac.json data-offline-search-base-href=/ data-offline-search-max-results=10></div></div></div></nav></header><div class="container-fluid td-outer"><div class=td-main><div class="row flex-xl-nowrap"><aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none"><div id=td-sidebar-menu class=td-sidebar__inner><form class="td-sidebar__search d-flex align-items-center"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/veneer/offline-search-index.67536b79b1e8092965527dcf4941e8ac.json data-offline-search-base-href=/ data-offline-search-max-results=10></div><button class="btn btn-link td-sidebar__toggle d-md-none p-0 ms-3 fas fa-bars" type=button data-bs-toggle=collapse data-bs-target=#td-section-nav aria-controls=td-section-nav aria-expanded=false aria-label="Toggle section navigation"></button></form><nav class="td-sidebar-nav collapse foldable-nav" id=td-section-nav><ul class="td-sidebar-nav__section pe-md-3 ul-0"><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-veneerdocs-li><a href=/veneer/docs/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section tree-root" id=m-veneerdocs><span>Documentation</span></a><ul class=ul-1><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-veneerdocsgetting-started-li><input type=checkbox id=m-veneerdocsgetting-started-check>
+<label for=m-veneerdocsgetting-started-check><a href=/veneer/docs/getting-started/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsgetting-started><span>Getting Started</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsgetting-startedinstallation-li><input type=checkbox id=m-veneerdocsgetting-startedinstallation-check>
+<label for=m-veneerdocsgetting-startedinstallation-check><a href=/veneer/docs/getting-started/installation/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsgetting-startedinstallation><span>Installation</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-veneerdocsconcepts-li><input type=checkbox id=m-veneerdocsconcepts-check checked>
+<label for=m-veneerdocsconcepts-check><a href=/veneer/docs/concepts/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsconcepts><span>Concepts</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptsarchitecture-li><input type=checkbox id=m-veneerdocsconceptsarchitecture-check>
+<label for=m-veneerdocsconceptsarchitecture-check><a href=/veneer/docs/concepts/architecture/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsarchitecture><span>Architecture</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id=m-veneerdocsconceptsinstance-selection-li><input type=checkbox id=m-veneerdocsconceptsinstance-selection-check checked>
+<label for=m-veneerdocsconceptsinstance-selection-check><a href=/veneer/docs/concepts/instance-selection/ class="align-left ps-0 active td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsinstance-selection><span class=td-sidebar-nav-active-item>Instance Selection Deep Dive</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptsbinpacking-li><input type=checkbox id=m-veneerdocsconceptsbinpacking-check>
+<label for=m-veneerdocsconceptsbinpacking-check><a href=/veneer/docs/concepts/binpacking/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsbinpacking><span>Bin-Packing and NodeOverlay</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptspreferences-li><input type=checkbox id=m-veneerdocsconceptspreferences-check>
+<label for=m-veneerdocsconceptspreferences-check><a href=/veneer/docs/concepts/preferences/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptspreferences><span>Instance Preferences</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-veneerdocsreference-li><input type=checkbox id=m-veneerdocsreference-check>
+<label for=m-veneerdocsreference-check><a href=/veneer/docs/reference/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsreference><span>Reference</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferenceconfiguration-li><input type=checkbox id=m-veneerdocsreferenceconfiguration-check>
+<label for=m-veneerdocsreferenceconfiguration-check><a href=/veneer/docs/reference/configuration/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferenceconfiguration><span>Configuration</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencemetrics-li><input type=checkbox id=m-veneerdocsreferencemetrics-check>
+<label for=m-veneerdocsreferencemetrics-check><a href=/veneer/docs/reference/metrics/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencemetrics><span>Metrics</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencehelm-chart-li><input type=checkbox id=m-veneerdocsreferencehelm-chart-check>
+<label for=m-veneerdocsreferencehelm-chart-check><a href=/veneer/docs/reference/helm-chart/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencehelm-chart><span>Helm Chart</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencenodeoverlay-li><input type=checkbox id=m-veneerdocsreferencenodeoverlay-check>
+<label for=m-veneerdocsreferencenodeoverlay-check><a href=/veneer/docs/reference/nodeoverlay/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencenodeoverlay><span>NodeOverlay CRD</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocstroubleshooting-li><input type=checkbox id=m-veneerdocstroubleshooting-check>
+<label for=m-veneerdocstroubleshooting-check><a href=/veneer/docs/troubleshooting/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocstroubleshooting><span>Troubleshooting</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsdevelopment-li><input type=checkbox id=m-veneerdocsdevelopment-check>
+<label for=m-veneerdocsdevelopment-check><a href=/veneer/docs/development/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsdevelopment><span>Development</span></a></label></li></ul></li></ul></nav></div></aside><aside class="d-none d-xl-block col-xl-2 td-sidebar-toc d-print-none"><div class="td-page-meta ms-2 pb-1 pt-2 mb-0"></div><div class=td-toc><nav id=TableOfContents><ul><li><a href=#overview>Overview</a></li><li><a href=#architecture-flow>Architecture Flow</a></li><li><a href=#phase-1-scheduling-and-bin-packing>Phase 1: Scheduling and Bin-Packing</a><ul><li><a href=#code-location>Code Location</a></li><li><a href=#what-happens>What Happens</a></li><li><a href=#key-points>Key Points</a></li></ul></li><li><a href=#phase-2-launch-template-generation>Phase 2: Launch Template Generation</a><ul><li><a href=#code-location-1>Code Location</a></li><li><a href=#ami-based-grouping>AMI-Based Grouping</a></li><li><a href=#maptoinstancetypes-function>MapToInstanceTypes Function</a></li></ul></li><li><a href=#phase-3-createfleet-api-call>Phase 3: CreateFleet API Call</a><ul><li><a href=#code-location-2>Code Location</a></li><li><a href=#instance-type-limit>Instance Type Limit</a></li><li><a href=#sorting-and-truncation>Sorting and Truncation</a></li><li><a href=#building-the-createfleet-request>Building the CreateFleet Request</a></li></ul></li><li><a href=#allocation-strategies>Allocation Strategies</a><ul><li><a href=#code-location-3>Code Location</a></li><li><a href=#strategy-selection-logic>Strategy Selection Logic</a></li><li><a href=#strategy-comparison>Strategy Comparison</a></li><li><a href=#how-each-strategy-works>How Each Strategy Works</a></li></ul></li><li><a href=#priority-values-and-price-adjustments>Priority Values and Price Adjustments</a><ul><li><a href=#how-veneer-adjustments-work>How Veneer Adjustments Work</a></li><li><a href=#example-arm64--50-adjustment>Example: ARM64 -50% Adjustment</a></li></ul></li><li><a href=#how-aws-makes-the-final-selection>How AWS Makes the Final Selection</a><ul><li><a href=#with-capacity-optimized-prioritized>With <code>capacity-optimized-prioritized</code></a></li><li><a href=#why-x86-might-still-be-selected>Why x86 Might Still Be Selected</a></li></ul></li><li><a href=#real-world-examples>Real-World Examples</a><ul><li><a href=#example-createfleet-request-with-nodeoverlay>Example CreateFleet Request (with NodeOverlay)</a></li><li><a href=#example-createfleet-response>Example CreateFleet Response</a></li><li><a href=#example-when-x86-gets-selected-despite-lower-arm64-priority>Example: When x86 Gets Selected Despite Lower ARM64 Priority</a></li></ul></li><li><a href=#implications-for-veneer-nodeoverlay>Implications for Veneer NodeOverlay</a><ul><li><a href=#how-nodeoverlay-influences-selection>How NodeOverlay Influences Selection</a></li><li><a href=#effective-configuration>Effective Configuration</a></li><li><a href=#what-this-achieves>What This Achieves</a></li></ul></li><li><a href=#code-references>Code References</a></li><li><a href=#summary>Summary</a></li></ul></nav></div></aside><main class="col-12 col-md-9 col-xl-8 ps-md-5" role=main><nav aria-label=breadcrumb class=td-breadcrumbs><ol class=breadcrumb><li class=breadcrumb-item><a href=/veneer/docs/>Documentation</a></li><li class=breadcrumb-item><a href=/veneer/docs/concepts/>Concepts</a></li><li class="breadcrumb-item active" aria-current=page>Instance Selection Deep Dive</li></ol></nav><div class=td-content><h1>Instance Selection Deep Dive</h1><div class=lead>Technical deep dive into how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call.</div><header class=article-meta></header><p>This document provides a detailed technical explanation of how Karpenter selects EC2 instances, from pod scheduling through the AWS CreateFleet API call. Understanding this flow is essential for configuring Veneer&rsquo;s NodeOverlay feature to influence instance selection.</p><h2 id=overview>Overview</h2><p>Karpenter does <strong>not</strong> make the final instance type selection. Instead, it:</p><ol><li><strong>Filters</strong> instance types based on NodePool requirements and pod constraints</li><li><strong>Sorts</strong> instance types by adjusted price</li><li><strong>Truncates</strong> to a maximum of 60 instance types</li><li><strong>Delegates</strong> the final selection to AWS via the CreateFleet API</li></ol><p>AWS CreateFleet makes the ultimate decision based on:</p><ul><li>Spot capacity availability</li><li>Allocation strategy</li><li>Priority values (when using <code>capacity-optimized-prioritized</code>)</li></ul><h2 id=architecture-flow>Architecture Flow</h2><pre class=mermaid>flowchart TB
+    subgraph KARPENTER[&#34;KARPENTER CONTROLLER&#34;]
+        direction TB
+
+        subgraph Phase1[&#34;Phase 1: Scheduling&#34;]
+            Scheduler[&#34;Scheduler&lt;br/&gt;(Bin-pack)&#34;]
+            AllTypes[&#34;ALL instance&lt;br/&gt;types kept&#34;]
+            Scheduler --&gt; AllTypes
+        end
+
+        subgraph Phase2[&#34;Phase 2: Launch Templates&#34;]
+            Resolver[&#34;Launch Template&lt;br/&gt;Resolver&#34;]
+            GroupAMI[&#34;Group by AMI&lt;br/&gt;(architecture)&#34;]
+            Resolver --&gt; GroupAMI
+        end
+
+        subgraph Phase3[&#34;Phase 3: Fleet Request&#34;]
+            Builder[&#34;CreateFleet&lt;br/&gt;Builder&#34;]
+            Priority[&#34;Set Priority values&lt;br/&gt;(adjusted prices)&#34;]
+            Builder --&gt; Priority
+        end
+
+        Phase1 --&gt; Phase2 --&gt; Phase3
+    end
+
+    subgraph AWS[&#34;AWS CreateFleet API&#34;]
+        direction TB
+        Step1[&#34;1. Check spot capacity for each&lt;br/&gt;instance type/AZ combination&#34;]
+        Step2[&#34;2. Apply allocation strategy&lt;br/&gt;(price-capacity-optimized OR&lt;br/&gt;capacity-optimized-prioritized)&#34;]
+        Step3[&#34;3. Select instance type&lt;br/&gt;with best score&#34;]
+        Step1 --&gt; Step2 --&gt; Step3
+    end
+
+    KARPENTER --&gt; AWS</pre><h2 id=phase-1-scheduling-and-bin-packing>Phase 1: Scheduling and Bin-Packing</h2><h3 id=code-location>Code Location</h3><ul><li><strong>Repository</strong>: <a href=https://github.com/kubernetes-sigs/karpenter>kubernetes-sigs/karpenter</a></li><li><strong>File</strong>: <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/controllers/provisioning/scheduling/scheduler.go#L103-L150><code>pkg/controllers/provisioning/scheduling/scheduler.go</code></a></li></ul><h3 id=what-happens>What Happens</h3><p>The scheduler performs bin-packing simulation to determine which pods can fit on potential nodes. Critically, it does <strong>not</strong> select a specific instance type or architecture at this stage.</p><blockquote><p><strong>Source</strong>: <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/controllers/provisioning/scheduling/scheduler.go#L103-L150><code>scheduler.go#L103-L150</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#75715e>// The scheduler keeps ALL compatible instance types - it does not pick ARM vs x86 here</span>
+</span></span><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>s</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>Scheduler</span>) <span style=color:#a6e22e>Solve</span>(<span style=color:#a6e22e>ctx</span> <span style=color:#a6e22e>context</span>.<span style=color:#a6e22e>Context</span>, <span style=color:#a6e22e>pods</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>corev1</span>.<span style=color:#a6e22e>Pod</span>) <span style=color:#a6e22e>Results</span> {
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// ... bin-packing logic ...</span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Each NodeClaim contains ALL instance types that could satisfy the requirements</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=key-points>Key Points</h3><ol><li><strong>No architecture decision</strong>: The scheduler doesn&rsquo;t choose between ARM64 and x86</li><li><strong>All compatible types kept</strong>: If 100 instance types match requirements, all 100 are passed forward</li><li><strong>Filtering only</strong>: NodePool requirements filter out incompatible types, but don&rsquo;t select specific ones</li></ol><h2 id=phase-2-launch-template-generation>Phase 2: Launch Template Generation</h2><h3 id=code-location-1>Code Location</h3><ul><li><strong>Repository</strong>: <a href=https://github.com/aws/karpenter-provider-aws>aws/karpenter-provider-aws</a></li><li><strong>File</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L145-L196><code>pkg/providers/amifamily/resolver.go</code></a></li></ul><h3 id=ami-based-grouping>AMI-Based Grouping</h3><p>Since AMIs are architecture-specific (ARM64 vs x86), Karpenter creates <strong>separate launch template configurations</strong> for each AMI:</p><blockquote><p><strong>Source</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L145-L196><code>resolver.go#L145-L196</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>r</span> <span style=color:#a6e22e>DefaultResolver</span>) <span style=color:#a6e22e>Resolve</span>(<span style=color:#a6e22e>nodeClass</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>EC2NodeClass</span>, <span style=color:#a6e22e>nodeClaim</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>karpv1</span>.<span style=color:#a6e22e>NodeClaim</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>instanceTypes</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>, <span style=color:#a6e22e>capacityType</span> <span style=color:#66d9ef>string</span>, <span style=color:#f92672>...</span>) ([]<span style=color:#f92672>*</span><span style=color:#a6e22e>LaunchTemplate</span>, <span style=color:#66d9ef>error</span>) {
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Map AMIs to compatible instance types</span>
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>mappedAMIs</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>MapToInstanceTypes</span>(<span style=color:#a6e22e>instanceTypes</span>, <span style=color:#a6e22e>nodeClass</span>.<span style=color:#a6e22e>Status</span>.<span style=color:#a6e22e>AMIs</span>)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>var</span> <span style=color:#a6e22e>resolvedTemplates</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>LaunchTemplate</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>amiID</span>, <span style=color:#a6e22e>instanceTypes</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>mappedAMIs</span> {
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// Each AMI (architecture) gets its own launch template config</span>
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// ARM64 instances -&gt; ARM64 AMI launch template</span>
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// x86 instances -&gt; x86 AMI launch template</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>resolvedTemplates</span>, <span style=color:#66d9ef>nil</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=maptoinstancetypes-function>MapToInstanceTypes Function</h3><blockquote><p><strong>Source</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/ami.go#L228-L241><code>ami.go#L228-L241</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> <span style=color:#a6e22e>MapToInstanceTypes</span>(<span style=color:#a6e22e>instanceTypes</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>, <span style=color:#a6e22e>amis</span> []<span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>AMI</span>) <span style=color:#66d9ef>map</span>[<span style=color:#66d9ef>string</span>][]<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span> {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>amiIDs</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>map</span>[<span style=color:#66d9ef>string</span>][]<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>{}
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>instanceType</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>instanceTypes</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>ami</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>amis</span> {
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>instanceType</span>.<span style=color:#a6e22e>Requirements</span>.<span style=color:#a6e22e>Compatible</span>(
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>scheduling</span>.<span style=color:#a6e22e>NewNodeSelectorRequirements</span>(<span style=color:#a6e22e>ami</span>.<span style=color:#a6e22e>Requirements</span><span style=color:#f92672>...</span>),
+</span></span><span style=display:flex><span>            ); <span style=color:#a6e22e>err</span> <span style=color:#f92672>==</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>amiIDs</span>[<span style=color:#a6e22e>ami</span>.<span style=color:#a6e22e>ID</span>] = append(<span style=color:#a6e22e>amiIDs</span>[<span style=color:#a6e22e>ami</span>.<span style=color:#a6e22e>ID</span>], <span style=color:#a6e22e>instanceType</span>)
+</span></span><span style=display:flex><span>                <span style=color:#66d9ef>break</span>
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>amiIDs</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h2 id=phase-3-createfleet-api-call>Phase 3: CreateFleet API Call</h2><h3 id=code-location-2>Code Location</h3><ul><li><strong>Repository</strong>: <a href=https://github.com/aws/karpenter-provider-aws>aws/karpenter-provider-aws</a></li><li><strong>File</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63><code>pkg/providers/instance/instance.go</code></a></li></ul><h3 id=instance-type-limit>Instance Type Limit</h3><p>Karpenter enforces a maximum of <strong>60 instance types</strong> per CreateFleet request:</p><blockquote><p><strong>Source</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63><code>instance.go#L63</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>const</span> <span style=color:#a6e22e>maxInstanceTypes</span> = <span style=color:#ae81ff>60</span>
+</span></span></code></pre></div><h3 id=sorting-and-truncation>Sorting and Truncation</h3><p>Before sending to AWS, instance types are sorted by price and truncated:</p><blockquote><p><strong>Source</strong>: <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L221-L233><code>types.go#L221-L233</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>its</span> <span style=color:#a6e22e>InstanceTypes</span>) <span style=color:#a6e22e>OrderByPrice</span>(<span style=color:#a6e22e>reqs</span> <span style=color:#a6e22e>scheduling</span>.<span style=color:#a6e22e>Requirements</span>) <span style=color:#a6e22e>InstanceTypes</span> {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>sort</span>.<span style=color:#a6e22e>Slice</span>(<span style=color:#a6e22e>its</span>, <span style=color:#66d9ef>func</span>(<span style=color:#a6e22e>i</span>, <span style=color:#a6e22e>j</span> <span style=color:#66d9ef>int</span>) <span style=color:#66d9ef>bool</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>iPrice</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>its</span>[<span style=color:#a6e22e>i</span>].<span style=color:#a6e22e>Offerings</span>.<span style=color:#a6e22e>Available</span>().<span style=color:#a6e22e>CompatibleFor</span>(<span style=color:#a6e22e>reqs</span>).<span style=color:#a6e22e>LowestPrice</span>()
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>jPrice</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>its</span>[<span style=color:#a6e22e>j</span>].<span style=color:#a6e22e>Offerings</span>.<span style=color:#a6e22e>Available</span>().<span style=color:#a6e22e>CompatibleFor</span>(<span style=color:#a6e22e>reqs</span>).<span style=color:#a6e22e>LowestPrice</span>()
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>iPrice</span> <span style=color:#f92672>!=</span> <span style=color:#a6e22e>jPrice</span> {
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>iPrice</span> &lt; <span style=color:#a6e22e>jPrice</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>its</span>[<span style=color:#a6e22e>i</span>].<span style=color:#a6e22e>Name</span> &lt; <span style=color:#a6e22e>its</span>[<span style=color:#a6e22e>j</span>].<span style=color:#a6e22e>Name</span>
+</span></span><span style=display:flex><span>    })
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>its</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><blockquote><p><strong>Source</strong>: <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L322-L327><code>types.go#L322-L327</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>its</span> <span style=color:#a6e22e>InstanceTypes</span>) <span style=color:#a6e22e>Truncate</span>(<span style=color:#a6e22e>reqs</span> <span style=color:#a6e22e>scheduling</span>.<span style=color:#a6e22e>Requirements</span>, <span style=color:#a6e22e>maxItems</span> <span style=color:#66d9ef>int</span>) <span style=color:#a6e22e>InstanceTypes</span> {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>its</span> = <span style=color:#a6e22e>its</span>.<span style=color:#a6e22e>OrderByPrice</span>(<span style=color:#a6e22e>reqs</span>)
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> len(<span style=color:#a6e22e>its</span>) &gt; <span style=color:#a6e22e>maxItems</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>its</span>[:<span style=color:#a6e22e>maxItems</span>]
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>its</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=building-the-createfleet-request>Building the CreateFleet Request</h3><blockquote><p><strong>Source</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L456-L486><code>instance.go#L456-L486</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>p</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>DefaultProvider</span>) <span style=color:#a6e22e>getOverrides</span>(
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>instanceTypes</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>offerings</span> <span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>Offerings</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>zones</span>, <span style=color:#a6e22e>subnets</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>resourceSet</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>image</span> <span style=color:#66d9ef>string</span>,
+</span></span><span style=display:flex><span>) []<span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetLaunchTemplateOverridesRequest</span> {
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>var</span> <span style=color:#a6e22e>overrides</span> []<span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetLaunchTemplateOverridesRequest</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>offering</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>offerings</span> {
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// ... zone/subnet matching ...</span>
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>overrides</span> = append(<span style=color:#a6e22e>overrides</span>, <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetLaunchTemplateOverridesRequest</span>{
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>InstanceType</span>:     <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>InstanceType</span>(<span style=color:#a6e22e>instanceType</span>.<span style=color:#a6e22e>Name</span>),
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>SubnetId</span>:         <span style=color:#a6e22e>aws</span>.<span style=color:#a6e22e>String</span>(<span style=color:#a6e22e>subnet</span>),
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>ImageId</span>:          <span style=color:#a6e22e>aws</span>.<span style=color:#a6e22e>String</span>(<span style=color:#a6e22e>image</span>),
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>AvailabilityZone</span>: <span style=color:#a6e22e>aws</span>.<span style=color:#a6e22e>String</span>(<span style=color:#a6e22e>offering</span>.<span style=color:#a6e22e>Requirements</span>.<span style=color:#a6e22e>Get</span>(<span style=color:#a6e22e>karpv1</span>.<span style=color:#a6e22e>TopologyLabelZone</span>).<span style=color:#a6e22e>Any</span>()),
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// CRITICAL: Priority is set to the offering price</span>
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>Priority</span>: <span style=color:#a6e22e>lo</span>.<span style=color:#a6e22e>ToPtr</span>(float64(<span style=color:#a6e22e>offering</span>.<span style=color:#a6e22e>Price</span>)),
+</span></span><span style=display:flex><span>        })
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>overrides</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h2 id=allocation-strategies>Allocation Strategies</h2><h3 id=code-location-3>Code Location</h3><ul><li><strong>Repository</strong>: <a href=https://github.com/aws/karpenter-provider-aws>aws/karpenter-provider-aws</a></li><li><strong>File</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L240><code>pkg/providers/instance/types.go#L209-L240</code></a></li></ul><h3 id=strategy-selection-logic>Strategy Selection Logic</h3><blockquote><p><strong>Source</strong>: <a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L240><code>types.go#L209-L240</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>b</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>CreateFleetInputBuilder</span>) <span style=color:#a6e22e>Build</span>() <span style=color:#f92672>*</span><span style=color:#a6e22e>ec2</span>.<span style=color:#a6e22e>CreateFleetInput</span> {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>input</span> <span style=color:#f92672>:=</span> <span style=color:#f92672>&amp;</span><span style=color:#a6e22e>ec2</span>.<span style=color:#a6e22e>CreateFleetInput</span>{
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>Type</span>: <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetTypeInstant</span>,
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// ...</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>b</span>.<span style=color:#a6e22e>capacityType</span> <span style=color:#f92672>==</span> <span style=color:#a6e22e>karpv1</span>.<span style=color:#a6e22e>CapacityTypeSpot</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>input</span>.<span style=color:#a6e22e>SpotOptions</span> = <span style=color:#f92672>&amp;</span><span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>SpotOptionsRequest</span>{
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// WITH NodeOverlay (overlay=true): capacity-optimized-prioritized</span>
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// WITHOUT NodeOverlay (overlay=false): price-capacity-optimized</span>
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>AllocationStrategy</span>: <span style=color:#a6e22e>lo</span>.<span style=color:#a6e22e>Ternary</span>(
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>b</span>.<span style=color:#a6e22e>overlay</span>,
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>SpotAllocationStrategyCapacityOptimizedPrioritized</span>,
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>SpotAllocationStrategyPriceCapacityOptimized</span>,
+</span></span><span style=display:flex><span>            ),
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    } <span style=color:#66d9ef>else</span> <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>b</span>.<span style=color:#a6e22e>capacityReservationType</span> <span style=color:#f92672>!=</span> <span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>CapacityReservationTypeCapacityBlock</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>input</span>.<span style=color:#a6e22e>OnDemandOptions</span> = <span style=color:#f92672>&amp;</span><span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>OnDemandOptionsRequest</span>{
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// WITH NodeOverlay: prioritized</span>
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// WITHOUT NodeOverlay: lowest-price</span>
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>AllocationStrategy</span>: <span style=color:#a6e22e>lo</span>.<span style=color:#a6e22e>Ternary</span>(
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>b</span>.<span style=color:#a6e22e>overlay</span>,
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetOnDemandAllocationStrategyPrioritized</span>,
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>ec2types</span>.<span style=color:#a6e22e>FleetOnDemandAllocationStrategyLowestPrice</span>,
+</span></span><span style=display:flex><span>            ),
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>input</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=strategy-comparison>Strategy Comparison</h3><table><thead><tr><th>Scenario</th><th>Spot Strategy</th><th>On-Demand Strategy</th></tr></thead><tbody><tr><td><strong>Default (no NodeOverlay)</strong></td><td><code>price-capacity-optimized</code></td><td><code>lowest-price</code></td></tr><tr><td><strong>With NodeOverlay</strong></td><td><code>capacity-optimized-prioritized</code></td><td><code>prioritized</code></td></tr></tbody></table><h3 id=how-each-strategy-works>How Each Strategy Works</h3><blockquote><p><strong>AWS Documentation Reference</strong>: The <a href=https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_FleetLaunchTemplateOverridesRequest.html>FleetLaunchTemplateOverridesRequest.Priority</a> documentation explicitly states when Priority is used:</p><p><em>&ldquo;If the Spot <code>AllocationStrategy</code> is set to <code>capacity-optimized-prioritized</code>, EC2 Fleet uses priority on a best-effort basis to determine which launch template override to use in fulfilling Spot capacity, but optimizes for capacity first.&rdquo;</em></p><p><em>&ldquo;If the On-Demand <code>AllocationStrategy</code> is set to <code>prioritized</code>, EC2 Fleet uses priority to determine which launch template override to use first in fulfilling On-Demand capacity.&rdquo;</em></p><p>This means Priority is <strong>only used</strong> with these two specific strategies.</p></blockquote><h4 id=price-capacity-optimized-default-for-spot><code>price-capacity-optimized</code> (Default for Spot)</h4><ul><li>AWS balances price and capacity availability</li><li>Automatically diversifies across pools to reduce interruptions</li><li><strong>Does not use Priority values</strong> &ndash; the Priority field is ignored even if set</li></ul><h4 id=capacity-optimized-prioritized-with-nodeoverlay><code>capacity-optimized-prioritized</code> (With NodeOverlay)</h4><ul><li>AWS first ensures capacity is available</li><li>Among available pools, selects based on Priority (lower = better)</li><li><strong>Uses Priority values</strong> &ndash; this is how Veneer influences selection</li></ul><h4 id=lowest-price-default-for-on-demand><code>lowest-price</code> (Default for On-Demand)</h4><ul><li>Selects the cheapest instance type</li><li><strong>Does not use Priority values</strong> &ndash; selection is purely price-based</li></ul><h4 id=prioritized-with-nodeoverlay-for-on-demand><code>prioritized</code> (With NodeOverlay for On-Demand)</h4><ul><li>Selects based on Priority (lower = better)</li><li><strong>Uses Priority values</strong></li></ul><h2 id=priority-values-and-price-adjustments>Priority Values and Price Adjustments</h2><h3 id=how-veneer-adjustments-work>How Veneer Adjustments Work</h3><p>When a NodeOverlay specifies a price adjustment (e.g., <code>adjust=-50%</code>), Karpenter modifies the <strong>offering price</strong> before setting the Priority:</p><blockquote><p><strong>Source</strong>: <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L369-L384><code>types.go#L369-L384</code></a></p></blockquote><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>o</span> <span style=color:#a6e22e>Offering</span>) <span style=color:#a6e22e>AdjustedPrice</span>() <span style=color:#66d9ef>float64</span> {
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// If no overlay, return base price</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span> <span style=color:#f92672>==</span> <span style=color:#66d9ef>nil</span> <span style=color:#f92672>||</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span>.<span style=color:#a6e22e>Adjustment</span> <span style=color:#f92672>==</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Price</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Apply percentage adjustment</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span>.<span style=color:#a6e22e>Adjustment</span>.<span style=color:#a6e22e>Percentage</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Price</span> <span style=color:#f92672>*</span> (<span style=color:#ae81ff>1</span> <span style=color:#f92672>+</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span>.<span style=color:#a6e22e>Adjustment</span>.<span style=color:#a6e22e>Percentage</span><span style=color:#f92672>/</span><span style=color:#ae81ff>100</span>)
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Apply absolute adjustment</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span>.<span style=color:#a6e22e>Adjustment</span>.<span style=color:#a6e22e>Absolute</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Price</span> <span style=color:#f92672>+</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Overlay</span>.<span style=color:#a6e22e>Adjustment</span>.<span style=color:#a6e22e>Absolute</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>o</span>.<span style=color:#a6e22e>Price</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=example-arm64--50-adjustment>Example: ARM64 -50% Adjustment</h3><p>Given base spot prices:</p><ul><li><code>m8g.24xlarge</code> (ARM64): $1.27/hr</li><li><code>m7i.12xlarge</code> (x86): $0.78/hr</li></ul><p>With <code>-50%</code> adjustment on ARM64:</p><ul><li><code>m8g.24xlarge</code> adjusted: $1.27 * 0.5 = <strong>$0.635/hr</strong></li><li><code>m7i.12xlarge</code> unchanged: <strong>$0.78/hr</strong></li></ul><p>Priority values sent to CreateFleet:</p><ul><li><code>m8g.24xlarge</code>: Priority = 0.635 (lower = better)</li><li><code>m7i.12xlarge</code>: Priority = 0.78</li></ul><h2 id=how-aws-makes-the-final-selection>How AWS Makes the Final Selection</h2><h3 id=with-capacity-optimized-prioritized>With <code>capacity-optimized-prioritized</code></h3><pre class=mermaid>flowchart TB
+    subgraph AWS[&#34;AWS CreateFleet Decision Process&#34;]
+        direction TB
+
+        subgraph Step1[&#34;Step 1: Check Spot Capacity&#34;]
+            Check[&#34;For each instance type/AZ combination:&#34;]
+            Query[&#34;Query spot capacity pools&#34;]
+            Eliminate[&#34;Eliminate types with insufficient capacity&#34;]
+            Check --&gt; Query --&gt; Eliminate
+        end
+
+        subgraph Step2[&#34;Step 2: Apply Priority Ranking&#34;]
+            Among[&#34;Among instance types WITH available capacity:&#34;]
+            Sort[&#34;Sort by Priority value (ascending)&#34;]
+            Lower[&#34;Lower Priority = Higher preference&#34;]
+            Among --&gt; Sort --&gt; Lower
+        end
+
+        subgraph Step3[&#34;Step 3: Select Winner&#34;]
+            Launch[&#34;Launch instance from pool with:&#34;]
+            Available[&#34;Available capacity (mandatory)&#34;]
+            Lowest[&#34;Lowest Priority value (when capacity available)&#34;]
+            Launch --&gt; Available --&gt; Lowest
+        end
+
+        Step1 --&gt; Step2 --&gt; Step3
+    end
+
+    Step3 --&gt; Result[&#34;Selected Instance&#34;]
+
+    style Result fill:#90EE90</pre><h3 id=why-x86-might-still-be-selected>Why x86 Might Still Be Selected</h3><p>Even with lower Priority values for ARM64, AWS may select x86 if:</p><ol><li><strong>ARM64 spot pools are exhausted</strong> &ndash; No capacity available</li><li><strong>ARM64 has recent interruptions</strong> &ndash; AWS may deprioritize volatile pools</li><li><strong>AZ constraints</strong> &ndash; Required AZ only has x86 capacity</li></ol><h2 id=real-world-examples>Real-World Examples</h2><h3 id=example-createfleet-request-with-nodeoverlay>Example CreateFleet Request (with NodeOverlay)</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json><span style=display:flex><span>{
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;Type&#34;</span>: <span style=color:#e6db74>&#34;instant&#34;</span>,
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;TargetCapacitySpecification&#34;</span>: {
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;DefaultTargetCapacityType&#34;</span>: <span style=color:#e6db74>&#34;spot&#34;</span>,
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;TotalTargetCapacity&#34;</span>: <span style=color:#ae81ff>1</span>
+</span></span><span style=display:flex><span>  },
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;SpotOptions&#34;</span>: {
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;AllocationStrategy&#34;</span>: <span style=color:#e6db74>&#34;capacity-optimized-prioritized&#34;</span>
+</span></span><span style=display:flex><span>  },
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;LaunchTemplateConfigs&#34;</span>: [
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;LaunchTemplateSpecification&#34;</span>: {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;LaunchTemplateName&#34;</span>: <span style=color:#e6db74>&#34;karpenter.k8s.aws/13299866299363256344&#34;</span>,
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;Version&#34;</span>: <span style=color:#e6db74>&#34;$Latest&#34;</span>
+</span></span><span style=display:flex><span>      },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;Overrides&#34;</span>: [
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;c6gn.16xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;ImageId&#34;</span>: <span style=color:#e6db74>&#34;ami-06bd99f6c8a066836&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;AvailabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;SubnetId&#34;</span>: <span style=color:#e6db74>&#34;subnet-0c7dc4bd1e242e84b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.29118</span>
+</span></span><span style=display:flex><span>        },
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.12xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;ImageId&#34;</span>: <span style=color:#e6db74>&#34;ami-06bd99f6c8a066836&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;AvailabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;SubnetId&#34;</span>: <span style=color:#e6db74>&#34;subnet-0c7dc4bd1e242e84b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.49020</span>
+</span></span><span style=display:flex><span>        },
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.24xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;ImageId&#34;</span>: <span style=color:#e6db74>&#34;ami-06bd99f6c8a066836&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;AvailabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;SubnetId&#34;</span>: <span style=color:#e6db74>&#34;subnet-0c7dc4bd1e242e84b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.63342</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>      ]
+</span></span><span style=display:flex><span>    },
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;LaunchTemplateSpecification&#34;</span>: {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;LaunchTemplateName&#34;</span>: <span style=color:#e6db74>&#34;karpenter.k8s.aws/2908816957350676553&#34;</span>,
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;Version&#34;</span>: <span style=color:#e6db74>&#34;$Latest&#34;</span>
+</span></span><span style=display:flex><span>      },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;Overrides&#34;</span>: [
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m7i.12xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;ImageId&#34;</span>: <span style=color:#e6db74>&#34;ami-0894e3f68fa1384c4&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;AvailabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;SubnetId&#34;</span>: <span style=color:#e6db74>&#34;subnet-0c7dc4bd1e242e84b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.7807</span>
+</span></span><span style=display:flex><span>        },
+</span></span><span style=display:flex><span>        {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m6i.12xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;ImageId&#34;</span>: <span style=color:#e6db74>&#34;ami-0894e3f68fa1384c4&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;AvailabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;SubnetId&#34;</span>: <span style=color:#e6db74>&#34;subnet-0c7dc4bd1e242e84b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.8202</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>      ]
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>  ]
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p><strong>Key observations:</strong></p><ul><li>Two launch template configs: one for ARM64 AMI, one for x86 AMI</li><li>ARM64 instances have lower Priority values (0.29 - 0.63) due to -50% adjustment</li><li>x86 instances have higher Priority values (0.78 - 0.82)</li></ul><h3 id=example-createfleet-response>Example CreateFleet Response</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json><span style=display:flex><span>{
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;fleetId&#34;</span>: <span style=color:#e6db74>&#34;fleet-989ca286-f32f-ce94-043a-05a885465b32&#34;</span>,
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;fleetInstanceSet&#34;</span>: {
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;item&#34;</span>: {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;lifecycle&#34;</span>: <span style=color:#e6db74>&#34;spot&#34;</span>,
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;instanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.24xlarge&#34;</span>,
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;instanceIds&#34;</span>: {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;item&#34;</span>: <span style=color:#e6db74>&#34;i-0708bc0ab5c887271&#34;</span>
+</span></span><span style=display:flex><span>      },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;launchTemplateAndOverrides&#34;</span>: {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;overrides&#34;</span>: {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;instanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.24xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;imageId&#34;</span>: <span style=color:#e6db74>&#34;ami-06bd99f6c8a066836&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;availabilityZone&#34;</span>: <span style=color:#e6db74>&#34;us-west-2b&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;priority&#34;</span>: <span style=color:#ae81ff>0.63342</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>      }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>  }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p><strong>Result:</strong> AWS selected <code>m8g.24xlarge</code> (ARM64) because:</p><ol><li>Spot capacity was available for this instance type</li><li>It had a lower Priority than x86 alternatives (0.63 vs 0.78+)</li></ol><h3 id=example-when-x86-gets-selected-despite-lower-arm64-priority>Example: When x86 Gets Selected Despite Lower ARM64 Priority</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json><span style=display:flex><span>{
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;fleetInstanceSet&#34;</span>: {
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;item&#34;</span>: {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;lifecycle&#34;</span>: <span style=color:#e6db74>&#34;spot&#34;</span>,
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;instanceType&#34;</span>: <span style=color:#e6db74>&#34;m7a.32xlarge&#34;</span>,
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;launchTemplateAndOverrides&#34;</span>: {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;overrides&#34;</span>: {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;instanceType&#34;</span>: <span style=color:#e6db74>&#34;m7a.32xlarge&#34;</span>,
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;priority&#34;</span>: <span style=color:#ae81ff>0.95</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>      }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>  },
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;errorSet&#34;</span>: {
+</span></span><span style=display:flex><span>    <span style=color:#f92672>&#34;item&#34;</span>: [
+</span></span><span style=display:flex><span>      {
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;errorCode&#34;</span>: <span style=color:#e6db74>&#34;InsufficientInstanceCapacity&#34;</span>,
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;errorMessage&#34;</span>: <span style=color:#e6db74>&#34;We currently do not have sufficient m8g.24xlarge capacity...&#34;</span>,
+</span></span><span style=display:flex><span>        <span style=color:#f92672>&#34;launchTemplateAndOverrides&#34;</span>: {
+</span></span><span style=display:flex><span>          <span style=color:#f92672>&#34;overrides&#34;</span>: {
+</span></span><span style=display:flex><span>            <span style=color:#f92672>&#34;instanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.24xlarge&#34;</span>,
+</span></span><span style=display:flex><span>            <span style=color:#f92672>&#34;priority&#34;</span>: <span style=color:#ae81ff>0.63</span>
+</span></span><span style=display:flex><span>          }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>      }
+</span></span><span style=display:flex><span>    ]
+</span></span><span style=display:flex><span>  }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>This response shows that even though <code>m8g.24xlarge</code> had a better Priority (0.63), AWS selected <code>m7a.32xlarge</code> (0.95) because the ARM64 pool had insufficient capacity.</p><h2 id=implications-for-veneer-nodeoverlay>Implications for Veneer NodeOverlay</h2><h3 id=how-nodeoverlay-influences-selection>How NodeOverlay Influences Selection</h3><ol><li><p><strong>Triggers <code>capacity-optimized-prioritized</code> strategy</strong> &ndash; Without NodeOverlay, Karpenter uses <code>price-capacity-optimized</code> which ignores Priority values entirely</p></li><li><p><strong>Sets Priority values</strong> &ndash; The adjusted prices become Priority values in the CreateFleet request</p></li><li><p><strong>Does NOT guarantee selection</strong> &ndash; AWS capacity availability takes precedence</p></li></ol><h3 id=effective-configuration>Effective Configuration</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>karpenter.sh/v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>NodePool</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>my-nodepool</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>annotations</span>:
+</span></span><span style=display:flex><span>    <span style=color:#75715e># Veneer annotation to prefer ARM64 with -50% price adjustment</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>veneer.io/preference.1</span>: <span style=color:#e6db74>&#34;kubernetes.io/arch=arm64 adjust=-50%&#34;</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>template</span>:
+</span></span><span style=display:flex><span>    <span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>      <span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>        <span style=color:#75715e># Allow both architectures</span>
+</span></span><span style=display:flex><span>        - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>kubernetes.io/arch</span>
+</span></span><span style=display:flex><span>          <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>In</span>
+</span></span><span style=display:flex><span>          <span style=color:#f92672>values</span>: [<span style=color:#e6db74>&#34;amd64&#34;</span>, <span style=color:#e6db74>&#34;arm64&#34;</span>]
+</span></span></code></pre></div><h3 id=what-this-achieves>What This Achieves</h3><table><thead><tr><th>Without NodeOverlay</th><th>With NodeOverlay (-50% ARM64)</th></tr></thead><tbody><tr><td>Strategy: <code>price-capacity-optimized</code></td><td>Strategy: <code>capacity-optimized-prioritized</code></td></tr><tr><td>AWS balances price + capacity</td><td>AWS prioritizes capacity, then Priority</td></tr><tr><td>Priority values ignored</td><td>Priority values used for selection</td></tr><tr><td>~50/50 ARM64/x86 selection</td><td>ARM64 preferred when capacity available</td></tr></tbody></table><h2 id=code-references>Code References</h2><table><thead><tr><th>Component</th><th>Repository</th><th>File</th><th>Line</th></tr></thead><tbody><tr><td>Max instance types</td><td><a href=https://github.com/aws/karpenter-provider-aws>karpenter-provider-aws</a></td><td><a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L63><code>pkg/providers/instance/instance.go</code></a></td><td>63</td></tr><tr><td>Priority assignment</td><td><a href=https://github.com/aws/karpenter-provider-aws>karpenter-provider-aws</a></td><td><a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/instance.go#L476><code>pkg/providers/instance/instance.go</code></a></td><td>476</td></tr><tr><td>Allocation strategy</td><td><a href=https://github.com/aws/karpenter-provider-aws>karpenter-provider-aws</a></td><td><a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/instance/types.go#L209-L217><code>pkg/providers/instance/types.go</code></a></td><td>209-217</td></tr><tr><td>Price adjustment</td><td><a href=https://github.com/kubernetes-sigs/karpenter>karpenter</a></td><td><a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L369-L384><code>pkg/cloudprovider/types.go</code></a></td><td>369-384</td></tr><tr><td>Instance type sorting</td><td><a href=https://github.com/kubernetes-sigs/karpenter>karpenter</a></td><td><a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L221-L233><code>pkg/cloudprovider/types.go</code></a></td><td>221-233</td></tr><tr><td>Instance type truncation</td><td><a href=https://github.com/kubernetes-sigs/karpenter>karpenter</a></td><td><a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.8.2/pkg/cloudprovider/types.go#L322-L327><code>pkg/cloudprovider/types.go</code></a></td><td>322-327</td></tr><tr><td>AMI to instance mapping</td><td><a href=https://github.com/aws/karpenter-provider-aws>karpenter-provider-aws</a></td><td><a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/ami.go#L228-L241><code>pkg/providers/amifamily/ami.go</code></a></td><td>228-241</td></tr><tr><td>Launch template resolution</td><td><a href=https://github.com/aws/karpenter-provider-aws>karpenter-provider-aws</a></td><td><a href=https://github.com/aws/karpenter-provider-aws/blob/v1.8.6/pkg/providers/amifamily/resolver.go#L135-L197><code>pkg/providers/amifamily/resolver.go</code></a></td><td>135-197</td></tr></tbody></table><h2 id=summary>Summary</h2><ol><li><strong>Karpenter doesn&rsquo;t select the instance</strong> &ndash; It filters, sorts, and sends options to AWS</li><li><strong>NodeOverlay enables Priority-based selection</strong> &ndash; Changes allocation strategy from <code>price-capacity-optimized</code> to <code>capacity-optimized-prioritized</code></li><li><strong>Priority = Adjusted Price</strong> &ndash; Lower values = higher preference</li><li><strong>Capacity trumps Priority</strong> &ndash; AWS will select a higher-Priority (worse) instance if the lower-Priority option lacks capacity</li><li><strong>Architecture is grouped by AMI</strong> &ndash; ARM64 and x86 instances use different launch templates but are sent in the same CreateFleet request</li><li><strong>Maximum 60 instance types</strong> &ndash; Karpenter truncates the list after sorting by price</li></ol></div></main></div></div><footer class="td-footer row d-print-none"><div class=container-fluid><div class="row mx-md-2"><div class="td-footer__left col-6 col-sm-4 order-sm-1"></div><div class="td-footer__right col-6 col-sm-4 order-sm-3"><ul class=td-footer__links-list><li class=td-footer__links-item data-bs-toggle=tooltip title=GitHub aria-label=GitHub><a target=_blank rel=noopener href=https://github.com/nextdoor/veneer aria-label=GitHub><i class="fab fa-github"></i></a></li></ul></div><div class="td-footer__center col-12 col-sm-4 py-2 order-sm-2"><span class=td-footer__copyright>&copy;
+2026
+<span class=td-footer__authors>The Veneer Authors</span></span><span class=td-footer__all_rights_reserved>All Rights Reserved</span></div></div></div></footer></div><script type=module async>
+  import mermaid from "https:\/\/cdn.jsdelivr.net\/npm\/mermaid@latest\/dist\/mermaid.esm.min.mjs";
+
+  (function ($) {
+    if ($('.mermaid').length == 0) {
+      mermaid.initialize({ startOnLoad: false });
+      return;
+    }
+
+    var params = {};
+
+    
+    
+    var norm = function (defaultConfig, params) {
+      var result = {};
+      for (const key in defaultConfig) {
+        const keyLower = key.toLowerCase();
+        if (defaultConfig.hasOwnProperty(key) && params.hasOwnProperty(keyLower)) {
+          if (typeof defaultConfig[key] === "object") {
+            result[key] = norm(defaultConfig[key], params[keyLower]);
+          } else {
+            result[key] = params[keyLower];
+          }
+        }
+      }
+      return result;
+    };
+
+    var settings = norm(mermaid.mermaidAPI.defaultConfig, params);
+    settings.startOnLoad = true;
+    if ($('html[data-bs-theme="dark"]').length) {
+      settings.theme = 'dark';
+    }
+    mermaid.initialize(settings);
+
+    
+    const lightDarkModeThemeChangeHandler = function (mutationsList, observer) {
+      for (const mutation of mutationsList) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-bs-theme') {
+          
+          
+          
+          location.reload();
+        }
+      }
+    };
+
+    const observer = new MutationObserver(lightDarkModeThemeChangeHandler);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-bs-theme']
+    });
+    
+
+  })(jQuery);
+</script><script src=/veneer/js/main.min.4a7a8cc982d6f5fa05fafe95c8fcbc9cd50dee051600e57e7d587df2d2a35b07.js integrity="sha256-SnqMyYLW9foF+v6VyPy8nNUN7gUWAOV+fVh98tKjWwc=" crossorigin=anonymous></script><script defer src=/veneer/js/click-to-copy.min.73478a7d4807698aed7e355eb23f9890ca18fea3158604c8471746d046702bad.js integrity="sha256-c0eKfUgHaYrtfjVesj+YkMoY/qMVhgTIRxdG0EZwK60=" crossorigin=anonymous></script><script src=/veneer/js/tabpane-persist.js></script></body></html>

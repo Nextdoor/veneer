@@ -1,0 +1,318 @@
+<!doctype html><html itemscope itemtype=http://schema.org/WebPage lang=en class=no-js><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><link rel="shortcut icon" href=/veneer/favicons/favicon.ico><link rel=apple-touch-icon href=/veneer/favicons/apple-touch-icon-180x180.png sizes=180x180><link rel=icon type=image/png href=/veneer/favicons/favicon-16x16.png sizes=16x16><link rel=icon type=image/png href=/veneer/favicons/favicon-32x32.png sizes=32x32><link rel=icon type=image/png href=/veneer/favicons/android-36x36.png sizes=36x36><link rel=icon type=image/png href=/veneer/favicons/android-48x48.png sizes=48x48><link rel=icon type=image/png href=/veneer/favicons/android-72x72.png sizes=72x72><link rel=icon type=image/png href=/veneer/favicons/android-96x96.png sizes=96x96><link rel=icon type=image/png href=/veneer/favicons/android-144x144.png sizes=144x144><link rel=icon type=image/png href=/veneer/favicons/android-192x192.png sizes=192x192><title>Bin-Packing and NodeOverlay | Veneer</title>
+<meta name=description content="How Karpenter's bin-packing algorithm can affect and sometimes bypass NodeOverlay price adjustments."><meta property="og:url" content="https://oss.nextdoor.com/veneer/docs/concepts/binpacking/"><meta property="og:site_name" content="Veneer"><meta property="og:title" content="Bin-Packing and NodeOverlay"><meta property="og:description" content="How Karpenter's bin-packing algorithm can affect and sometimes bypass NodeOverlay price adjustments."><meta property="og:locale" content="en"><meta property="og:type" content="article"><meta property="article:section" content="docs"><meta itemprop=name content="Bin-Packing and NodeOverlay"><meta itemprop=description content="How Karpenter's bin-packing algorithm can affect and sometimes bypass NodeOverlay price adjustments."><meta itemprop=wordCount content="1650"><meta name=twitter:card content="summary"><meta name=twitter:title content="Bin-Packing and NodeOverlay"><meta name=twitter:description content="How Karpenter's bin-packing algorithm can affect and sometimes bypass NodeOverlay price adjustments."><link rel=preload href=/veneer/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css as=style integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><link href=/veneer/scss/main.min.c8fa29825328ed2efa978460f6b94c9b17d6bb0c0082bfba163e09fa42eea2e8.css rel=stylesheet integrity="sha256-yPopglMo7S76l4Rg9rlMmxfWuwwAgr+6Fj4J+kLuoug=" crossorigin=anonymous><script src=https://code.jquery.com/jquery-3.7.1.min.js integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin=anonymous></script><script defer src=https://unpkg.com/lunr@2.3.9/lunr.min.js integrity=sha384-203J0SNzyqHby3iU6hzvzltrWi/M41wOP5Gu+BiJMz5nwKykbkUx8Kp7iti0Lpli crossorigin=anonymous></script></head><body class=td-page><header><nav class="td-navbar js-navbar-scroll" data-bs-theme=dark><div class="container-fluid flex-column flex-md-row"><a class=navbar-brand href=/veneer/><span class="navbar-brand__logo navbar-logo"></span><span class=navbar-brand__name>Veneer</span></a><div class="td-navbar-nav-scroll ms-md-auto" id=main_navbar><ul class=navbar-nav><li class=nav-item><a class=nav-link href=/veneer/docs/><i class='fas fa-book'></i><span>Documentation</span></a></li><li class=nav-item><a class=nav-link href=https://github.com/nextdoor/veneer target=_blank rel=noopener><i class='fab fa-github'></i><span>GitHub</span></a></li></ul></div><div class="d-none d-lg-block"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/veneer/offline-search-index.67536b79b1e8092965527dcf4941e8ac.json data-offline-search-base-href=/ data-offline-search-max-results=10></div></div></div></nav></header><div class="container-fluid td-outer"><div class=td-main><div class="row flex-xl-nowrap"><aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none"><div id=td-sidebar-menu class=td-sidebar__inner><form class="td-sidebar__search d-flex align-items-center"><div class="td-search td-search--offline"><div class=td-search__icon></div><input type=search class="td-search__input form-control" placeholder="Search this site…" aria-label="Search this site…" autocomplete=off data-offline-search-index-json-src=/veneer/offline-search-index.67536b79b1e8092965527dcf4941e8ac.json data-offline-search-base-href=/ data-offline-search-max-results=10></div><button class="btn btn-link td-sidebar__toggle d-md-none p-0 ms-3 fas fa-bars" type=button data-bs-toggle=collapse data-bs-target=#td-section-nav aria-controls=td-section-nav aria-expanded=false aria-label="Toggle section navigation"></button></form><nav class="td-sidebar-nav collapse foldable-nav" id=td-section-nav><ul class="td-sidebar-nav__section pe-md-3 ul-0"><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-veneerdocs-li><a href=/veneer/docs/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section tree-root" id=m-veneerdocs><span>Documentation</span></a><ul class=ul-1><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-veneerdocsgetting-started-li><input type=checkbox id=m-veneerdocsgetting-started-check>
+<label for=m-veneerdocsgetting-started-check><a href=/veneer/docs/getting-started/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsgetting-started><span>Getting Started</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsgetting-startedinstallation-li><input type=checkbox id=m-veneerdocsgetting-startedinstallation-check>
+<label for=m-veneerdocsgetting-startedinstallation-check><a href=/veneer/docs/getting-started/installation/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsgetting-startedinstallation><span>Installation</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id=m-veneerdocsconcepts-li><input type=checkbox id=m-veneerdocsconcepts-check checked>
+<label for=m-veneerdocsconcepts-check><a href=/veneer/docs/concepts/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsconcepts><span>Concepts</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptsarchitecture-li><input type=checkbox id=m-veneerdocsconceptsarchitecture-check>
+<label for=m-veneerdocsconceptsarchitecture-check><a href=/veneer/docs/concepts/architecture/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsarchitecture><span>Architecture</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptsinstance-selection-li><input type=checkbox id=m-veneerdocsconceptsinstance-selection-check>
+<label for=m-veneerdocsconceptsinstance-selection-check><a href=/veneer/docs/concepts/instance-selection/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsinstance-selection><span>Instance Selection Deep Dive</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id=m-veneerdocsconceptsbinpacking-li><input type=checkbox id=m-veneerdocsconceptsbinpacking-check checked>
+<label for=m-veneerdocsconceptsbinpacking-check><a href=/veneer/docs/concepts/binpacking/ class="align-left ps-0 active td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptsbinpacking><span class=td-sidebar-nav-active-item>Bin-Packing and NodeOverlay</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsconceptspreferences-li><input type=checkbox id=m-veneerdocsconceptspreferences-check>
+<label for=m-veneerdocsconceptspreferences-check><a href=/veneer/docs/concepts/preferences/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsconceptspreferences><span>Instance Preferences</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id=m-veneerdocsreference-li><input type=checkbox id=m-veneerdocsreference-check>
+<label for=m-veneerdocsreference-check><a href=/veneer/docs/reference/ class="align-left ps-0 td-sidebar-link td-sidebar-link__section" id=m-veneerdocsreference><span>Reference</span></a></label><ul class="ul-2 foldable"><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferenceconfiguration-li><input type=checkbox id=m-veneerdocsreferenceconfiguration-check>
+<label for=m-veneerdocsreferenceconfiguration-check><a href=/veneer/docs/reference/configuration/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferenceconfiguration><span>Configuration</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencemetrics-li><input type=checkbox id=m-veneerdocsreferencemetrics-check>
+<label for=m-veneerdocsreferencemetrics-check><a href=/veneer/docs/reference/metrics/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencemetrics><span>Metrics</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencehelm-chart-li><input type=checkbox id=m-veneerdocsreferencehelm-chart-check>
+<label for=m-veneerdocsreferencehelm-chart-check><a href=/veneer/docs/reference/helm-chart/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencehelm-chart><span>Helm Chart</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsreferencenodeoverlay-li><input type=checkbox id=m-veneerdocsreferencenodeoverlay-check>
+<label for=m-veneerdocsreferencenodeoverlay-check><a href=/veneer/docs/reference/nodeoverlay/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsreferencenodeoverlay><span>NodeOverlay CRD</span></a></label></li></ul></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocstroubleshooting-li><input type=checkbox id=m-veneerdocstroubleshooting-check>
+<label for=m-veneerdocstroubleshooting-check><a href=/veneer/docs/troubleshooting/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocstroubleshooting><span>Troubleshooting</span></a></label></li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id=m-veneerdocsdevelopment-li><input type=checkbox id=m-veneerdocsdevelopment-check>
+<label for=m-veneerdocsdevelopment-check><a href=/veneer/docs/development/ class="align-left ps-0 td-sidebar-link td-sidebar-link__page" id=m-veneerdocsdevelopment><span>Development</span></a></label></li></ul></li></ul></nav></div></aside><aside class="d-none d-xl-block col-xl-2 td-sidebar-toc d-print-none"><div class="td-page-meta ms-2 pb-1 pt-2 mb-0"></div><div class=td-toc><nav id=TableOfContents><ul><li><a href=#overview>Overview</a></li><li><a href=#the-bin-packing-algorithm>The Bin-Packing Algorithm</a><ul><li><a href=#how-it-works>How It Works</a></li><li><a href=#code-pod-sorting>Code: Pod Sorting</a></li><li><a href=#code-scheduling-loop>Code: Scheduling Loop</a></li><li><a href=#code-adding-pods-to-nodeclaims>Code: Adding Pods to NodeClaims</a></li><li><a href=#example-bin-packing-in-action>Example: Bin-Packing in Action</a></li></ul></li><li><a href=#how-bin-packing-filters-instance-types>How Bin-Packing Filters Instance Types</a><ul><li><a href=#code-instance-type-filtering>Code: Instance Type Filtering</a></li><li><a href=#visualization>Visualization</a></li></ul></li><li><a href=#the-arm64-size-gap-problem>The ARM64 Size Gap Problem</a><ul><li><a href=#the-problem-scenario>The Problem Scenario</a></li></ul></li><li><a href=#when-nodeoverlay-cannot-help>When NodeOverlay Cannot Help</a><ul><li><a href=#the-decision-flow>The Decision Flow</a></li></ul></li><li><a href=#diagnosing-the-issue>Diagnosing the Issue</a><ul><li><a href=#symptom-x86-selected-despite-arm64-price-preference>Symptom: x86 Selected Despite ARM64 Price Preference</a></li><li><a href=#example-identifying-the-problem-in-nodeclaim>Example: Identifying the Problem in NodeClaim</a></li><li><a href=#example-cloudtrail-request-analysis>Example: CloudTrail Request Analysis</a></li></ul></li><li><a href=#solutions-and-workarounds>Solutions and Workarounds</a><ul><li><a href=#solution-1-increase-maxvcpu-to-include-larger-arm64-sizes>Solution 1: Increase maxVcpu to Include Larger ARM64 Sizes</a></li><li><a href=#solution-2-reduce-maxvcpu-to-exclude-x86-only-sizes>Solution 2: Reduce maxVcpu to Exclude x86-Only Sizes</a></li><li><a href=#solution-3-explicitly-exclude-32xlarge-sizes>Solution 3: Explicitly Exclude 32xlarge Sizes</a></li><li><a href=#solution-4-force-architecture-in-nodepool>Solution 4: Force Architecture in NodePool</a></li></ul></li><li><a href=#summary>Summary</a></li></ul></nav></div></aside><main class="col-12 col-md-9 col-xl-8 ps-md-5" role=main><nav aria-label=breadcrumb class=td-breadcrumbs><ol class=breadcrumb><li class=breadcrumb-item><a href=/veneer/docs/>Documentation</a></li><li class=breadcrumb-item><a href=/veneer/docs/concepts/>Concepts</a></li><li class="breadcrumb-item active" aria-current=page>Bin-Packing and NodeOverlay</li></ol></nav><div class=td-content><h1>Bin-Packing and NodeOverlay</h1><div class=lead>How Karpenter&rsquo;s bin-packing algorithm can affect and sometimes bypass NodeOverlay price adjustments.</div><header class=article-meta></header><p>This document explains how Karpenter&rsquo;s bin-packing algorithm can affect &ndash; and sometimes bypass &ndash; NodeOverlay price adjustments, leading to unexpected instance selection behavior.</p><h2 id=overview>Overview</h2><p>Veneer&rsquo;s NodeOverlay feature influences instance selection by adjusting prices, which become Priority values in AWS CreateFleet requests. However, this influence only works when multiple instance types are eligible candidates.</p><p><strong>The key insight</strong>: Karpenter&rsquo;s bin-packing algorithm filters instance types <em>before</em> NodeOverlay can influence selection. If bin-packing eliminates all instances of a particular architecture, NodeOverlay has nothing to prefer.</p><pre class=mermaid>flowchart LR
+    subgraph Karpenter[&#34;Karpenter Processing&#34;]
+        Pods[&#34;Pending Pods&#34;] --&gt; BinPack[&#34;Bin-Packing&lt;br/&gt;Algorithm&#34;]
+        BinPack --&gt; Filter[&#34;Filter Instance&lt;br/&gt;Types&#34;]
+        Filter --&gt; Overlay[&#34;Apply NodeOverlay&lt;br/&gt;Price Adjustments&#34;]
+        Overlay --&gt; Fleet[&#34;CreateFleet&lt;br/&gt;Request&#34;]
+    end
+
+    Filter --&gt;|&#34;If all ARM64&lt;br/&gt;filtered out&#34;| NoInfluence[&#34;NodeOverlay&lt;br/&gt;cannot help&#34;]
+
+    style NoInfluence fill:#FFB6C1,color:#000</pre><h2 id=the-bin-packing-algorithm>The Bin-Packing Algorithm</h2><p>Karpenter uses a <strong>First-Fit Decreasing (FFD)</strong> bin-packing algorithm to minimize the number of nodes needed for pending pods.</p><h3 id=how-it-works>How It Works</h3><ol><li><strong>Sort pods by resource requirements</strong> (largest first)</li><li><strong>For each pod</strong>, try to fit it into an existing &ldquo;virtual node&rdquo;</li><li><strong>If no existing node can fit the pod</strong>, create a new virtual node</li><li><strong>Select the smallest instance type</strong> that can satisfy each virtual node&rsquo;s aggregate requirements</li></ol><h3 id=code-pod-sorting>Code: Pod Sorting</h3><p>Pods are sorted by CPU and memory in descending order before scheduling begins. This is the first step of the FFD algorithm.</p><p>From <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L37-L43><code>queue.go:37-43</code></a>:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#75715e>// NewQueue constructs a new queue given the input pods, sorting them to optimize for bin-packing into nodes.</span>
+</span></span><span style=display:flex><span><span style=color:#66d9ef>func</span> <span style=color:#a6e22e>NewQueue</span>(<span style=color:#a6e22e>pods</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>Pod</span>, <span style=color:#a6e22e>podData</span> <span style=color:#66d9ef>map</span>[<span style=color:#a6e22e>types</span>.<span style=color:#a6e22e>UID</span>]<span style=color:#f92672>*</span><span style=color:#a6e22e>PodData</span>) <span style=color:#f92672>*</span><span style=color:#a6e22e>Queue</span> {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>sort</span>.<span style=color:#a6e22e>Slice</span>(<span style=color:#a6e22e>pods</span>, <span style=color:#a6e22e>byCPUAndMemoryDescending</span>(<span style=color:#a6e22e>pods</span>, <span style=color:#a6e22e>podData</span>))
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#f92672>&amp;</span><span style=color:#a6e22e>Queue</span>{
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>pods</span>:    <span style=color:#a6e22e>pods</span>,
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>lastLen</span>: <span style=color:#66d9ef>map</span>[<span style=color:#a6e22e>types</span>.<span style=color:#a6e22e>UID</span>]<span style=color:#66d9ef>int</span>{},
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>The sorting function prioritizes CPU, then memory. From <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/queue.go#L72-L108><code>queue.go:72-108</code></a>:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> <span style=color:#a6e22e>byCPUAndMemoryDescending</span>(<span style=color:#a6e22e>pods</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>Pod</span>, <span style=color:#a6e22e>podData</span> <span style=color:#66d9ef>map</span>[<span style=color:#a6e22e>types</span>.<span style=color:#a6e22e>UID</span>]<span style=color:#f92672>*</span><span style=color:#a6e22e>PodData</span>) <span style=color:#66d9ef>func</span>(<span style=color:#a6e22e>i</span> <span style=color:#66d9ef>int</span>, <span style=color:#a6e22e>j</span> <span style=color:#66d9ef>int</span>) <span style=color:#66d9ef>bool</span> {
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#66d9ef>func</span>(<span style=color:#a6e22e>i</span>, <span style=color:#a6e22e>j</span> <span style=color:#66d9ef>int</span>) <span style=color:#66d9ef>bool</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>lhs</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>podData</span>[<span style=color:#a6e22e>lhsPod</span>.<span style=color:#a6e22e>UID</span>].<span style=color:#a6e22e>Requests</span>
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>rhs</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>podData</span>[<span style=color:#a6e22e>rhsPod</span>.<span style=color:#a6e22e>UID</span>].<span style=color:#a6e22e>Requests</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>cpuCmp</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>resources</span>.<span style=color:#a6e22e>Cmp</span>(<span style=color:#a6e22e>lhs</span>[<span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>ResourceCPU</span>], <span style=color:#a6e22e>rhs</span>[<span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>ResourceCPU</span>])
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>cpuCmp</span> &lt; <span style=color:#ae81ff>0</span> {
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// LHS has less CPU, so it should be sorted after</span>
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>return</span> <span style=color:#66d9ef>false</span>
+</span></span><span style=display:flex><span>        } <span style=color:#66d9ef>else</span> <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>cpuCmp</span> &gt; <span style=color:#ae81ff>0</span> {
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>return</span> <span style=color:#66d9ef>true</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// ... memory comparison follows</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=code-scheduling-loop>Code: Scheduling Loop</h3><p>The main scheduling loop in <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L381-L436><code>scheduler.go:381-436</code></a> processes pods in order:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>s</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>Scheduler</span>) <span style=color:#a6e22e>Solve</span>(<span style=color:#a6e22e>ctx</span> <span style=color:#a6e22e>context</span>.<span style=color:#a6e22e>Context</span>, <span style=color:#a6e22e>pods</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>corev1</span>.<span style=color:#a6e22e>Pod</span>) (<span style=color:#a6e22e>Results</span>, <span style=color:#66d9ef>error</span>) {
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// ...</span>
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>q</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>NewQueue</span>(<span style=color:#a6e22e>pods</span>, <span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>cachedPodData</span>)
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>for</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>pod</span>, <span style=color:#a6e22e>ok</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>q</span>.<span style=color:#a6e22e>Pop</span>()
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>if</span> !<span style=color:#a6e22e>ok</span> {
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>break</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>trySchedule</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>pod</span>.<span style=color:#a6e22e>DeepCopy</span>()); <span style=color:#a6e22e>err</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>            <span style=color:#75715e>// ... handle error, relax preferences, retry</span>
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// ...</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=code-adding-pods-to-nodeclaims>Code: Adding Pods to NodeClaims</h3><p>When adding a pod, Karpenter tries existing nodes first, then in-flight NodeClaims, then creates new ones. From <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/scheduler.go#L493-L518><code>scheduler.go:493-518</code></a>:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>s</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>Scheduler</span>) <span style=color:#a6e22e>add</span>(<span style=color:#a6e22e>ctx</span> <span style=color:#a6e22e>context</span>.<span style=color:#a6e22e>Context</span>, <span style=color:#a6e22e>pod</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>corev1</span>.<span style=color:#a6e22e>Pod</span>) <span style=color:#66d9ef>error</span> {
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// first try to schedule against an in-flight real node</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>addToExistingNode</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>pod</span>); <span style=color:#a6e22e>err</span> <span style=color:#f92672>==</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#66d9ef>nil</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Sort NodeClaims by number of pods (fewer pods = more room)</span>
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>sort</span>.<span style=color:#a6e22e>Slice</span>(<span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>newNodeClaims</span>, <span style=color:#66d9ef>func</span>(<span style=color:#a6e22e>a</span>, <span style=color:#a6e22e>b</span> <span style=color:#66d9ef>int</span>) <span style=color:#66d9ef>bool</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> len(<span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>newNodeClaims</span>[<span style=color:#a6e22e>a</span>].<span style=color:#a6e22e>Pods</span>) &lt; len(<span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>newNodeClaims</span>[<span style=color:#a6e22e>b</span>].<span style=color:#a6e22e>Pods</span>)
+</span></span><span style=display:flex><span>    })
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Pick existing node that we are about to create</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>addToInflightNode</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>pod</span>); <span style=color:#a6e22e>err</span> <span style=color:#f92672>==</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>return</span> <span style=color:#66d9ef>nil</span>
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// Create a new NodeClaim</span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>s</span>.<span style=color:#a6e22e>addToNewNodeClaim</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>pod</span>)
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=example-bin-packing-in-action>Example: Bin-Packing in Action</h3><p>Consider 10 pending pods, each requesting 12 vCPUs:</p><pre tabindex=0><code>Total CPU needed: 10 pods x 12 vCPU = 120 vCPU
+</code></pre><p>Karpenter&rsquo;s options:</p><ul><li><strong>Option A</strong>: 2 nodes x 64 vCPU = 128 vCPU capacity (8 vCPU wasted)</li><li><strong>Option B</strong>: 1 node x 128 vCPU = 128 vCPU capacity (8 vCPU wasted)</li></ul><p>The algorithm prefers <strong>Option B</strong> because it minimizes node count, even though the total capacity is the same.</p><h2 id=how-bin-packing-filters-instance-types>How Bin-Packing Filters Instance Types</h2><p>When Karpenter determines that a single node with 120+ vCPU is optimal, it filters the instance type list to only include types that can satisfy this requirement.</p><h3 id=code-instance-type-filtering>Code: Instance Type Filtering</h3><p>The filtering happens in <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L383-L451><code>nodeclaim.go:383-451</code></a>:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> <span style=color:#a6e22e>filterInstanceTypesByRequirements</span>(
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>instanceTypes</span> []<span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>requirements</span> <span style=color:#a6e22e>scheduling</span>.<span style=color:#a6e22e>Requirements</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>podRequests</span>, <span style=color:#a6e22e>daemonRequests</span>, <span style=color:#a6e22e>totalRequests</span> <span style=color:#a6e22e>corev1</span>.<span style=color:#a6e22e>ResourceList</span>,
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>relaxMinValues</span> <span style=color:#66d9ef>bool</span>,
+</span></span><span style=display:flex><span>) (<span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceTypes</span>, <span style=color:#66d9ef>map</span>[<span style=color:#66d9ef>string</span>]<span style=color:#66d9ef>int</span>, <span style=color:#66d9ef>error</span>) {
+</span></span><span style=display:flex><span>    <span style=color:#a6e22e>remaining</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceTypes</span>{}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>it</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>instanceTypes</span> {
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>itCompat</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>compatible</span>(<span style=color:#a6e22e>it</span>, <span style=color:#a6e22e>requirements</span>)
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>itFits</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>fits</span>(<span style=color:#a6e22e>it</span>, <span style=color:#a6e22e>totalRequests</span>)  <span style=color:#75715e>// &lt;-- This checks if instance can fit total resources</span>
+</span></span><span style=display:flex><span>        <span style=color:#a6e22e>itHasOffering</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>false</span>
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>of</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>it</span>.<span style=color:#a6e22e>Offerings</span> {
+</span></span><span style=display:flex><span>            <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>of</span>.<span style=color:#a6e22e>Available</span> <span style=color:#f92672>&amp;&amp;</span> <span style=color:#a6e22e>requirements</span>.<span style=color:#a6e22e>IsCompatible</span>(<span style=color:#a6e22e>of</span>.<span style=color:#a6e22e>Requirements</span>, <span style=color:#f92672>...</span>) {
+</span></span><span style=display:flex><span>                <span style=color:#a6e22e>itHasOffering</span> = <span style=color:#66d9ef>true</span>
+</span></span><span style=display:flex><span>                <span style=color:#66d9ef>break</span>
+</span></span><span style=display:flex><span>            }
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>        <span style=color:#75715e>// Only keep instance types that meet ALL criteria</span>
+</span></span><span style=display:flex><span>        <span style=color:#66d9ef>if</span> <span style=color:#a6e22e>itCompat</span> <span style=color:#f92672>&amp;&amp;</span> <span style=color:#a6e22e>itFits</span> <span style=color:#f92672>&amp;&amp;</span> <span style=color:#a6e22e>itHasOffering</span> {
+</span></span><span style=display:flex><span>            <span style=color:#a6e22e>remaining</span> = append(<span style=color:#a6e22e>remaining</span>, <span style=color:#a6e22e>it</span>)
+</span></span><span style=display:flex><span>        }
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>    <span style=color:#75715e>// ...</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p>The <code>fits()</code> function at <a href=https://github.com/kubernetes-sigs/karpenter/blob/v1.1.0/pkg/controllers/provisioning/scheduling/nodeclaim.go#L457-L459><code>nodeclaim.go:457-459</code></a> checks if an instance type can accommodate the total resource requests:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> <span style=color:#a6e22e>fits</span>(<span style=color:#a6e22e>instanceType</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>cloudprovider</span>.<span style=color:#a6e22e>InstanceType</span>, <span style=color:#a6e22e>requests</span> <span style=color:#a6e22e>corev1</span>.<span style=color:#a6e22e>ResourceList</span>) <span style=color:#66d9ef>bool</span> {
+</span></span><span style=display:flex><span>    <span style=color:#66d9ef>return</span> <span style=color:#a6e22e>resources</span>.<span style=color:#a6e22e>Fits</span>(<span style=color:#a6e22e>requests</span>, <span style=color:#a6e22e>instanceType</span>.<span style=color:#a6e22e>Allocatable</span>())
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h3 id=visualization>Visualization</h3><pre class=mermaid>flowchart TB
+    subgraph Before[&#34;Before Bin-Packing Filter&#34;]
+        All[&#34;All Instance Types&#34;]
+        ARM64_1[&#34;arm64: 24xlarge (96 vCPU)&#34;]
+        ARM64_2[&#34;arm64: 48xlarge (192 vCPU)&#34;]
+        x86_1[&#34;x86: 24xlarge (96 vCPU)&#34;]
+        x86_2[&#34;x86: 32xlarge (128 vCPU)&#34;]
+        x86_3[&#34;x86: 48xlarge (192 vCPU)&#34;]
+        All --&gt; ARM64_1 &amp; ARM64_2 &amp; x86_1 &amp; x86_2 &amp; x86_3
+    end
+
+    subgraph Filter[&#34;Bin-Pack Requirement: &gt;= 120 vCPU&#34;]
+        Check{&#34;fits(it, totalRequests)&lt;br/&gt;Can fit 120 vCPU?&#34;}
+    end
+
+    subgraph After[&#34;After Bin-Packing Filter&#34;]
+        Remaining[&#34;Eligible Instance Types&#34;]
+        ARM64_2_ok[&#34;arm64: 48xlarge (192 vCPU)&#34;]
+        x86_2_ok[&#34;x86: 32xlarge (128 vCPU)&#34;]
+        x86_3_ok[&#34;x86: 48xlarge (192 vCPU)&#34;]
+        Remaining --&gt; ARM64_2_ok &amp; x86_2_ok &amp; x86_3_ok
+    end
+
+    Before --&gt; Filter --&gt; After
+
+    style ARM64_1 fill:#FFB6C1,color:#000
+    style x86_1 fill:#FFB6C1,color:#000</pre><p>In this example, both architectures still have eligible instances (48xlarge), so NodeOverlay can influence the selection.</p><h2 id=the-arm64-size-gap-problem>The ARM64 Size Gap Problem</h2><p>AWS Graviton (ARM64) instances have a size gap that x86 instances don&rsquo;t have:</p><table><thead><tr><th>Size</th><th>ARM64 (Graviton)</th><th>x86 (Intel/AMD)</th></tr></thead><tbody><tr><td>24xlarge</td><td>96 vCPU</td><td>96 vCPU</td></tr><tr><td>32xlarge</td><td><strong>Does not exist</strong></td><td>128 vCPU</td></tr><tr><td>48xlarge</td><td>192 vCPU</td><td>192 vCPU</td></tr></tbody></table><p>This gap creates a range (97-128 vCPU) where only x86 instances are available.</p><h3 id=the-problem-scenario>The Problem Scenario</h3><p>If your NodePool has <code>maxVcpu: 128</code> and bin-packing requires 100+ vCPU:</p><pre class=mermaid>flowchart TB
+    subgraph NodePool[&#34;NodePool Configuration&#34;]
+        Config[&#34;maxVcpu: 128&#34;]
+    end
+
+    subgraph Available[&#34;Available Instance Types&#34;]
+        ARM64[&#34;ARM64 Options&#34;]
+        x86[&#34;x86 Options&#34;]
+
+        ARM64_24[&#34;24xlarge: 96 vCPU&#34;]
+        ARM64_48[&#34;48xlarge: 192 vCPU (exceeds maxVcpu)&#34;]
+
+        x86_24[&#34;24xlarge: 96 vCPU&#34;]
+        x86_32[&#34;32xlarge: 128 vCPU&#34;]
+
+        ARM64 --&gt; ARM64_24 &amp; ARM64_48
+        x86 --&gt; x86_24 &amp; x86_32
+    end
+
+    subgraph BinPack[&#34;Bin-Packing: Need 100 vCPU&#34;]
+        Need[&#34;fits(it, 100 vCPU)&lt;br/&gt;Minimum: 100 vCPU&#34;]
+    end
+
+    subgraph Result[&#34;Eligible After Filtering&#34;]
+        Only[&#34;Only x86 32xlarge qualifies&#34;]
+    end
+
+    NodePool --&gt; Available
+    Available --&gt; BinPack
+    BinPack --&gt; Result
+
+    style ARM64_24 fill:#FFB6C1,color:#000
+    style ARM64_48 fill:#FFB6C1,color:#000
+    style x86_24 fill:#FFB6C1,color:#000
+    style Only fill:#FFB6C1,color:#000</pre><p><strong>Result</strong>: ARM64 is completely filtered out. NodeOverlay&rsquo;s <code>-50%</code> price adjustment on ARM64 has no effect because there are no ARM64 candidates.</p><h2 id=when-nodeoverlay-cannot-help>When NodeOverlay Cannot Help</h2><p>NodeOverlay adjusts the <em>priority</em> of instance types in the CreateFleet request. It cannot:</p><ol><li><strong>Add instance types</strong> that were filtered out by bin-packing</li><li><strong>Change NodePool requirements</strong> (like maxVcpu)</li><li><strong>Override Karpenter&rsquo;s bin-packing decisions</strong></li></ol><h3 id=the-decision-flow>The Decision Flow</h3><pre class=mermaid>flowchart TB
+    subgraph Phase1[&#34;Phase 1: Karpenter Filtering&#34;]
+        direction TB
+        P1_1[&#34;NodePool requirements filter&#34;]
+        P1_2[&#34;Bin-packing: fits(it, totalRequests)&#34;]
+        P1_3[&#34;AMI compatibility filter&#34;]
+        P1_1 --&gt; P1_2 --&gt; P1_3
+    end
+
+    subgraph Phase2[&#34;Phase 2: NodeOverlay Influence&#34;]
+        direction TB
+        P2_1[&#34;Apply price adjustments&lt;br/&gt;(AdjustedPrice())&#34;]
+        P2_2[&#34;Set Priority values&#34;]
+        P2_3[&#34;Choose allocation strategy&#34;]
+        P2_1 --&gt; P2_2 --&gt; P2_3
+    end
+
+    subgraph Phase3[&#34;Phase 3: AWS Selection&#34;]
+        direction TB
+        P3_1[&#34;Check spot capacity&#34;]
+        P3_2[&#34;Apply allocation strategy&#34;]
+        P3_3[&#34;Select instance&#34;]
+        P3_1 --&gt; P3_2 --&gt; P3_3
+    end
+
+    Phase1 --&gt;|&#34;Filtered list&#34;| Phase2
+    Phase2 --&gt;|&#34;CreateFleet request&#34;| Phase3
+
+    Note1[&#34;NodeOverlay can only&lt;br/&gt;influence instances that&lt;br/&gt;survive Phase 1&#34;]
+
+    Phase2 -.-&gt; Note1
+
+    style Note1 fill:#FFFACD,color:#000</pre><h2 id=diagnosing-the-issue>Diagnosing the Issue</h2><h3 id=symptom-x86-selected-despite-arm64-price-preference>Symptom: x86 Selected Despite ARM64 Price Preference</h3><p>If you&rsquo;ve configured a NodeOverlay to prefer ARM64 but are still seeing x86 instances:</p><ol><li><p><strong>Check the NodeClaim requirements</strong></p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-bash data-lang=bash><span style=display:flex><span>kubectl get nodeclaim &lt;name&gt; -o yaml | grep -A <span style=color:#ae81ff>50</span> requirements
+</span></span></code></pre></div><p>Look for the instance type list. If only x86 types are listed, bin-packing has already filtered out ARM64.</p></li><li><p><strong>Check CloudTrail CreateFleet requests</strong></p><p>Look at the <code>LaunchTemplateConfigs</code> in the request:</p><ul><li><strong>Two configs</strong> (ARM64 AMI + x86 AMI) = NodeOverlay can influence</li><li><strong>One config</strong> (x86 AMI only) = ARM64 was filtered out before NodeOverlay</li></ul></li><li><p><strong>Check the aggregate CPU requirements</strong></p><p>Sum up the CPU requests of pods that triggered the NodeClaim. If it exceeds the ARM64 size threshold (e.g., 96 vCPU for 24xlarge), that&rsquo;s likely the cause.</p></li></ol><h3 id=example-identifying-the-problem-in-nodeclaim>Example: Identifying the Problem in NodeClaim</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-bash data-lang=bash><span style=display:flex><span><span style=color:#75715e># Get the NodeClaim</span>
+</span></span><span style=display:flex><span>kubectl get nodeclaim example-abc123 -o yaml
+</span></span></code></pre></div><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>    - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>node.kubernetes.io/instance-type</span>
+</span></span><span style=display:flex><span>      <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>In</span>
+</span></span><span style=display:flex><span>      <span style=color:#f92672>values</span>:
+</span></span><span style=display:flex><span>        - <span style=color:#ae81ff>m7a.32xlarge   </span> <span style=color:#75715e># 128 vCPU, x86 only</span>
+</span></span><span style=display:flex><span>        - <span style=color:#ae81ff>m7i.32xlarge   </span> <span style=color:#75715e># 128 vCPU, x86 only</span>
+</span></span><span style=display:flex><span>        - <span style=color:#ae81ff>r7a.32xlarge   </span> <span style=color:#75715e># 128 vCPU, x86 only</span>
+</span></span><span style=display:flex><span>        <span style=color:#75715e># Notice: No ARM64 instances listed!</span>
+</span></span></code></pre></div><p>This NodeClaim has already been filtered to only include 32xlarge x86 instances.</p><h3 id=example-cloudtrail-request-analysis>Example: CloudTrail Request Analysis</h3><p><strong>With NodeOverlay working (both architectures present):</strong></p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json><span style=display:flex><span>{
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;LaunchTemplateConfigs&#34;</span>: [
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;LaunchTemplateSpecification&#34;</span>: { <span style=color:#f92672>&#34;LaunchTemplateName&#34;</span>: <span style=color:#e6db74>&#34;arm64-template&#34;</span> },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;Overrides&#34;</span>: [
+</span></span><span style=display:flex><span>        { <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m8g.24xlarge&#34;</span>, <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.635</span> }
+</span></span><span style=display:flex><span>      ]
+</span></span><span style=display:flex><span>    },
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;LaunchTemplateSpecification&#34;</span>: { <span style=color:#f92672>&#34;LaunchTemplateName&#34;</span>: <span style=color:#e6db74>&#34;x86-template&#34;</span> },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;Overrides&#34;</span>: [
+</span></span><span style=display:flex><span>        { <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m7i.24xlarge&#34;</span>, <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.78</span> }
+</span></span><span style=display:flex><span>      ]
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>  ]
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p><strong>Without ARM64 (bin-packing filtered it out):</strong></p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json><span style=display:flex><span>{
+</span></span><span style=display:flex><span>  <span style=color:#f92672>&#34;LaunchTemplateConfigs&#34;</span>: [
+</span></span><span style=display:flex><span>    {
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;LaunchTemplateSpecification&#34;</span>: { <span style=color:#f92672>&#34;LaunchTemplateName&#34;</span>: <span style=color:#e6db74>&#34;x86-template&#34;</span> },
+</span></span><span style=display:flex><span>      <span style=color:#f92672>&#34;Overrides&#34;</span>: [
+</span></span><span style=display:flex><span>        { <span style=color:#f92672>&#34;InstanceType&#34;</span>: <span style=color:#e6db74>&#34;m7i.32xlarge&#34;</span>, <span style=color:#f92672>&#34;Priority&#34;</span>: <span style=color:#ae81ff>0.95</span> }
+</span></span><span style=display:flex><span>      ]
+</span></span><span style=display:flex><span>    }
+</span></span><span style=display:flex><span>  ]
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><h2 id=solutions-and-workarounds>Solutions and Workarounds</h2><h3 id=solution-1-increase-maxvcpu-to-include-larger-arm64-sizes>Solution 1: Increase maxVcpu to Include Larger ARM64 Sizes</h3><p>If your NodePool has <code>maxVcpu: 128</code>, increase it to <code>192</code> to allow Graviton 48xlarge:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>karpenter.k8s.aws/instance-cpu</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>Lt</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>values</span>:
+</span></span><span style=display:flex><span>      - <span style=color:#e6db74>&#34;193&#34;</span>  <span style=color:#75715e># Allows up to 192 vCPU (48xlarge)</span>
+</span></span></code></pre></div><p><strong>Trade-off</strong>: Larger nodes mean more pods per node, which may affect blast radius during node failures.</p><h3 id=solution-2-reduce-maxvcpu-to-exclude-x86-only-sizes>Solution 2: Reduce maxVcpu to Exclude x86-Only Sizes</h3><p>Set <code>maxVcpu: 96</code> to prevent bin-packing from choosing 32xlarge:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>karpenter.k8s.aws/instance-cpu</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>Lt</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>values</span>:
+</span></span><span style=display:flex><span>      - <span style=color:#e6db74>&#34;97&#34;</span>  <span style=color:#75715e># Max 96 vCPU (24xlarge)</span>
+</span></span></code></pre></div><p><strong>Trade-off</strong>: Karpenter may create more nodes to fit the same workload.</p><h3 id=solution-3-explicitly-exclude-32xlarge-sizes>Solution 3: Explicitly Exclude 32xlarge Sizes</h3><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>karpenter.k8s.aws/instance-size</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>NotIn</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>values</span>:
+</span></span><span style=display:flex><span>      - <span style=color:#ae81ff>32xlarge</span>
+</span></span></code></pre></div><p><strong>Trade-off</strong>: Same as Solution 2 &ndash; more nodes may be created.</p><h3 id=solution-4-force-architecture-in-nodepool>Solution 4: Force Architecture in NodePool</h3><p>If ARM64 is strongly preferred, constrain the NodePool:</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>requirements</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>key</span>: <span style=color:#ae81ff>kubernetes.io/arch</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>operator</span>: <span style=color:#ae81ff>In</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>values</span>:
+</span></span><span style=display:flex><span>      - <span style=color:#ae81ff>arm64</span>
+</span></span></code></pre></div><p><strong>Trade-off</strong>: No x86 fallback if ARM64 spot capacity is unavailable.</p><h2 id=summary>Summary</h2><table><thead><tr><th>Stage</th><th>What Happens</th><th>Code Location</th><th>Can NodeOverlay Influence?</th></tr></thead><tbody><tr><td><strong>Pod Sorting</strong></td><td>Sort by CPU/memory descending</td><td><code>queue.go:37-43</code></td><td>No</td></tr><tr><td><strong>NodePool Requirements</strong></td><td>Filter by CPU, memory, family, etc.</td><td><code>scheduler.go:144-147</code></td><td>No</td></tr><tr><td><strong>Bin-Packing</strong></td><td><code>fits(it, totalRequests)</code></td><td><code>nodeclaim.go:457-459</code></td><td>No</td></tr><tr><td><strong>AMI Mapping</strong></td><td>Group instance types by architecture</td><td><code>resolver.go:145-196</code></td><td>No</td></tr><tr><td><strong>Price Adjustment</strong></td><td>Apply NodeOverlay adjustments</td><td><code>types.go:369-384</code></td><td><strong>Yes</strong></td></tr><tr><td><strong>CreateFleet</strong></td><td>AWS selects from eligible instances</td><td><code>instance.go:456-486</code></td><td><strong>Yes</strong> (via Priority)</td></tr></tbody></table><p><strong>Key Takeaways</strong>:</p><ol><li>NodeOverlay influences selection <em>among eligible candidates</em>, not the filtering process</li><li>The bin-packing <code>fits()</code> check happens before NodeOverlay can influence selection</li><li>The ARM64 size gap (no 32xlarge Graviton) can eliminate ARM64 from consideration</li><li>Check NodeClaim requirements and CloudTrail to diagnose unexpected selections</li><li>Adjust <code>maxVcpu</code> or exclude specific sizes to ensure ARM64 remains eligible</li></ol></div></main></div></div><footer class="td-footer row d-print-none"><div class=container-fluid><div class="row mx-md-2"><div class="td-footer__left col-6 col-sm-4 order-sm-1"></div><div class="td-footer__right col-6 col-sm-4 order-sm-3"><ul class=td-footer__links-list><li class=td-footer__links-item data-bs-toggle=tooltip title=GitHub aria-label=GitHub><a target=_blank rel=noopener href=https://github.com/nextdoor/veneer aria-label=GitHub><i class="fab fa-github"></i></a></li></ul></div><div class="td-footer__center col-12 col-sm-4 py-2 order-sm-2"><span class=td-footer__copyright>&copy;
+2026
+<span class=td-footer__authors>The Veneer Authors</span></span><span class=td-footer__all_rights_reserved>All Rights Reserved</span></div></div></div></footer></div><script type=module async>
+  import mermaid from "https:\/\/cdn.jsdelivr.net\/npm\/mermaid@latest\/dist\/mermaid.esm.min.mjs";
+
+  (function ($) {
+    if ($('.mermaid').length == 0) {
+      mermaid.initialize({ startOnLoad: false });
+      return;
+    }
+
+    var params = {};
+
+    
+    
+    var norm = function (defaultConfig, params) {
+      var result = {};
+      for (const key in defaultConfig) {
+        const keyLower = key.toLowerCase();
+        if (defaultConfig.hasOwnProperty(key) && params.hasOwnProperty(keyLower)) {
+          if (typeof defaultConfig[key] === "object") {
+            result[key] = norm(defaultConfig[key], params[keyLower]);
+          } else {
+            result[key] = params[keyLower];
+          }
+        }
+      }
+      return result;
+    };
+
+    var settings = norm(mermaid.mermaidAPI.defaultConfig, params);
+    settings.startOnLoad = true;
+    if ($('html[data-bs-theme="dark"]').length) {
+      settings.theme = 'dark';
+    }
+    mermaid.initialize(settings);
+
+    
+    const lightDarkModeThemeChangeHandler = function (mutationsList, observer) {
+      for (const mutation of mutationsList) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-bs-theme') {
+          
+          
+          
+          location.reload();
+        }
+      }
+    };
+
+    const observer = new MutationObserver(lightDarkModeThemeChangeHandler);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-bs-theme']
+    });
+    
+
+  })(jQuery);
+</script><script src=/veneer/js/main.min.4a7a8cc982d6f5fa05fafe95c8fcbc9cd50dee051600e57e7d587df2d2a35b07.js integrity="sha256-SnqMyYLW9foF+v6VyPy8nNUN7gUWAOV+fVh98tKjWwc=" crossorigin=anonymous></script><script defer src=/veneer/js/click-to-copy.min.73478a7d4807698aed7e355eb23f9890ca18fea3158604c8471746d046702bad.js integrity="sha256-c0eKfUgHaYrtfjVesj+YkMoY/qMVhgTIRxdG0EZwK60=" crossorigin=anonymous></script><script src=/veneer/js/tabpane-persist.js></script></body></html>
