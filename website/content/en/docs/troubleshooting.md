@@ -8,9 +8,9 @@ weight: 40
 
 ### No NodeOverlays Created
 
-**Symptom**: Veneer is running but no NodeOverlays appear.
+**Symptom:** Veneer is running but no NodeOverlays appear.
 
-**Check data availability**:
+**Check data availability:**
 ```bash
 # Check if Lumina data is available
 kubectl port-forward -n veneer-system svc/veneer-metrics 8080:8080
@@ -21,26 +21,26 @@ curl -s http://localhost:8080/metrics | grep veneer_lumina_data_available
 If `veneer_lumina_data_available` is `0`:
 1. Verify Lumina is running: `kubectl get pods -n lumina-system`
 2. Verify Prometheus is scraping Lumina: check Prometheus targets UI
-3. Verify the Prometheus URL is correct in Veneer's config
+3. Verify the Prometheus URL is correct in Veneer's [configuration]({{< relref "reference/configuration" >}})
 
-**Check utilization threshold**:
+**Check utilization threshold:**
 ```bash
 curl -s http://localhost:8080/metrics | grep veneer_savings_plan_utilization
 ```
 
-If utilization is above the configured threshold (default 95%), overlays will not be created because the pre-paid capacity is fully consumed.
+If utilization is above the configured [utilization threshold]({{< relref "reference/configuration" >}}) (default 95%), overlays will not be created because the pre-paid capacity is fully consumed.
 
-**Check disabled mode**:
+**Check disabled mode:**
 ```bash
 curl -s http://localhost:8080/metrics | grep veneer_config_overlays_disabled
 # Expected: veneer_config_overlays_disabled 0
 ```
 
-If `1`, Veneer is in disabled mode. Overlays are created but with an impossible requirement so they never match.
+If `1`, Veneer is in disabled mode. Overlays are created but with an impossible requirement so they never match. See the [NodeOverlay CRD reference]({{< relref "reference/nodeoverlay" >}}) for details on disabled mode overlays.
 
 ### x86 Selected Despite ARM64 Preference
 
-**Symptom**: You configured a preference for ARM64 but Karpenter still provisions x86 instances.
+**Symptom:** You configured a preference for ARM64 but Karpenter still provisions x86 instances.
 
 This can happen for several reasons:
 
@@ -52,12 +52,13 @@ This can happen for several reasons:
    ```bash
    kubectl get nodeoverlays -l veneer.io/type=preference
    ```
+   See the [NodeOverlay CRD reference]({{< relref "reference/nodeoverlay" >}}) for label and requirement details.
 
 See the [Bin-Packing]({{< relref "concepts/binpacking" >}}) page for diagnostic steps and solutions.
 
 ### "Failed to Query Data Freshness" Errors
 
-**Symptom**: Log errors about Prometheus connectivity.
+**Symptom:** Log errors about Prometheus connectivity.
 
 ```bash
 # Check Prometheus connectivity
@@ -81,7 +82,7 @@ kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
 
 ### "Context Deadline Exceeded" Errors
 
-**Symptom**: Timeout errors when querying Prometheus.
+**Symptom:** Timeout errors when querying Prometheus.
 
 1. Check that Lumina is running and healthy:
    ```bash
@@ -92,19 +93,21 @@ kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
 
 ### Port Already in Use
 
-**Symptom**: Veneer fails to start with a bind error.
+**Symptom:** Veneer fails to start with a bind error.
 
 ```bash
 # Find process using the port
 lsof -ti:8081 | xargs kill -9
 
-# Or change the port in config
+# Or change the port in config (see Configuration Reference)
 healthProbeBindAddress: ":8082"
 ```
 
+Port values are configurable via the [Configuration reference]({{< relref "reference/configuration" >}}) or [Helm chart values]({{< relref "reference/helm-chart" >}}).
+
 ### Overlays Created But Karpenter Ignores Them
 
-**Symptom**: NodeOverlays exist but provisioning behavior doesn't change.
+**Symptom:** NodeOverlays exist but provisioning behavior doesn't change.
 
 1. **Verify Karpenter supports NodeOverlay**:
    ```bash
@@ -120,7 +123,7 @@ healthProbeBindAddress: ":8082"
 
 ### "No Matching Capacity" Warnings
 
-**Symptom**: Veneer can't match Savings Plans utilization with capacity data.
+**Symptom:** Veneer can't match Savings Plans utilization with capacity data.
 
 1. Check that Lumina is exposing both utilization and capacity metrics
 2. Verify ARNs match between metrics
@@ -138,7 +141,7 @@ Veneer checks Lumina data freshness before each reconciliation. If data is stale
 curl -s http://localhost:8080/metrics | grep veneer_lumina_data_freshness_seconds
 ```
 
-The `veneer_lumina_data_available` metric reports whether data is fresh enough to act on.
+The `veneer_lumina_data_available` metric reports whether data is fresh enough to act on. See the [Metrics reference]({{< relref "reference/metrics" >}}) for the full list of available metrics.
 
 **Common causes of stale data**:
 - Lumina controller is not running or is unhealthy

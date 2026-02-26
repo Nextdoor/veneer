@@ -10,14 +10,27 @@ Veneer is a Kubernetes controller that bridges the gap between AWS cost data and
 
 ## Data Flow
 
-```
-Lumina --> Exposes SP/RI metrics to Prometheus
-             |
-Veneer --> Queries metrics, manages NodeOverlays
-             |
-Karpenter --> Uses adjusted pricing for provisioning decisions
-             |
-AWS CreateFleet --> Final instance selection based on Priority values
+```mermaid
+flowchart LR
+    Lumina["Lumina"]
+    Prom["Prometheus"]
+    Veneer["Veneer"]
+    NO["NodeOverlays"]
+    Karpenter["Karpenter"]
+    Fleet["AWS CreateFleet"]
+
+    Lumina -->|"expose SP/RI metrics"| Prom
+    Prom -->|"query cost data"| Veneer
+    Veneer -->|"create/update/delete"| NO
+    NO -->|"adjust pricing"| Karpenter
+    Karpenter -->|"Priority values"| Fleet
+
+    style Lumina fill:#e3f2fd,stroke:#1565c0,color:#1565c0
+    style Prom fill:#fbe9e7,stroke:#bf360c,color:#bf360c
+    style Veneer fill:#e0f2f1,stroke:#00695c,color:#00695c
+    style NO fill:#f1f8e9,stroke:#33691e,color:#33691e
+    style Karpenter fill:#ede7f6,stroke:#4527a0,color:#4527a0
+    style Fleet fill:#fff3e0,stroke:#e65100,color:#e65100
 ```
 
 1. **Lumina** discovers AWS Savings Plans, Reserved Instances, and running EC2 instances. It computes utilization and remaining capacity, then exposes these as Prometheus metrics.
@@ -33,6 +46,37 @@ Veneer runs two independent reconciliation loops:
 
 The metrics reconciler runs on a timed interval (every 5 minutes) and is responsible for cost-aware overlay management:
 
+```mermaid
+flowchart TD
+    Start["Timer fires (every 5 min)"]
+    Fresh{"Data fresh?"}
+    Query["Query Prometheus for\nSP utilization, SP capacity,\nRI counts"]
+    Decide{"For each SP/RI:\nutilization < threshold\nand capacity available?"}
+    Create["Create or update\nNodeOverlay"]
+    Delete["Delete NodeOverlay\n(if exists)"]
+    Skip["Skip reconciliation\n(preserve last state)"]
+    Done["Reconciliation complete"]
+
+    Start --> Fresh
+    Fresh -->|"Yes"| Query
+    Fresh -->|"No — stale data"| Skip
+    Query --> Decide
+    Decide -->|"Yes"| Create
+    Decide -->|"No"| Delete
+    Create --> Done
+    Delete --> Done
+    Skip --> Done
+
+    style Start fill:#e3f2fd,stroke:#1565c0,color:#1565c0
+    style Fresh fill:#fff3e0,stroke:#e65100,color:#e65100
+    style Query fill:#e0f2f1,stroke:#00695c,color:#00695c
+    style Decide fill:#fff3e0,stroke:#e65100,color:#e65100
+    style Create fill:#f1f8e9,stroke:#33691e,color:#33691e
+    style Delete fill:#fbe9e7,stroke:#bf360c,color:#bf360c
+    style Skip fill:#f5f5f5,stroke:#616161,color:#616161
+    style Done fill:#ede7f6,stroke:#4527a0,color:#4527a0
+```
+
 1. **Query Prometheus** for Lumina metrics:
    - Savings Plan utilization percentages
    - Savings Plan remaining capacity ($/hour)
@@ -47,6 +91,26 @@ The metrics reconciler runs on a timed interval (every 5 minutes) and is respons
 
 The NodePool reconciler watches for changes to Karpenter NodePool resources and manages preference-based overlays:
 
+```mermaid
+flowchart TD
+    Watch["Watch NodePool changes"]
+    Parse["Parse veneer.io/preference.N\nannotations"]
+    Gen["Generate NodeOverlay\nfor each preference"]
+    Clean["Clean up overlays for\nremoved preferences"]
+    GC["Garbage collect on\nNodePool deletion"]
+
+    Watch --> Parse
+    Parse --> Gen
+    Parse --> Clean
+    Watch -->|"NodePool deleted"| GC
+
+    style Watch fill:#e3f2fd,stroke:#1565c0,color:#1565c0
+    style Parse fill:#e0f2f1,stroke:#00695c,color:#00695c
+    style Gen fill:#f1f8e9,stroke:#33691e,color:#33691e
+    style Clean fill:#fbe9e7,stroke:#bf360c,color:#bf360c
+    style GC fill:#f5f5f5,stroke:#616161,color:#616161
+```
+
 1. **Watch NodePools** for `veneer.io/preference.N` annotations
 2. **Parse preference annotations** into matcher expressions and price adjustments
 3. **Generate NodeOverlays** for each preference
@@ -57,6 +121,18 @@ See [Instance Preferences]({{< relref "preferences" >}}) for annotation syntax a
 ## Overlay Lifecycle
 
 ### Cost-Aware Overlays (from Lumina data)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active : SP below threshold\nor RI count > 0
+    Active --> Active : Capacity still available\n(no change)
+    Active --> Removed : Utilization exceeds threshold\nor capacity exhausted
+    Removed --> Active : Capacity becomes available
+    Removed --> [*]
+    Active --> Preserved : Lumina data stale
+    Preserved --> Active : Fresh data arrives
+    Preserved --> Removed : Fresh data shows\nno capacity
+```
 
 Cost-aware overlays follow this lifecycle:
 

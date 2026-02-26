@@ -4,9 +4,32 @@ description: "Prometheus metrics exposed by the Veneer controller."
 weight: 20
 ---
 
-Veneer exposes Prometheus metrics on the metrics endpoint (default `:8080/metrics`). All metrics use the `veneer_` namespace prefix.
+Veneer exposes Prometheus metrics on the metrics endpoint (default `:8080/metrics`, configurable via [`metricsBindAddress`]({{< relref "configuration" >}})). All metrics use the `veneer_` namespace prefix.
 
 Veneer intentionally does **not** duplicate Lumina metrics (which are already in Prometheus). Instead, it focuses on what Veneer decided and what actions it took.
+
+## Metrics at a Glance
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| [`veneer_reconciliation_duration_seconds`](#reconciliation-metrics) | Histogram | Duration of reconciliation cycles |
+| [`veneer_reconciliation_total`](#reconciliation-metrics) | Counter | Total reconciliation cycles |
+| [`veneer_lumina_data_freshness_seconds`](#data-source-health-metrics) | Gauge | Age of Lumina data |
+| [`veneer_lumina_data_available`](#data-source-health-metrics) | Gauge | Whether Lumina data is fresh |
+| [`veneer_decision_total`](#decision-metrics) | Counter | Decisions made by the engine |
+| [`veneer_reserved_instance_data_available`](#reserved-instance-metrics) | Gauge | Whether RI metrics are available |
+| [`veneer_reserved_instance_count`](#reserved-instance-metrics) | Gauge | RI count by type and region |
+| [`veneer_savings_plan_utilization_percent`](#savings-plan-metrics) | Gauge | SP utilization percentage |
+| [`veneer_savings_plan_remaining_capacity_dollars`](#savings-plan-metrics) | Gauge | SP remaining capacity ($/hr) |
+| [`veneer_overlay_operations_total`](#nodeoverlay-lifecycle-metrics) | Counter | Total overlay operations |
+| [`veneer_overlay_operation_errors_total`](#nodeoverlay-lifecycle-metrics) | Counter | Total overlay operation errors |
+| [`veneer_overlay_count`](#nodeoverlay-lifecycle-metrics) | Gauge | Current overlay count |
+| [`veneer_prometheus_query_duration_seconds`](#prometheus-query-metrics) | Histogram | Prometheus query duration |
+| [`veneer_prometheus_query_errors_total`](#prometheus-query-metrics) | Counter | Prometheus query errors |
+| [`veneer_prometheus_query_result_count`](#prometheus-query-metrics) | Gauge | Prometheus query result count |
+| [`veneer_config_overlays_disabled`](#configuration-metrics) | Gauge | Whether overlays are disabled |
+| [`veneer_config_utilization_threshold_percent`](#configuration-metrics) | Gauge | Configured utilization threshold |
+| [`veneer_info`](#info-metric) | Gauge | Controller version info |
 
 ## Reconciliation Metrics
 

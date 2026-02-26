@@ -4,7 +4,7 @@ description: "All Veneer configuration options, environment variables, CLI flags
 weight: 10
 ---
 
-Veneer is configured via YAML file, environment variables, or CLI flags. Configuration precedence (highest to lowest):
+Veneer is configured via YAML file, environment variables, or CLI flags. For Helm-based deployments, configuration values are passed through the `config` section of the [Helm chart values]({{< relref "helm-chart" >}}). Configuration precedence (highest to lowest):
 
 1. CLI flags
 2. Environment variables (`VENEER_*` prefix)
@@ -89,7 +89,7 @@ Both `aws.accountId` and `aws.region` are **required**. Veneer uses them to scop
 
 ### Overlay Weights
 
-Weights control overlay precedence when multiple overlays target the same instances. Higher weight wins.
+Weights control overlay precedence when multiple overlays target the same instances. Higher weight wins. See the [NodeOverlay CRD reference]({{< relref "nodeoverlay" >}}) for details on the weight system.
 
 | Option | YAML Key | Default | Description |
 |--------|----------|---------|-------------|

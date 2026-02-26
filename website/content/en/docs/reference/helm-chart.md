@@ -69,7 +69,7 @@ The chart enforces a restrictive security posture by default:
 
 ### Controller Configuration
 
-The `config` section is passed directly to Veneer's `config.yaml`. See [Configuration Reference]({{< relref "configuration" >}}) for full details.
+The `config` section is passed directly to Veneer's `config.yaml`. See the [Configuration Reference]({{< relref "configuration" >}}) for full details on each option, including validation rules and environment variable overrides.
 
 | Value | Default | Description |
 |-------|---------|-------------|

@@ -6,41 +6,48 @@ weight: 20
 
 Veneer is a Kubernetes controller that optimizes [Karpenter](https://karpenter.sh/) provisioning decisions by managing NodeOverlay resources based on real-time AWS Reserved Instance and Savings Plans data from [Lumina](https://github.com/Nextdoor/lumina).
 
-### [Getting Started]({{< relref "getting-started" >}})
-
-Install Veneer and start optimizing your Karpenter provisioning costs.
-
-### [Concepts]({{< relref "concepts" >}})
-
-Understand Veneer's architecture, instance selection flow, and bin-packing behavior.
-[Architecture]({{< relref "concepts/architecture" >}}) | [Instance Selection]({{< relref "concepts/instance-selection" >}}) | [Bin-Packing]({{< relref "concepts/binpacking" >}}) | [Preferences]({{< relref "concepts/preferences" >}})
-
-### [Reference]({{< relref "reference" >}})
-
-Configuration options, Helm chart values, Prometheus metrics, and the NodeOverlay CRD.
-[Configuration]({{< relref "reference/configuration" >}}) | [Helm Chart]({{< relref "reference/helm-chart" >}}) | [Metrics]({{< relref "reference/metrics" >}}) | [NodeOverlay CRD]({{< relref "reference/nodeoverlay" >}})
-
-### [Troubleshooting]({{< relref "troubleshooting" >}})
-
-Debug common issues and diagnose data freshness problems.
-
-### [Development]({{< relref "development" >}})
-
-Local setup, testing, and contributing to Veneer.
-
 ## How It Works
 
-```
-Lumina --> Exposes SP/RI metrics to Prometheus
-             |
-Veneer --> Queries metrics, manages NodeOverlays
-             |
-Karpenter --> Uses adjusted pricing for provisioning decisions
+```mermaid
+flowchart TD
+    subgraph AWS["AWS"]
+        direction LR
+        RI["Reserved Instances"]
+        SP["Savings Plans"]
+        EC2["EC2 Instances"]
+    end
+
+    Lumina["Lumina — Cost Data Controller"]
+
+    Prom["Prometheus"]
+
+    Veneer["Veneer — Overlay Controller"]
+
+    NO["NodeOverlays"]
+
+    Karpenter["Karpenter"]
+
+    Nodes["Cost-Optimized EC2 Nodes"]
+
+    RI & SP & EC2 --> Lumina
+    Lumina -->|"expose RI/SP cost metrics"| Prom
+    Prom -->|"query instance cost data"| Veneer
+    Veneer -->|"create & update overlays"| NO
+    NO -->|"adjust instance pricing & priority"| Karpenter
+    Karpenter -->|"provision nodes"| Nodes
+
+    style AWS fill:#fff3e0,stroke:#e65100,color:#e65100
+    style Lumina fill:#e3f2fd,stroke:#1565c0,color:#1565c0
+    style Prom fill:#fbe9e7,stroke:#bf360c,color:#bf360c
+    style Veneer fill:#e0f2f1,stroke:#00695c,color:#00695c
+    style NO fill:#f1f8e9,stroke:#33691e,color:#33691e
+    style Karpenter fill:#ede7f6,stroke:#4527a0,color:#4527a0
+    style Nodes fill:#f5f5f5,stroke:#616161,color:#616161
+    style RI fill:#fff3e0,stroke:#e65100,color:#e65100
+    style SP fill:#fff3e0,stroke:#e65100,color:#e65100
+    style EC2 fill:#fff3e0,stroke:#e65100,color:#e65100
 ```
 
-Veneer watches Lumina metrics and creates/updates/deletes Karpenter NodeOverlay CRs to:
+Veneer continuously watches Lumina's cost metrics and creates/updates/deletes Karpenter **NodeOverlay** CRs to prefer RI/SP-covered on-demand instances when cost-effective, fall back to spot when capacity is exhausted, avoid provisioning thrashing with smart debouncing, and express instance preferences via NodePool annotations.
 
-- **Prefer RI/SP-covered on-demand instances** when cost-effective
-- **Fall back to spot** when RI/SP capacity is exhausted
-- **Avoid provisioning thrashing** with smart debouncing
-- **Express instance preferences** via NodePool annotations
+Use the section navigation below to explore the documentation.
