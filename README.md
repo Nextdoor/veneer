@@ -45,7 +45,7 @@ See the [Development Guide](https://oss.nextdoor.com/veneer/docs/development/) f
 
 ## License
 
-Apache 2.0
+Copyright 2025 Nextdoor, Inc. Licensed under the [Apache License, Version 2.0](LICENSE).
 
 ## Credits
 
