@@ -4,6 +4,7 @@ version: 0.1.0
 appVersion: "main"
 description: Veneer - Cost-Aware Karpenter Provisioning Controller
 type: application
+license: Apache-2.0
 keywords:
   - kubernetes
   - karpenter
