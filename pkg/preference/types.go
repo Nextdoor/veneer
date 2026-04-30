@@ -98,22 +98,57 @@ const (
 	// LabelInstanceType is the standard Kubernetes label for instance type.
 	// Examples: "m5.xlarge", "c7g.large"
 	LabelInstanceType = "node.kubernetes.io/instance-type"
+
+	// LabelInstanceCapabilityFlex is the Karpenter label identifying EC2
+	// "-flex" instance variants (e.g. c7i-flex, m8i-flex). Value is "true" on
+	// flex instance types and absent otherwise.
+	LabelInstanceCapabilityFlex = "karpenter.k8s.aws/instance-capability-flex"
+
+	// LabelInstanceCPUSustainedClockSpeedMHz is the Karpenter label for the
+	// instance's sustained all-core CPU clock speed in MHz.
+	LabelInstanceCPUSustainedClockSpeedMHz = "karpenter.k8s.aws/instance-cpu-sustained-clock-speed-mhz"
+
+	// LabelInstanceEBSBandwidth is the Karpenter label for EBS bandwidth in Mbps.
+	LabelInstanceEBSBandwidth = "karpenter.k8s.aws/instance-ebs-bandwidth"
+
+	// LabelInstanceEncryptionInTransitSupported is the Karpenter label
+	// indicating whether the instance supports encryption-in-transit.
+	LabelInstanceEncryptionInTransitSupported = "karpenter.k8s.aws/instance-encryption-in-transit-supported"
+
+	// LabelInstanceHypervisor is the Karpenter label for the instance's
+	// hypervisor. Examples: "nitro", "xen".
+	LabelInstanceHypervisor = "karpenter.k8s.aws/instance-hypervisor"
+
+	// LabelInstanceLocalNVMe is the Karpenter label for local NVMe storage
+	// capacity in GiB. Absent on instances without local NVMe.
+	LabelInstanceLocalNVMe = "karpenter.k8s.aws/instance-local-nvme"
+
+	// LabelInstanceNetworkBandwidth is the Karpenter label for network
+	// bandwidth in Mbps.
+	LabelInstanceNetworkBandwidth = "karpenter.k8s.aws/instance-network-bandwidth"
 )
 
 // SupportedLabels is the set of labels that can be used in preference matchers.
 // Using labels outside this set will result in a parse error to prevent typos
 // and unsupported label usage.
 var SupportedLabels = map[string]bool{
-	LabelInstanceFamily:          true,
-	LabelInstanceCategory:        true,
-	LabelInstanceGeneration:      true,
-	LabelInstanceSize:            true,
-	LabelInstanceCPU:             true,
-	LabelInstanceCPUManufacturer: true,
-	LabelInstanceMemory:          true,
-	LabelArch:                    true,
-	LabelCapacityType:            true,
-	LabelInstanceType:            true,
+	LabelInstanceFamily:                       true,
+	LabelInstanceCategory:                     true,
+	LabelInstanceGeneration:                   true,
+	LabelInstanceSize:                         true,
+	LabelInstanceCPU:                          true,
+	LabelInstanceCPUManufacturer:              true,
+	LabelInstanceMemory:                       true,
+	LabelArch:                                 true,
+	LabelCapacityType:                         true,
+	LabelInstanceType:                         true,
+	LabelInstanceCapabilityFlex:               true,
+	LabelInstanceCPUSustainedClockSpeedMHz:    true,
+	LabelInstanceEBSBandwidth:                 true,
+	LabelInstanceEncryptionInTransitSupported: true,
+	LabelInstanceHypervisor:                   true,
+	LabelInstanceLocalNVMe:                    true,
+	LabelInstanceNetworkBandwidth:             true,
 }
 
 // Operator represents the comparison operator in a label matcher.

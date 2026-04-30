@@ -209,6 +209,25 @@ func TestParseNodePoolPreferences(t *testing.T) {
 			wantErrors:   0,
 		},
 		{
+			name: "accepts instance-capability-flex label",
+			annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=true karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
+			},
+			nodePoolName: "flex",
+			wantPrefs:    1,
+			wantErrors:   0,
+		},
+		{
+			name: "accepts instance-hypervisor and instance-local-nvme labels",
+			annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-hypervisor=nitro adjust=-5%",
+				"veneer.io/preference.2": "karpenter.k8s.aws/instance-local-nvme>0 adjust=-10%",
+			},
+			nodePoolName: "newer-labels",
+			wantPrefs:    2,
+			wantErrors:   0,
+		},
+		{
 			name:         "no preferences",
 			annotations:  map[string]string{},
 			nodePoolName: "empty",
