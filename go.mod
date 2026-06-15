@@ -1,6 +1,6 @@
 module github.com/nextdoor/veneer
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/go-logr/logr v1.4.3
@@ -15,7 +15,7 @@ require (
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
 	sigs.k8s.io/controller-runtime v0.24.1
-	sigs.k8s.io/karpenter v1.12.1
+	sigs.k8s.io/karpenter v1.13.0
 )
 
 require (
@@ -37,7 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
-	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737 // indirect
+	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -86,7 +86,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
+	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.35.0 // indirect
