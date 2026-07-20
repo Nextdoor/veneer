@@ -37,7 +37,7 @@ jobs:
                   # Skip non-semver tags (e.g., helm chart tags like veneer-0.0.2)
                   skipInvalidTags: true
             - name: Draft Release
-              uses: release-drafter/release-drafter@4d75298e00d9e34c483e5ff8c68d0ea1c1940c1e # v7
+              uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
