@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/nextdoor/lumina v0.4.3
-	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.70.1
