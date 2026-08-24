@@ -1,6 +1,6 @@
 module github.com/nextdoor/veneer
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/go-logr/logr v1.4.4
@@ -11,11 +11,11 @@ require (
 	github.com/prometheus/common v0.70.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.0
-	k8s.io/api v0.36.3
-	k8s.io/apimachinery v0.36.3
-	k8s.io/client-go v0.36.3
+	k8s.io/api v0.36.4
+	k8s.io/apimachinery v0.36.4
+	k8s.io/client-go v0.36.4
 	sigs.k8s.io/controller-runtime v0.24.1
-	sigs.k8s.io/karpenter v1.14.0
+	sigs.k8s.io/karpenter v1.14.1
 )
 
 require (
