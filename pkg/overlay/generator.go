@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nextdoor/veneer/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
@@ -480,10 +481,6 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
-var overlayPriceAdjustmentPattern = regexp.MustCompile(
-	`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`,
-)
-
 // ValidateOverlay checks that a generated NodeOverlay is valid and will be accepted by Kubernetes.
 //
 // This performs client-side validation before attempting to create the resource,
@@ -599,7 +596,7 @@ func validateOverlayPricing(price, adjustment *string) []ValidationError {
 			Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", *price),
 		})
 	}
-	if adjustment != nil && !overlayPriceAdjustmentPattern.MatchString(*adjustment) {
+	if adjustment != nil && !config.PriceAdjustmentPattern.MatchString(*adjustment) {
 		errors = append(errors, ValidationError{
 			Field:   "spec.priceAdjustment",
 			Message: fmt.Sprintf("priceAdjustment %q must be a discount greater than -100%% and below 0%%", *adjustment),

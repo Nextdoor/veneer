@@ -84,9 +84,9 @@ const (
 	DefaultHealthProbeBindAddress                       = ":8081"
 	DefaultOverlayUtilizationThreshold                  = 95.0 // Delete overlays at 95% utilization
 	DefaultOverlayReservedInstanceEnabled               = true
-	DefaultOverlayReservedInstancePriceAdjustment       = "-50%"
+	DefaultOverlayReservedInstancePriceAdjustment       = "-90%"
 	DefaultOverlayEC2InstanceSavingsPlanEnabled         = true
-	DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment = "-50%"
+	DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment = "-90%"
 	DefaultOverlayComputeSavingsPlanEnabled             = true
 	DefaultOverlayComputeSavingsPlanPriceAdjustment     = "-50%"
 	DefaultOverlayComputeSPMinRemainingCapacityDollars  = 50.0
@@ -434,7 +434,7 @@ func (c *Config) Validate() error {
 	}
 	seenNodePools := make(map[string]struct{}, len(c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names))
 	for _, name := range c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names {
-		if errors := validation.IsDNS1123Subdomain(name); len(errors) > 0 {
+		if errors := validation.IsDNS1123Label(name); len(errors) > 0 {
 			return fmt.Errorf(
 				"overlays.computeSavingsPlan.nodePoolSelector.names contains invalid NodePool name %q: %s",
 				name,
@@ -470,10 +470,12 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-var priceAdjustmentPattern = regexp.MustCompile(`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`)
+// PriceAdjustmentPattern is the accepted syntax for cost-aware overlay discounts.
+// It is exported so configuration and generated-resource validation cannot drift.
+var PriceAdjustmentPattern = regexp.MustCompile(`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`)
 
 func validatePriceAdjustment(key, adjustment string) error {
-	if !priceAdjustmentPattern.MatchString(adjustment) {
+	if !PriceAdjustmentPattern.MatchString(adjustment) {
 		return fmt.Errorf("%s must be a percentage discount strictly between -100%% and 0%%, got %q", key, adjustment)
 	}
 	return nil

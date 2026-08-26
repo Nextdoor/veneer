@@ -567,6 +567,11 @@ func TestValidateOverlayTypeConfiguration(t *testing.T) {
 		{name: "invalid NodePool name rejected", mutate: func(c *Config) {
 			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{"Invalid_Name"}
 		}, wantErr: true},
+		{name: "NodePool name longer than label limit rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{
+				"a234567890123456789012345678901234567890123456789012345678901234",
+			}
+		}, wantErr: true},
 		{name: "duplicate NodePool name rejected", mutate: func(c *Config) {
 			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{"on-demand", "on-demand"}
 		}, wantErr: true},

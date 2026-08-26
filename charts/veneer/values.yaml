@@ -113,14 +113,14 @@ config:
       # -- Enable Reserved Instance overlays
       enabled: true
       # -- Relative discount applied to matching on-demand offerings (strictly between -100% and 0%)
-      priceAdjustment: "-50%"
+      priceAdjustment: "-90%"
 
     # -- EC2 Instance Savings Plan overlay behavior
     ec2InstanceSavingsPlan:
       # -- Enable EC2 Instance Savings Plan overlays
       enabled: true
       # -- Relative discount applied to matching on-demand offerings (strictly between -100% and 0%)
-      priceAdjustment: "-50%"
+      priceAdjustment: "-90%"
 
     # -- Compute Savings Plan overlay behavior. Scope to on-demand-only NodePools in mixed-capacity clusters.
     computeSavingsPlan:

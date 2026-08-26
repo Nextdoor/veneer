@@ -55,13 +55,13 @@ overlays:
     # Scalar overrides: VENEER_OVERLAY_RESERVED_INSTANCE_ENABLED and
     # VENEER_OVERLAY_RESERVED_INSTANCE_PRICE_ADJUSTMENT
     enabled: true
-    priceAdjustment: "-50%"
+    priceAdjustment: "-90%"
 
   ec2InstanceSavingsPlan:
     # Scalar overrides: VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_ENABLED and
     # VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_PRICE_ADJUSTMENT
     enabled: true
-    priceAdjustment: "-50%"
+    priceAdjustment: "-90%"
 
   computeSavingsPlan:
     # Compute SP overlays are broad. Disable them or scope them to on-demand-only

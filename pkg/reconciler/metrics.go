@@ -27,6 +27,7 @@ import (
 	"github.com/nextdoor/veneer/pkg/config"
 	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/overlay"
+	"github.com/nextdoor/veneer/pkg/preference"
 	"github.com/nextdoor/veneer/pkg/prometheus"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -499,6 +500,11 @@ func (r *MetricsReconciler) cleanupMissingOverlays(
 	}
 	for i := range existing.Items {
 		item := &existing.Items[i]
+		// Preference overlays have a separate lifecycle and must never be garbage
+		// collected from capacity observations, even if labels evolve later.
+		if preference.IsPreferenceOverlay(item) {
+			continue
+		}
 		capacityType := capacityTypeFromLabel(item.Labels[overlay.LabelCapacityType])
 		if !observedTypes[capacityType] {
 			continue
@@ -506,9 +512,21 @@ func (r *MetricsReconciler) cleanupMissingOverlays(
 		if _, ok := desired[item.Name]; ok {
 			continue
 		}
-		if err := r.Client.Delete(ctx, item); err != nil && !errors.IsNotFound(err) {
-			r.Logger.Error(err, "Failed to delete obsolete NodeOverlay", "name", item.Name)
+		if err := r.Client.Delete(ctx, item); err != nil {
+			if !errors.IsNotFound(err) {
+				r.Logger.Error(err, "Failed to delete obsolete NodeOverlay", "name", item.Name)
+			}
+			continue
 		}
+		metricsCapacityType := veneermetrics.CapacityTypeFromOverlay(string(capacityType))
+		if r.Metrics != nil {
+			r.Metrics.RecordOverlayOperation(veneermetrics.OperationDelete, metricsCapacityType)
+		}
+		r.Logger.Info("Deleted NodeOverlay",
+			"name", item.Name,
+			"capacity_type", capacityType,
+			"reason", "no longer present in capacity data",
+		)
 	}
 }
 
@@ -550,9 +568,24 @@ func (r *MetricsReconciler) cleanupDisabledOverlayTypes(ctx context.Context) {
 			continue
 		}
 		for i := range overlays.Items {
-			if err := r.Client.Delete(ctx, &overlays.Items[i]); err != nil && !errors.IsNotFound(err) {
-				r.Logger.Error(err, "Failed to delete disabled NodeOverlay", "name", overlays.Items[i].Name)
+			item := &overlays.Items[i]
+			if err := r.Client.Delete(ctx, item); err != nil {
+				if !errors.IsNotFound(err) {
+					r.Logger.Error(err, "Failed to delete disabled NodeOverlay", "name", item.Name)
+				}
+				continue
 			}
+			metricsCapacityType := veneermetrics.CapacityTypeFromOverlay(
+				string(capacityTypeFromLabel(capacityType)),
+			)
+			if r.Metrics != nil {
+				r.Metrics.RecordOverlayOperation(veneermetrics.OperationDelete, metricsCapacityType)
+			}
+			r.Logger.Info("Deleted NodeOverlay",
+				"name", item.Name,
+				"capacity_type", capacityType,
+				"reason", "overlay type disabled",
+			)
 		}
 	}
 }

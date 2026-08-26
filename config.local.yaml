@@ -43,11 +43,11 @@ overlays:
 
     reservedInstance:
         enabled: true
-        priceAdjustment: "-50%"
+        priceAdjustment: "-90%"
 
     ec2InstanceSavingsPlan:
         enabled: true
-        priceAdjustment: "-50%"
+        priceAdjustment: "-90%"
 
     # Keep this disabled or restrict names to on-demand-only NodePools when local
     # fixtures include mixed Spot/On-Demand pools.

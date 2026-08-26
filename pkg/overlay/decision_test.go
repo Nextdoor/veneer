@@ -395,6 +395,18 @@ func TestComputeSavingsPlanSafetyControls(t *testing.T) {
 		}
 	})
 
+	t.Run("NodePool scope appears in selector", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{"on-demand", "batch"}
+		decision := NewDecisionEngine(cfg).AnalyzeComputeSavingsPlan(AggregatedSavingsPlan{
+			UtilizationPercent:     80,
+			TotalRemainingCapacity: 100,
+		})
+		if !contains(decision.TargetSelector, "karpenter.sh/nodepool: In [on-demand, batch]") {
+			t.Fatalf("TargetSelector = %q, want NodePool scope", decision.TargetSelector)
+		}
+	})
+
 	t.Run("hysteresis and reset", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration = 15 * time.Minute

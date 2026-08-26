@@ -155,6 +155,9 @@ const (
 	ReasonCapacityAvailable         DecisionReason = "capacity_available"
 	ReasonUtilizationAboveThreshold DecisionReason = "utilization_above_threshold"
 	ReasonNoCapacity                DecisionReason = "no_capacity"
+	ReasonDisabled                  DecisionReason = "disabled"
+	ReasonBelowCapacityFloor        DecisionReason = "below_capacity_floor"
+	ReasonWaitingForDwell           DecisionReason = "waiting_for_dwell"
 	ReasonRIAvailable               DecisionReason = "ri_available"
 	ReasonRINotFound                DecisionReason = "ri_not_found"
 	ReasonUnknown                   DecisionReason = "unknown"
@@ -202,11 +205,14 @@ const (
 
 // Reason string patterns used for sanitization.
 const (
-	reasonPatternAboveThreshold = "at/above threshold"
-	reasonPatternBelowThreshold = "below threshold"
-	reasonPatternNoCapacity     = "no remaining capacity"
-	reasonPatternRIAvailable    = "reserved instances available"
-	reasonPatternNoRI           = "no reserved instances"
+	reasonPatternAboveThreshold  = "at/above threshold"
+	reasonPatternBelowThreshold  = "below threshold"
+	reasonPatternNoCapacity      = "no remaining capacity"
+	reasonPatternDisabled        = "overlays are disabled"
+	reasonPatternCapacityFloor   = "below minimum"
+	reasonPatternWaitingForDwell = "waiting for"
+	reasonPatternRIAvailable     = "reserved instances available"
+	reasonPatternNoRI            = "no reserved instances"
 )
 
 // Version is set at build time via ldflags.
@@ -567,6 +573,12 @@ func SanitizeReason(reason string) DecisionReason {
 		return ReasonCapacityAvailable
 	case strings.Contains(reason, reasonPatternNoCapacity):
 		return ReasonNoCapacity
+	case strings.Contains(reason, reasonPatternDisabled):
+		return ReasonDisabled
+	case strings.Contains(reason, reasonPatternCapacityFloor):
+		return ReasonBelowCapacityFloor
+	case strings.Contains(reason, reasonPatternWaitingForDwell):
+		return ReasonWaitingForDwell
 	case strings.Contains(reason, reasonPatternNoRI):
 		return ReasonRINotFound
 	case strings.Contains(reason, reasonPatternRIAvailable):

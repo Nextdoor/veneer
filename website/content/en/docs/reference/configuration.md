@@ -24,11 +24,11 @@ overlays:
 
   reservedInstance:
     enabled: true
-    priceAdjustment: "-50%"
+    priceAdjustment: "-90%"
 
   ec2InstanceSavingsPlan:
     enabled: true
-    priceAdjustment: "-50%"
+    priceAdjustment: "-90%"
 
   computeSavingsPlan:
     enabled: true
@@ -70,16 +70,16 @@ preferences:
 | `overlays.disabled` | `VENEER_OVERLAY_DISABLED` | `false` | Add an impossible requirement to every generated overlay |
 | `overlays.utilizationThreshold` | -- | `95.0` | Delete SP overlays at this utilization percentage |
 | `overlays.reservedInstance.enabled` | `VENEER_OVERLAY_RESERVED_INSTANCE_ENABLED` | `true` | Generate Reserved Instance overlays |
-| `overlays.reservedInstance.priceAdjustment` | `VENEER_OVERLAY_RESERVED_INSTANCE_PRICE_ADJUSTMENT` | `-50%` | Relative discount for RI-matching offerings |
+| `overlays.reservedInstance.priceAdjustment` | `VENEER_OVERLAY_RESERVED_INSTANCE_PRICE_ADJUSTMENT` | `-90%` | Relative discount for RI-matching offerings |
 | `overlays.ec2InstanceSavingsPlan.enabled` | `VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_ENABLED` | `true` | Generate EC2 Instance SP overlays |
-| `overlays.ec2InstanceSavingsPlan.priceAdjustment` | `VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_PRICE_ADJUSTMENT` | `-50%` | Relative discount for EC2 Instance SP offerings |
+| `overlays.ec2InstanceSavingsPlan.priceAdjustment` | `VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_PRICE_ADJUSTMENT` | `-90%` | Relative discount for EC2 Instance SP offerings |
 | `overlays.computeSavingsPlan.enabled` | `VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_ENABLED` | `true` | Generate Compute SP overlays |
 | `overlays.computeSavingsPlan.priceAdjustment` | `VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_PRICE_ADJUSTMENT` | `-50%` | Relative discount for Compute SP offerings |
 | `overlays.computeSavingsPlan.nodePoolSelector.names` | -- | `[]` | Explicit NodePool name allowlist; empty targets all NodePools |
 | `overlays.computeSavingsPlan.minRemainingCapacityDollars` | `VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_REMAINING_CAPACITY_DOLLARS` | `50` | Minimum unused hourly Compute SP commitment before creation |
 | `overlays.computeSavingsPlan.minBelowThresholdDuration` | `VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_BELOW_THRESHOLD_DURATION` | `15m` | Continuous eligibility required before creation |
 
-All `priceAdjustment` values must be percentage discounts strictly between `-100%` and `0%`. Relative discounts preserve instance-type price ordering; neither an absolute price nor a zero/positive adjustment is accepted. The Compute SP capacity floor and duration must be nonnegative.
+All `priceAdjustment` values must be percentage discounts strictly between `-100%` and `0%`. Relative discounts preserve instance-type price ordering; neither an absolute price nor a zero/positive adjustment is accepted. RI and EC2 Instance SP overlays default to a deeper `-90%` discount so covered on-demand capacity can still outrank typical Spot prices while retaining distinct instance prices. Compute SP defaults to `-50%` so Spot can remain cheaper in mixed-capacity pools. The Compute SP capacity floor and duration must be nonnegative.
 
 {{% pageinfo color="warning" %}}
 Compute Savings Plans apply broadly. In clusters with NodePools that permit both Spot and On-Demand capacity, disable the Compute SP overlay or scope it to on-demand-only NodePools. An unscoped Compute SP discount can change mixed-pool purchasing behavior.
@@ -103,6 +103,23 @@ The floor and duration affect creation only. An existing Compute SP overlay is r
 
 Higher overlay weights win when multiple overlays match an offering.
 
+## Environment Variables
+
+Scalar settings can be overridden explicitly:
+
+```bash
+export VENEER_PROMETHEUS_URL="http://prometheus.example.com:9090"
+export VENEER_LOG_LEVEL="debug"
+export VENEER_AWS_ACCOUNT_ID="123456789012"
+export VENEER_AWS_REGION="us-west-2"
+export VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_ENABLED="false"
+export VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_PRICE_ADJUSTMENT="-50%"
+export VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_REMAINING_CAPACITY_DOLLARS="50"
+export VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_BELOW_THRESHOLD_DURATION="15m"
+```
+
+The NodePool name list is YAML-only.
+
 ## CLI Flags
 
 ```bash
@@ -111,6 +128,27 @@ Higher overlay weights win when multiple overlays match an offering.
 ```
 
 Only global disabled mode has a dedicated overlay CLI flag. Use YAML or the explicit scalar environment variables for per-type settings.
+
+## Local Development Configuration
+
+For local development with a port-forwarded Prometheus endpoint:
+
+```yaml
+prometheusUrl: "http://localhost:9090"
+logLevel: "debug"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+overlays:
+  disabled: false
+  computeSavingsPlan:
+    enabled: false
+```
+
+```bash
+kubectl port-forward -n lumina-system svc/lumina-prometheus 9090:9090
+make run
+```
 
 ## Validation
 

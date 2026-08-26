@@ -37,10 +37,10 @@ config:
     utilizationThreshold: 95.0
     reservedInstance:
       enabled: true
-      priceAdjustment: "-50%"
+      priceAdjustment: "-90%"
     ec2InstanceSavingsPlan:
       enabled: true
-      priceAdjustment: "-50%"
+      priceAdjustment: "-90%"
     computeSavingsPlan:
       enabled: true
       priceAdjustment: "-50%"

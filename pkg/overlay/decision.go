@@ -20,6 +20,7 @@ package overlay
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,7 +151,8 @@ type AggregatedSavingsPlan struct {
 // This is necessary because multiple Compute SPs of the same type would otherwise create
 // duplicate overlay names. We simply sum up the remaining capacities.
 //
-// Phase 2 logic: If there's ANY remaining capacity > 0, create the overlay.
+// Creation eligibility is evaluated later using utilization, remaining-capacity,
+// and dwell-time safety controls.
 func AggregateComputeSavingsPlans(
 	utilizations []prometheus.SavingsPlanUtilization,
 	capacities []prometheus.SavingsPlanCapacity,
@@ -187,7 +189,7 @@ func AggregateComputeSavingsPlans(
 // EC2 Instance SPs are scoped to ONE family + ONE region, so we must group by both dimensions.
 // Example keys: "m5:us-west-2", "c5:us-east-1"
 //
-// Phase 2 logic: Just sum up remaining capacity per family+region.
+// The decision engine later evaluates each aggregate against the configured threshold.
 func AggregateEC2InstanceSavingsPlans(
 	utilizations []prometheus.SavingsPlanUtilization,
 	capacities []prometheus.SavingsPlanCapacity,
@@ -293,13 +295,20 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	overlayName := fmt.Sprintf("%s-global", prefix)
 
 	computeConfig := e.Config.Overlays.ComputeSavingsPlan
+	targetSelector := "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]"
+	if len(computeConfig.NodePoolSelector.Names) > 0 {
+		targetSelector += fmt.Sprintf(
+			", karpenter.sh/nodepool: In [%s]",
+			strings.Join(computeConfig.NodePoolSelector.Names, ", "),
+		)
+	}
 	decision := Decision{
 		Name:               overlayName,
 		CapacityType:       CapacityTypeComputeSavingsPlan,
 		Weight:             e.Config.Overlays.Weights.ComputeSavingsPlan,
 		PriceAdjustment:    computeConfig.PriceAdjustment,
 		NodePoolNames:      append([]string(nil), computeConfig.NodePoolSelector.Names...),
-		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
+		TargetSelector:     targetSelector,
 		UtilizationPercent: agg.UtilizationPercent,
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
@@ -328,6 +337,8 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	}
 
 	if wait := computeConfig.MinBelowThresholdDuration; wait > 0 {
+		// The reconciler samples on a fixed interval, so the effective dwell time
+		// rounds up to the first observation at or after the configured duration.
 		eligibleFor := e.eligibleDuration(overlayName)
 		if eligibleFor < wait {
 			decision.Reason = fmt.Sprintf(
@@ -468,10 +479,9 @@ func (e *DecisionEngine) ResetComputeEligibility() {
 	e.resetEligibility(fmt.Sprintf("%s-global", prefix))
 }
 
-// MarkExisting records that an overlay already exists in the cluster. Existing
-// overlays have already crossed the creation boundary, so they should remain
-// while eligible after a controller restart instead of waiting through a new
-// in-memory hysteresis window.
+// MarkExisting adopts any managed overlay that already exists in the cluster,
+// regardless of how it came to exist. It has crossed the creation boundary, so
+// it remains while eligible instead of waiting through a new in-memory dwell.
 func (e *DecisionEngine) MarkExisting(name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

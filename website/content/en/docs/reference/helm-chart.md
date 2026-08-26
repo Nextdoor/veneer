@@ -81,9 +81,9 @@ The `config` section is passed directly to Veneer's `config.yaml`. See the [Conf
 | `config.aws.region` | `"us-west-2"` | AWS region (**required**) |
 | `config.overlays.utilizationThreshold` | `95.0` | SP utilization threshold for overlay deletion |
 | `config.overlays.reservedInstance.enabled` | `true` | Enable RI overlays |
-| `config.overlays.reservedInstance.priceAdjustment` | `"-50%"` | RI relative price discount |
+| `config.overlays.reservedInstance.priceAdjustment` | `"-90%"` | RI relative price discount |
 | `config.overlays.ec2InstanceSavingsPlan.enabled` | `true` | Enable EC2 Instance SP overlays |
-| `config.overlays.ec2InstanceSavingsPlan.priceAdjustment` | `"-50%"` | EC2 Instance SP relative price discount |
+| `config.overlays.ec2InstanceSavingsPlan.priceAdjustment` | `"-90%"` | EC2 Instance SP relative price discount |
 | `config.overlays.computeSavingsPlan.enabled` | `true` | Enable Compute SP overlays |
 | `config.overlays.computeSavingsPlan.priceAdjustment` | `"-50%"` | Compute SP relative price discount |
 | `config.overlays.computeSavingsPlan.nodePoolSelector.names` | `[]` | Explicit NodePool name allowlist; empty targets all NodePools |

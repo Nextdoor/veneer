@@ -113,7 +113,7 @@ These labels are used for:
 
 ### Cost-Aware: Reserved Instance Overlay
 
-Created when Lumina detects active Reserved Instances for `m5.xlarge` in `us-west-2`:
+Created when Lumina detects active Reserved Instances for `m5.xlarge` in `us-west-2`. The deeper default discount is intended to keep covered on-demand capacity competitive with Spot while preserving instance-price ordering:
 
 ```yaml
 apiVersion: karpenter.sh/v1alpha1
@@ -134,13 +134,13 @@ spec:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["on-demand"]
-  priceAdjustment: "-50%"
+  priceAdjustment: "-90%"
   weight: 30
 ```
 
 ### Cost-Aware: EC2 Instance Savings Plan Overlay
 
-Created when Lumina detects an EC2 Instance Savings Plan covering the `m5` family in `us-west-2` with remaining capacity:
+Created when Lumina detects an EC2 Instance Savings Plan covering the `m5` family in `us-west-2` with remaining capacity. Its deeper default discount keeps covered on-demand capacity competitive with Spot without flattening family prices:
 
 ```yaml
 apiVersion: karpenter.sh/v1alpha1
@@ -161,7 +161,7 @@ spec:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["on-demand"]
-  priceAdjustment: "-50%"
+  priceAdjustment: "-90%"
   weight: 20
 ```
 
@@ -244,7 +244,7 @@ spec:
     - key: veneer.io/disabled
       operator: In
       values: ["true"]  # No node will ever have this label
-  priceAdjustment: "-50%"
+  priceAdjustment: "-90%"
   weight: 30
 ```
 
