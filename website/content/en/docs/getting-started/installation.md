@@ -156,7 +156,7 @@ You should see metrics including `veneer_info`, `veneer_lumina_data_available`, 
 
 ### Verify NodeOverlay Creation
 
-After Veneer has run at least one reconciliation cycle (default 5 minutes), check for NodeOverlays:
+After Veneer has reconciled fresh Lumina data, check for NodeOverlays. RI and EC2 Instance SP overlays can appear on the first cycle; the Compute SP overlay waits for its configured dwell time (default 15 minutes) and capacity floor:
 
 ```bash
 kubectl get nodeoverlays -l app.kubernetes.io/managed-by=veneer

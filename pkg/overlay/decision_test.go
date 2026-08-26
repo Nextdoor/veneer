@@ -16,6 +16,7 @@ package overlay
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/prometheus"
@@ -23,7 +24,7 @@ import (
 
 const (
 	// Expected price value for all test cases (overlay price is not yet implemented)
-	expectedTestPrice = "0.00"
+	expectedTestPriceAdjustment = "-50%"
 )
 
 // Helper to create test config with default values
@@ -31,6 +32,18 @@ func testConfig() *config.Config {
 	return &config.Config{
 		Overlays: config.OverlayManagementConfig{
 			UtilizationThreshold: 95.0,
+			ReservedInstance: config.CapacityOverlayConfig{
+				Enabled:         true,
+				PriceAdjustment: expectedTestPriceAdjustment,
+			},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{
+				Enabled:         true,
+				PriceAdjustment: expectedTestPriceAdjustment,
+			},
+			ComputeSavingsPlan: config.ComputeSavingsPlanOverlayConfig{
+				Enabled:         true,
+				PriceAdjustment: expectedTestPriceAdjustment,
+			},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -139,8 +152,8 @@ func TestAnalyzeComputeSavingsPlan(t *testing.T) {
 				t.Errorf("Weight = %d, want 10", decision.Weight)
 			}
 
-			if decision.Price != expectedTestPrice {
-				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
+			if decision.PriceAdjustment != expectedTestPriceAdjustment {
+				t.Errorf("PriceAdjustment = %q, want %q", decision.PriceAdjustment, expectedTestPriceAdjustment)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {
@@ -266,8 +279,8 @@ func TestAnalyzeEC2InstanceSavingsPlan(t *testing.T) {
 				t.Errorf("Weight = %d, want 20", decision.Weight)
 			}
 
-			if decision.Price != expectedTestPrice {
-				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
+			if decision.PriceAdjustment != expectedTestPriceAdjustment {
+				t.Errorf("PriceAdjustment = %q, want %q", decision.PriceAdjustment, expectedTestPriceAdjustment)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {
@@ -342,8 +355,8 @@ func TestAnalyzeReservedInstance(t *testing.T) {
 				t.Errorf("Weight = %d, want 30", decision.Weight)
 			}
 
-			if decision.Price != expectedTestPrice {
-				t.Errorf("Price = %q, want %q", decision.Price, expectedTestPrice)
+			if decision.PriceAdjustment != expectedTestPriceAdjustment {
+				t.Errorf("PriceAdjustment = %q, want %q", decision.PriceAdjustment, expectedTestPriceAdjustment)
 			}
 
 			if decision.ShouldExist != tt.wantShouldExist {
@@ -355,6 +368,78 @@ func TestAnalyzeReservedInstance(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestComputeSavingsPlanSafetyControls(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Overlays.ComputeSavingsPlan.Enabled = false
+		decision := NewDecisionEngine(cfg).AnalyzeComputeSavingsPlan(AggregatedSavingsPlan{
+			UtilizationPercent:     80,
+			TotalRemainingCapacity: 100,
+		})
+		if decision.ShouldExist || !contains(decision.Reason, "disabled") {
+			t.Fatalf("expected disabled deletion decision, got %+v", decision)
+		}
+	})
+
+	t.Run("capacity floor", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars = 50
+		decision := NewDecisionEngine(cfg).AnalyzeComputeSavingsPlan(AggregatedSavingsPlan{
+			UtilizationPercent:     80,
+			TotalRemainingCapacity: 49.99,
+		})
+		if decision.ShouldExist || !contains(decision.Reason, "below minimum") {
+			t.Fatalf("expected capacity-floor deletion decision, got %+v", decision)
+		}
+	})
+
+	t.Run("hysteresis and reset", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration = 15 * time.Minute
+		now := time.Date(2026, time.August, 26, 12, 0, 0, 0, time.UTC)
+		engine := NewDecisionEngineWithClock(cfg, func() time.Time { return now })
+		eligible := AggregatedSavingsPlan{UtilizationPercent: 80, TotalRemainingCapacity: 100}
+
+		if decision := engine.AnalyzeComputeSavingsPlan(eligible); decision.ShouldExist {
+			t.Fatalf("overlay should wait on first eligible observation: %+v", decision)
+		}
+		now = now.Add(14 * time.Minute)
+		if decision := engine.AnalyzeComputeSavingsPlan(eligible); decision.ShouldExist {
+			t.Fatalf("overlay should still wait before duration: %+v", decision)
+		}
+		now = now.Add(time.Minute)
+		if decision := engine.AnalyzeComputeSavingsPlan(eligible); !decision.ShouldExist {
+			t.Fatalf("overlay should exist after duration: %+v", decision)
+		}
+
+		aboveThreshold := eligible
+		aboveThreshold.UtilizationPercent = 95
+		if decision := engine.AnalyzeComputeSavingsPlan(aboveThreshold); decision.ShouldExist {
+			t.Fatalf("overlay should delete immediately at threshold: %+v", decision)
+		}
+		now = now.Add(15 * time.Minute)
+		if decision := engine.AnalyzeComputeSavingsPlan(eligible); decision.ShouldExist {
+			t.Fatalf("eligibility timer should reset after threshold recovery: %+v", decision)
+		}
+	})
+
+	t.Run("existing overlay bypasses creation delay", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration = 15 * time.Minute
+		now := time.Date(2026, time.August, 26, 12, 0, 0, 0, time.UTC)
+		engine := NewDecisionEngineWithClock(cfg, func() time.Time { return now })
+		engine.MarkExisting("cost-aware-compute-sp-global")
+
+		decision := engine.AnalyzeComputeSavingsPlan(AggregatedSavingsPlan{
+			UtilizationPercent:     80,
+			TotalRemainingCapacity: 100,
+		})
+		if !decision.ShouldExist {
+			t.Fatalf("existing eligible overlay should survive restart delay: %+v", decision)
+		}
+	})
 }
 
 func TestDecisionEngineWithCustomThreshold(t *testing.T) {

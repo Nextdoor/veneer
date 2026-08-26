@@ -35,6 +35,19 @@ config:
 
   overlays:
     utilizationThreshold: 95.0
+    reservedInstance:
+      enabled: true
+      priceAdjustment: "-50%"
+    ec2InstanceSavingsPlan:
+      enabled: true
+      priceAdjustment: "-50%"
+    computeSavingsPlan:
+      enabled: true
+      priceAdjustment: "-50%"
+      nodePoolSelector:
+        names: []
+      minRemainingCapacityDollars: 50
+      minBelowThresholdDuration: 15m
     weights:
       reservedInstance: 30
       ec2InstanceSavingsPlan: 20

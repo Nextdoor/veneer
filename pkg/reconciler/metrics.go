@@ -132,37 +132,57 @@ func (r *MetricsReconciler) runReconcileWithMetrics(ctx context.Context) {
 func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 	r.Logger.V(1).Info("Reconciling metrics")
 
-	// Collect all decisions
+	// Type-level disables are desired-state controls, not query controls. Clean up
+	// existing managed overlays before consulting Lumina so stale or unavailable
+	// telemetry cannot leave a disabled overlay active.
+	r.cleanupDisabledOverlayTypes(ctx)
+
+	// Collect all decisions and remember which capacity types had a complete,
+	// fresh observation. Only observed types are safe to garbage collect.
 	var decisions []overlay.Decision
+	observedTypes := make(map[overlay.CapacityType]bool)
 
 	// Check Savings Plan data freshness and analyze if data is fresh enough
 	spFreshness, spFreshnessErr := r.queryDataFreshness(ctx, prometheus.DataTypeSavingsPlans)
 	if spFreshnessErr != nil {
 		r.Logger.Error(spFreshnessErr, "Failed to query Savings Plan data freshness")
+		if r.DecisionEngine != nil {
+			r.DecisionEngine.ResetComputeEligibility()
+		}
 	} else {
 		r.Logger.Info("Lumina Savings Plan data freshness", "age_seconds", spFreshness)
 
 		if spFreshness <= MaxSavingsPlanFreshnessSeconds {
-			// Query and analyze Compute Savings Plans
-			computeDecisions, err := r.analyzeComputeSavingsPlans(ctx)
-			if err != nil {
-				r.Logger.Error(err, "Failed to analyze Compute Savings Plans")
-			} else {
-				decisions = append(decisions, computeDecisions...)
+			if r.Config == nil || r.Config.Overlays.ComputeSavingsPlan.Enabled {
+				computeDecisions, err := r.analyzeComputeSavingsPlans(ctx)
+				if err != nil {
+					r.Logger.Error(err, "Failed to analyze Compute Savings Plans")
+					if r.DecisionEngine != nil {
+						r.DecisionEngine.ResetComputeEligibility()
+					}
+				} else {
+					observedTypes[overlay.CapacityTypeComputeSavingsPlan] = true
+					decisions = append(decisions, computeDecisions...)
+				}
 			}
 
-			// Query and analyze EC2 Instance Savings Plans
-			ec2Decisions, err := r.analyzeEC2InstanceSavingsPlans(ctx)
-			if err != nil {
-				r.Logger.Error(err, "Failed to analyze EC2 Instance Savings Plans")
-			} else {
-				decisions = append(decisions, ec2Decisions...)
+			if r.Config == nil || r.Config.Overlays.EC2InstanceSavingsPlan.Enabled {
+				ec2Decisions, err := r.analyzeEC2InstanceSavingsPlans(ctx)
+				if err != nil {
+					r.Logger.Error(err, "Failed to analyze EC2 Instance Savings Plans")
+				} else {
+					observedTypes[overlay.CapacityTypeEC2InstanceSavingsPlan] = true
+					decisions = append(decisions, ec2Decisions...)
+				}
 			}
 		} else {
 			r.Logger.Info("Skipping Savings Plan analysis due to stale data",
 				"freshness_seconds", spFreshness,
 				"max_freshness_seconds", MaxSavingsPlanFreshnessSeconds,
 			)
+			if r.DecisionEngine != nil {
+				r.DecisionEngine.ResetComputeEligibility()
+			}
 		}
 	}
 
@@ -174,12 +194,14 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 		r.Logger.Info("Lumina Reserved Instance data freshness", "age_seconds", riFreshness)
 
 		if riFreshness <= MaxReservedInstanceFreshnessSeconds {
-			// Query and analyze Reserved Instances
-			riDecisions, err := r.analyzeReservedInstances(ctx)
-			if err != nil {
-				r.Logger.Error(err, "Failed to analyze Reserved Instances")
-			} else {
-				decisions = append(decisions, riDecisions...)
+			if r.Config == nil || r.Config.Overlays.ReservedInstance.Enabled {
+				riDecisions, err := r.analyzeReservedInstances(ctx)
+				if err != nil {
+					r.Logger.Error(err, "Failed to analyze Reserved Instances")
+				} else {
+					observedTypes[overlay.CapacityTypeReservedInstance] = true
+					decisions = append(decisions, riDecisions...)
+				}
 			}
 		} else {
 			r.Logger.Info("Skipping Reserved Instance analysis due to stale data",
@@ -187,6 +209,10 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 				"max_freshness_seconds", MaxReservedInstanceFreshnessSeconds,
 			)
 		}
+	}
+
+	if r.Client != nil {
+		r.cleanupMissingOverlays(ctx, decisions, observedTypes)
 	}
 
 	// Generate and apply NodeOverlay specs from decisions
@@ -269,13 +295,26 @@ func (r *MetricsReconciler) analyzeComputeSavingsPlans(ctx context.Context) ([]o
 
 	if len(computeCapacities) == 0 {
 		r.Logger.V(1).Info("No Compute Savings Plans found")
-		return nil, nil
 	}
 
 	// Aggregate and analyze
 	agg := overlay.AggregateComputeSavingsPlans(utilizations, computeCapacities)
 	if r.DecisionEngine == nil {
 		return nil, nil
+	}
+
+	// Seed hysteresis from cluster state. The dwell time delays creation, but an
+	// existing eligible overlay must survive controller restart or leader failover.
+	if r.Client != nil {
+		name := r.Config.Overlays.Naming.ComputeSavingsPlanPrefix
+		if name == "" {
+			name = config.DefaultOverlayNamingComputeSPPrefix
+		}
+		existing := &karpenterv1alpha1.NodeOverlay{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Name: fmt.Sprintf("%s-global", name)}, existing); err == nil &&
+			existing.Labels[overlay.LabelManagedBy] == overlay.LabelManagedByValue {
+			r.DecisionEngine.MarkExisting(existing.Name)
+		}
 	}
 
 	decision := r.DecisionEngine.AnalyzeComputeSavingsPlan(agg)
@@ -437,6 +476,85 @@ func (r *MetricsReconciler) analyzeReservedInstances(ctx context.Context) ([]ove
 	return decisions, nil
 }
 
+func (r *MetricsReconciler) cleanupMissingOverlays(
+	ctx context.Context,
+	decisions []overlay.Decision,
+	observedTypes map[overlay.CapacityType]bool,
+) {
+	if r.Client == nil {
+		return
+	}
+
+	desired := make(map[string]struct{}, len(decisions))
+	for _, decision := range decisions {
+		desired[decision.Name] = struct{}{}
+	}
+
+	var existing karpenterv1alpha1.NodeOverlayList
+	if err := r.Client.List(ctx, &existing, client.MatchingLabels{overlay.LabelManagedBy: overlay.LabelManagedByValue}); err != nil {
+		r.Logger.Error(err, "Failed to list managed NodeOverlays for garbage collection")
+		return
+	}
+	for i := range existing.Items {
+		item := &existing.Items[i]
+		capacityType := capacityTypeFromLabel(item.Labels[overlay.LabelCapacityType])
+		if !observedTypes[capacityType] {
+			continue
+		}
+		if _, ok := desired[item.Name]; ok {
+			continue
+		}
+		if err := r.Client.Delete(ctx, item); err != nil && !errors.IsNotFound(err) {
+			r.Logger.Error(err, "Failed to delete obsolete NodeOverlay", "name", item.Name)
+		}
+	}
+}
+
+func capacityTypeFromLabel(value string) overlay.CapacityType {
+	switch value {
+	case "compute-savings-plan":
+		return overlay.CapacityTypeComputeSavingsPlan
+	case "ec2-instance-savings-plan":
+		return overlay.CapacityTypeEC2InstanceSavingsPlan
+	case "reserved-instance":
+		return overlay.CapacityTypeReservedInstance
+	default:
+		return ""
+	}
+}
+
+func (r *MetricsReconciler) cleanupDisabledOverlayTypes(ctx context.Context) {
+	if r.Config == nil || r.Client == nil {
+		return
+	}
+
+	disabled := map[string]bool{
+		"compute-savings-plan":      !r.Config.Overlays.ComputeSavingsPlan.Enabled,
+		"ec2-instance-savings-plan": !r.Config.Overlays.EC2InstanceSavingsPlan.Enabled,
+		"reserved-instance":         !r.Config.Overlays.ReservedInstance.Enabled,
+	}
+
+	for capacityType, isDisabled := range disabled {
+		if !isDisabled {
+			continue
+		}
+
+		var overlays karpenterv1alpha1.NodeOverlayList
+		if err := r.Client.List(ctx, &overlays, client.MatchingLabels{
+			overlay.LabelManagedBy:    overlay.LabelManagedByValue,
+			overlay.LabelCapacityType: capacityType,
+		}); err != nil {
+			r.Logger.Error(err, "Failed to list disabled NodeOverlay type", "capacity_type", capacityType)
+			continue
+		}
+		for i := range overlays.Items {
+			if err := r.Client.Delete(ctx, &overlays.Items[i]); err != nil && !errors.IsNotFound(err) {
+				r.Logger.Error(err, "Failed to delete disabled NodeOverlay", "name", overlays.Items[i].Name)
+			}
+		}
+	}
+}
+
 // applyOverlays creates, updates, or deletes NodeOverlay resources based on decisions.
 func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overlay.GeneratedOverlay) {
 	// Track counts by capacity type for metrics
@@ -495,7 +613,7 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 						"name", gen.Overlay.Name,
 						"capacity_type", gen.Decision.CapacityType,
 						"weight", gen.Decision.Weight,
-						"price", gen.Decision.Price,
+						"price_adjustment", gen.Decision.PriceAdjustment,
 						"reason", gen.Decision.Reason,
 					)
 				} else if err != nil {

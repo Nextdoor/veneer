@@ -21,7 +21,14 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/internal/testutil"
+	"github.com/nextdoor/veneer/pkg/config"
+	"github.com/nextdoor/veneer/pkg/overlay"
 	"github.com/nextdoor/veneer/pkg/prometheus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
 
 func TestMetricsReconciler_Start(t *testing.T) {
@@ -251,6 +258,75 @@ func TestMetricsReconciler_ReconcileWithServerError(t *testing.T) {
 	// This allows partial reconciliation when some data sources are unavailable
 	if err != nil {
 		t.Errorf("reconcile() unexpected error: %v (should gracefully handle server errors)", err)
+	}
+}
+
+func TestMetricsReconciler_CleanupMissingOverlays(t *testing.T) {
+	scheme := runtime.NewScheme()
+	gv := schema.GroupVersion{Group: "karpenter.sh", Version: "v1alpha1"}
+	scheme.AddKnownTypes(gv, &karpenterv1alpha1.NodeOverlay{}, &karpenterv1alpha1.NodeOverlayList{})
+	metav1.AddToGroupVersion(scheme, gv)
+
+	existing := &karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: "obsolete-compute", Labels: map[string]string{
+		overlay.LabelManagedBy: overlay.LabelManagedByValue, overlay.LabelCapacityType: "compute-savings-plan",
+	}}}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existing).Build()
+	reconciler := &MetricsReconciler{Client: client, Logger: logr.Discard()}
+
+	reconciler.cleanupMissingOverlays(context.Background(), nil, map[overlay.CapacityType]bool{
+		overlay.CapacityTypeComputeSavingsPlan: true,
+	})
+
+	var remaining karpenterv1alpha1.NodeOverlayList
+	if err := client.List(context.Background(), &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining.Items) != 0 {
+		t.Fatalf("expected obsolete observed overlay to be deleted, got %v", remaining.Items)
+	}
+}
+
+func TestMetricsReconciler_CleanupDisabledOverlayTypes(t *testing.T) {
+	scheme := runtime.NewScheme()
+	gv := schema.GroupVersion{Group: "karpenter.sh", Version: "v1alpha1"}
+	scheme.AddKnownTypes(gv, &karpenterv1alpha1.NodeOverlay{}, &karpenterv1alpha1.NodeOverlayList{})
+	metav1.AddToGroupVersion(scheme, gv)
+
+	objects := []runtime.Object{
+		&karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: "compute", Labels: map[string]string{
+			overlay.LabelManagedBy: overlay.LabelManagedByValue, overlay.LabelCapacityType: "compute-savings-plan",
+		}}},
+		&karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: "ri", Labels: map[string]string{
+			overlay.LabelManagedBy: overlay.LabelManagedByValue, overlay.LabelCapacityType: "reserved-instance",
+		}}},
+		&karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-compute", Labels: map[string]string{
+			overlay.LabelCapacityType: "compute-savings-plan",
+		}}},
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build()
+	reconciler := &MetricsReconciler{
+		Config: &config.Config{Overlays: config.OverlayManagementConfig{
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: false},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true},
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true},
+		}},
+		Client: client,
+		Logger: logr.Discard(),
+	}
+
+	reconciler.cleanupDisabledOverlayTypes(context.Background())
+
+	var remaining karpenterv1alpha1.NodeOverlayList
+	if err := client.List(context.Background(), &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining.Items) != 2 {
+		t.Fatalf("expected 2 overlays to remain, got %d", len(remaining.Items))
+	}
+	for _, item := range remaining.Items {
+		if item.Name == "compute" {
+			t.Fatal("managed Compute Savings Plan overlay was not deleted")
+		}
 	}
 }
 

@@ -17,6 +17,7 @@ package overlay
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -67,6 +68,9 @@ const (
 
 	// LabelCapacityTypeKarpenter is the Karpenter label for capacity type (spot vs on-demand).
 	LabelCapacityTypeKarpenter = "karpenter.sh/capacity-type"
+
+	// LabelNodePoolKarpenter scopes an overlay to one or more Karpenter NodePools.
+	LabelNodePoolKarpenter = "karpenter.sh/nodepool"
 
 	// LabelDisabledKey is the label key used to create an impossible requirement.
 	// When Disabled mode is enabled, overlays include a requirement that this label
@@ -131,7 +135,7 @@ type GeneratedOverlay struct {
 //   - Proper naming convention based on capacity type
 //   - Labels for identification and debugging
 //   - Requirements to target appropriate instances
-//   - Price set to "0.00" (pre-paid capacity is effectively free)
+//   - Relative price adjustment that preserves instance-type price ordering
 //   - Weight based on capacity type priority
 func (g *Generator) Generate(decision Decision) *karpenterv1alpha1.NodeOverlay {
 	if !decision.ShouldExist {
@@ -148,9 +152,9 @@ func (g *Generator) Generate(decision Decision) *karpenterv1alpha1.NodeOverlay {
 			Labels: g.generateLabels(decision),
 		},
 		Spec: karpenterv1alpha1.NodeOverlaySpec{
-			Requirements: g.generateRequirements(decision),
-			Price:        &decision.Price,
-			Weight:       int32Ptr(int32(decision.Weight)),
+			Requirements:    g.generateRequirements(decision),
+			PriceAdjustment: stringPtr(decision.PriceAdjustment),
+			Weight:          int32Ptr(int32(decision.Weight)),
 		},
 	}
 
@@ -220,6 +224,9 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 	switch decision.CapacityType {
 	case CapacityTypeEC2InstanceSavingsPlan:
 		family, region := parseEC2InstanceSPName(decision.Name)
+		if decision.InstanceFamily != "" {
+			family = decision.InstanceFamily
+		}
 		if family != "" {
 			labels[LabelInstanceFamily] = family
 		}
@@ -229,6 +236,9 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 
 	case CapacityTypeReservedInstance:
 		instanceType, region := parseRIName(decision.Name)
+		if decision.InstanceType != "" {
+			instanceType = decision.InstanceType
+		}
 		if instanceType != "" {
 			labels[LabelInstanceType] = instanceType
 			// Extract family from instance type (e.g., "m5" from "m5.xlarge")
@@ -281,8 +291,8 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 
 	switch decision.CapacityType {
 	case CapacityTypeComputeSavingsPlan:
-		// Global Compute SPs apply to all instance families
-		// Use Exists operator to match any instance family
+		// Global Compute SPs apply to all instance families. Operators can restrict
+		// them to named NodePools so mixed spot/on-demand pools are unaffected.
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
@@ -290,10 +300,20 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 			},
 			capacityTypeReq,
 		)
+		if len(decision.NodePoolNames) > 0 {
+			requirements = append(requirements, karpenterv1alpha1.NodeSelectorRequirement{
+				Key:      LabelNodePoolKarpenter,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   append([]string(nil), decision.NodePoolNames...),
+			})
+		}
 
 	case CapacityTypeEC2InstanceSavingsPlan:
 		// EC2 Instance SPs are scoped to a specific instance family
-		family, _ := parseEC2InstanceSPName(decision.Name)
+		family := decision.InstanceFamily
+		if family == "" {
+			family, _ = parseEC2InstanceSPName(decision.Name)
+		}
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
@@ -305,7 +325,10 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 
 	case CapacityTypeReservedInstance:
 		// RIs are scoped to a specific instance type
-		instanceType, _ := parseRIName(decision.Name)
+		instanceType := decision.InstanceType
+		if instanceType == "" {
+			instanceType, _ = parseRIName(decision.Name)
+		}
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceTypeK8s,
@@ -443,6 +466,10 @@ func int32Ptr(i int32) *int32 {
 	return &i
 }
 
+func stringPtr(s string) *string {
+	return &s
+}
+
 // ValidationError represents an error found during overlay validation.
 type ValidationError struct {
 	Field   string
@@ -462,7 +489,7 @@ func (e ValidationError) Error() string {
 //   - Name is valid (DNS subdomain name)
 //   - Labels are valid (keys and values)
 //   - Requirements are properly formed
-//   - Price is in valid format
+//   - Exactly one valid price field is set
 //   - Weight is within bounds (1-10000)
 func ValidateOverlay(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
 	var errors []ValidationError
@@ -532,7 +559,20 @@ func ValidateOverlay(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
 		}
 	}
 
-	// Validate price format (must be a non-negative decimal)
+	if overlay.Spec.Price != nil && overlay.Spec.PriceAdjustment != nil {
+		errors = append(errors, ValidationError{
+			Field:   "spec",
+			Message: "price and priceAdjustment are mutually exclusive",
+		})
+	}
+	if overlay.Spec.Price == nil && overlay.Spec.PriceAdjustment == nil {
+		errors = append(errors, ValidationError{
+			Field:   "spec",
+			Message: "one of price or priceAdjustment is required",
+		})
+	}
+
+	// Validate absolute price format for compatibility with existing resources.
 	if overlay.Spec.Price != nil {
 		price := *overlay.Spec.Price
 		// Price must match pattern: ^\d+(\.\d+)?$
@@ -562,6 +602,16 @@ func ValidateOverlay(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
 					Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", price),
 				})
 			}
+		}
+	}
+
+	if overlay.Spec.PriceAdjustment != nil {
+		adjustment := *overlay.Spec.PriceAdjustment
+		if !regexp.MustCompile(`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`).MatchString(adjustment) {
+			errors = append(errors, ValidationError{
+				Field:   "spec.priceAdjustment",
+				Message: fmt.Sprintf("priceAdjustment %q must be a discount greater than -100%% and below 0%%", adjustment),
+			})
 		}
 	}
 
@@ -608,6 +658,9 @@ func FormatOverlayYAML(overlay *karpenterv1alpha1.NodeOverlay) string {
 
 	if overlay.Spec.Price != nil {
 		sb.WriteString(fmt.Sprintf("  price: %q\n", *overlay.Spec.Price))
+	}
+	if overlay.Spec.PriceAdjustment != nil {
+		sb.WriteString(fmt.Sprintf("  priceAdjustment: %q\n", *overlay.Spec.PriceAdjustment))
 	}
 
 	if len(overlay.Spec.Requirements) > 0 {

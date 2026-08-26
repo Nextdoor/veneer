@@ -108,6 +108,34 @@ config:
     # -- Utilization threshold percentage for deleting overlays (0-100)
     utilizationThreshold: 95.0
 
+    # -- Reserved Instance overlay behavior
+    reservedInstance:
+      # -- Enable Reserved Instance overlays
+      enabled: true
+      # -- Relative discount applied to matching on-demand offerings (strictly between -100% and 0%)
+      priceAdjustment: "-50%"
+
+    # -- EC2 Instance Savings Plan overlay behavior
+    ec2InstanceSavingsPlan:
+      # -- Enable EC2 Instance Savings Plan overlays
+      enabled: true
+      # -- Relative discount applied to matching on-demand offerings (strictly between -100% and 0%)
+      priceAdjustment: "-50%"
+
+    # -- Compute Savings Plan overlay behavior. Scope to on-demand-only NodePools in mixed-capacity clusters.
+    computeSavingsPlan:
+      # -- Enable Compute Savings Plan overlays
+      enabled: true
+      # -- Relative discount applied to matching on-demand offerings (strictly between -100% and 0%)
+      priceAdjustment: "-50%"
+      # -- Optional explicit NodePool name allowlist; empty targets every NodePool
+      nodePoolSelector:
+        names: []
+      # -- Minimum remaining Compute SP capacity in dollars per hour before creating the overlay
+      minRemainingCapacityDollars: 50
+      # -- Minimum continuous eligibility period before creating the overlay
+      minBelowThresholdDuration: 15m
+
     # -- Weights for overlay priority (higher = higher priority)
     weights:
       # -- Reserved Instance overlay weight

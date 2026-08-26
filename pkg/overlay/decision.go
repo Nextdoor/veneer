@@ -20,6 +20,8 @@ package overlay
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/nextdoor/veneer/pkg/config"
 	"github.com/nextdoor/veneer/pkg/prometheus"
@@ -59,9 +61,17 @@ type Decision struct {
 	// Reserved Instances > EC2 Instance SPs > Compute SPs
 	Weight int
 
-	// Price is the effective hourly cost for on-demand instances with this capacity applied.
-	// For Phase 2, this is always "0.00" (100% discount) to maximize pre-paid usage.
-	Price string
+	// PriceAdjustment is the relative price change Karpenter applies to matching offerings.
+	// Relative discounts preserve instance-type price ordering, unlike an absolute zero price.
+	PriceAdjustment string
+
+	// InstanceFamily and InstanceType carry structured targeting data into generation.
+	// Keeping these values out of the overlay name avoids coupling selectors to naming prefixes.
+	InstanceFamily string
+	InstanceType   string
+
+	// NodePoolNames optionally restricts a Compute Savings Plan overlay to named NodePools.
+	NodePoolNames []string
 
 	// TargetSelector describes which instances this overlay targets.
 	// Examples:
@@ -87,12 +97,24 @@ type Decision struct {
 type DecisionEngine struct {
 	// Config provides utilization thresholds and overlay weights.
 	Config *config.Config
+
+	mu            sync.Mutex
+	eligibleSince map[string]time.Time
+	now           func() time.Time
 }
 
 // NewDecisionEngine creates a new decision engine with the provided configuration.
 func NewDecisionEngine(cfg *config.Config) *DecisionEngine {
+	return NewDecisionEngineWithClock(cfg, time.Now)
+}
+
+// NewDecisionEngineWithClock creates a decision engine with an injectable clock.
+// It is primarily useful for deterministic hysteresis tests.
+func NewDecisionEngineWithClock(cfg *config.Config, now func() time.Time) *DecisionEngine {
 	return &DecisionEngine{
-		Config: cfg,
+		Config:        cfg,
+		eligibleSince: make(map[string]time.Time),
+		now:           now,
 	}
 }
 
@@ -270,33 +292,52 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	}
 	overlayName := fmt.Sprintf("%s-global", prefix)
 
+	computeConfig := e.Config.Overlays.ComputeSavingsPlan
 	decision := Decision{
 		Name:               overlayName,
 		CapacityType:       CapacityTypeComputeSavingsPlan,
 		Weight:             e.Config.Overlays.Weights.ComputeSavingsPlan,
-		Price:              "0.00", // 100% discount for Phase 2
+		PriceAdjustment:    computeConfig.PriceAdjustment,
+		NodePoolNames:      append([]string(nil), computeConfig.NodePoolSelector.Names...),
 		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
 		UtilizationPercent: agg.UtilizationPercent,
 		RemainingCapacity:  agg.TotalRemainingCapacity,
 	}
 
-	// Decision logic: overlay exists if BOTH conditions are true:
-	// 1. Utilization below threshold
-	// 2. Remaining capacity available
 	threshold := e.Config.Overlays.UtilizationThreshold
-
+	if !computeConfig.Enabled {
+		e.resetEligibility(overlayName)
+		decision.Reason = "compute savings plan overlays are disabled"
+		return decision
+	}
 	if agg.UtilizationPercent >= threshold {
-		decision.ShouldExist = false
+		e.resetEligibility(overlayName)
 		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.UtilizationPercent, threshold)
-	} else if agg.TotalRemainingCapacity <= 0 {
-		decision.ShouldExist = false
+		return decision
+	}
+	if agg.TotalRemainingCapacity <= 0 {
+		e.resetEligibility(overlayName)
 		decision.Reason = fmt.Sprintf("no remaining capacity (%.2f $/hour)", agg.TotalRemainingCapacity)
-	} else {
-		decision.ShouldExist = true
-		decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
-			agg.UtilizationPercent, threshold, agg.TotalRemainingCapacity)
+		return decision
+	}
+	if agg.TotalRemainingCapacity < computeConfig.MinRemainingCapacityDollars {
+		e.resetEligibility(overlayName)
+		decision.Reason = fmt.Sprintf("remaining capacity %.2f $/hour below minimum %.2f $/hour",
+			agg.TotalRemainingCapacity, computeConfig.MinRemainingCapacityDollars)
+		return decision
 	}
 
+	if wait := computeConfig.MinBelowThresholdDuration; wait > 0 {
+		eligibleFor := e.eligibleDuration(overlayName)
+		if eligibleFor < wait {
+			decision.Reason = fmt.Sprintf("eligible for %s; waiting for %s minimum duration", eligibleFor.Round(time.Second), wait)
+			return decision
+		}
+	}
+
+	decision.ShouldExist = true
+	decision.Reason = fmt.Sprintf("utilization %.1f%% below threshold %.1f%%, capacity available (%.2f $/hour)",
+		agg.UtilizationPercent, threshold, agg.TotalRemainingCapacity)
 	return decision
 }
 
@@ -316,11 +357,13 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 	}
 	overlayName := fmt.Sprintf("%s-%s-%s", prefix, agg.InstanceFamily, agg.Region)
 
+	ec2Config := e.Config.Overlays.EC2InstanceSavingsPlan
 	decision := Decision{
-		Name:         overlayName,
-		CapacityType: CapacityTypeEC2InstanceSavingsPlan,
-		Weight:       e.Config.Overlays.Weights.EC2InstanceSavingsPlan,
-		Price:        "0.00", // 100% discount for Phase 2
+		Name:            overlayName,
+		CapacityType:    CapacityTypeEC2InstanceSavingsPlan,
+		Weight:          e.Config.Overlays.Weights.EC2InstanceSavingsPlan,
+		PriceAdjustment: ec2Config.PriceAdjustment,
+		InstanceFamily:  agg.InstanceFamily,
 		TargetSelector: fmt.Sprintf(
 			"karpenter.k8s.aws/instance-family: In [%s], karpenter.sh/capacity-type: In [on-demand]",
 			agg.InstanceFamily,
@@ -331,7 +374,10 @@ func (e *DecisionEngine) AnalyzeEC2InstanceSavingsPlan(
 
 	threshold := e.Config.Overlays.UtilizationThreshold
 
-	if agg.UtilizationPercent >= threshold {
+	if !ec2Config.Enabled {
+		decision.ShouldExist = false
+		decision.Reason = "ec2 instance savings plan overlays are disabled"
+	} else if agg.UtilizationPercent >= threshold {
 		decision.ShouldExist = false
 		decision.Reason = fmt.Sprintf("utilization %.1f%% at/above threshold %.1f%%", agg.UtilizationPercent, threshold)
 	} else if agg.TotalRemainingCapacity <= 0 {
@@ -360,11 +406,13 @@ func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance)
 	}
 	overlayName := fmt.Sprintf("%s-%s-%s", prefix, agg.InstanceType, agg.Region)
 
+	riConfig := e.Config.Overlays.ReservedInstance
 	decision := Decision{
-		Name:         overlayName,
-		CapacityType: CapacityTypeReservedInstance,
-		Weight:       e.Config.Overlays.Weights.ReservedInstance,
-		Price:        "0.00", // 100% discount for Phase 2
+		Name:            overlayName,
+		CapacityType:    CapacityTypeReservedInstance,
+		Weight:          e.Config.Overlays.Weights.ReservedInstance,
+		PriceAdjustment: riConfig.PriceAdjustment,
+		InstanceType:    agg.InstanceType,
 		TargetSelector: fmt.Sprintf("node.kubernetes.io/instance-type: In [%s], karpenter.sh/capacity-type: In [on-demand]",
 			agg.InstanceType),
 		UtilizationPercent: 0, // RIs don't have utilization metrics
@@ -372,7 +420,10 @@ func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance)
 	}
 
 	// Decision logic: overlay exists if RI count > 0
-	if agg.TotalCount > 0 {
+	if !riConfig.Enabled {
+		decision.ShouldExist = false
+		decision.Reason = "reserved instance overlays are disabled"
+	} else if agg.TotalCount > 0 {
 		decision.ShouldExist = true
 		decision.Reason = fmt.Sprintf("%d reserved instances available", agg.TotalCount)
 	} else {
@@ -381,6 +432,46 @@ func (e *DecisionEngine) AnalyzeReservedInstance(agg AggregatedReservedInstance)
 	}
 
 	return decision
+}
+
+func (e *DecisionEngine) eligibleDuration(name string) time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	now := e.now()
+	since, ok := e.eligibleSince[name]
+	if !ok {
+		e.eligibleSince[name] = now
+		return 0
+	}
+	return now.Sub(since)
+}
+
+func (e *DecisionEngine) resetEligibility(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.eligibleSince, name)
+}
+
+// ResetComputeEligibility interrupts the continuous-eligibility window when
+// telemetry is stale or unavailable. A later eligible observation must start a
+// fresh dwell period before creating the broad Compute Savings Plan overlay.
+func (e *DecisionEngine) ResetComputeEligibility() {
+	prefix := e.Config.Overlays.Naming.ComputeSavingsPlanPrefix
+	if prefix == "" {
+		prefix = config.DefaultOverlayNamingComputeSPPrefix
+	}
+	e.resetEligibility(fmt.Sprintf("%s-global", prefix))
+}
+
+// MarkExisting records that an overlay already exists in the cluster. Existing
+// overlays have already crossed the creation boundary, so they should remain
+// while eligible after a controller restart instead of waiting through a new
+// in-memory hysteresis window.
+func (e *DecisionEngine) MarkExisting(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.eligibleSince[name] = e.now().Add(-e.Config.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration)
 }
 
 // AnalyzeComputeSavingsPlanSingle is a convenience wrapper for analyzing a single Compute SP.

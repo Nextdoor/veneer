@@ -41,6 +41,24 @@ overlays:
     # Delete overlays when utilization reaches 95%
     utilizationThreshold: 95.0
 
+    reservedInstance:
+        enabled: true
+        priceAdjustment: "-50%"
+
+    ec2InstanceSavingsPlan:
+        enabled: true
+        priceAdjustment: "-50%"
+
+    # Keep this disabled or restrict names to on-demand-only NodePools when local
+    # fixtures include mixed Spot/On-Demand pools.
+    computeSavingsPlan:
+        enabled: true
+        priceAdjustment: "-50%"
+        nodePoolSelector:
+            names: []
+        minRemainingCapacityDollars: 50
+        minBelowThresholdDuration: 15m
+
     # Overlay weights (higher = higher priority)
     weights:
         reservedInstance: 30 # Highest priority (instance-type specific)
