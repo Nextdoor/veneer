@@ -36,16 +36,65 @@ metricsBindAddress: ":8080"
 # Can be overridden with VENEER_HEALTH_PROBE_BIND_ADDRESS environment variable
 healthProbeBindAddress: ":8081"
 
+# AWS configuration for scoping RI/SP queries
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+
 # Overlay management configuration
 overlays:
-    # Disabled mode creates NodeOverlays with an impossible requirement that
-    # prevents them from matching any nodes. This allows testing overlay creation
-    # in a cluster without affecting Karpenter's provisioning decisions.
-    #
-    # When disabled: overlays include a requirement for "veneer.io/disabled: true"
-    # which no node will have, so they never match.
-    #
-    # Default: false (overlays are active and will affect Karpenter)
-    # Can be overridden with VENEER_OVERLAY_DISABLED environment variable
-    # or --overlay-disabled CLI flag
-    disabled: false
+  # Disabled mode creates NodeOverlays with an impossible requirement that
+  # prevents them from matching any nodes.
+  # Can be overridden with VENEER_OVERLAY_DISABLED or --overlay-disabled.
+  disabled: false
+
+  # Delete SP overlays when utilization reaches this percentage.
+  utilizationThreshold: 95.0
+
+  reservedInstance:
+    # Scalar overrides: VENEER_OVERLAY_RESERVED_INSTANCE_ENABLED and
+    # VENEER_OVERLAY_RESERVED_INSTANCE_PRICE_ADJUSTMENT
+    enabled: true
+    priceAdjustment: "-90%"
+
+  ec2InstanceSavingsPlan:
+    # Scalar overrides: VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_ENABLED and
+    # VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_PRICE_ADJUSTMENT
+    enabled: true
+    priceAdjustment: "-90%"
+
+  computeSavingsPlan:
+    # Compute SP overlays are broad. Disable them or scope them to on-demand-only
+    # NodePools when a cluster has NodePools that permit both Spot and On-Demand.
+    enabled: true
+    priceAdjustment: "-50%"
+
+    # Scope supports explicit NodePool names, not NodePool metadata label selectors.
+    # An empty list targets every NodePool. There is intentionally no env override.
+    nodePoolSelector:
+      names: []
+
+    # Require at least this much unused hourly Compute SP commitment.
+    minRemainingCapacityDollars: 50
+
+    # Require continuous eligibility for this duration before creating the overlay.
+    minBelowThresholdDuration: 15m
+
+    # Scalar overrides:
+    # VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_ENABLED
+    # VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_PRICE_ADJUSTMENT
+    # VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_REMAINING_CAPACITY_DOLLARS
+    # VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_BELOW_THRESHOLD_DURATION
+
+  weights:
+    reservedInstance: 30
+    ec2InstanceSavingsPlan: 20
+    computeSavingsPlan: 10
+
+  naming:
+    reservedInstancePrefix: "cost-aware-ri"
+    ec2InstanceSavingsPlanPrefix: "cost-aware-ec2-sp"
+    computeSavingsPlanPrefix: "cost-aware-compute-sp"
+
+preferences:
+  enabled: true

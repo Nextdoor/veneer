@@ -49,8 +49,9 @@ All requirements must be satisfied for the overlay to apply to an instance type.
 
 A string representing the price adjustment to apply. Veneer uses percentage adjustments:
 
-- `"-30%"` -- Reduce the effective price by 30% (makes instance more preferred)
-- `"+20%"` -- Increase the effective price by 20% (makes instance less preferred)
+- `"-30%"` -- Reduce the effective price by 30% (makes the instance more preferred)
+
+Cost-aware overlays use configurable discounts strictly between `-100%` and `0%`; the default is `-50%`. Relative discounts retain price differences between instance types and avoid the arbitrary tie-breaking caused by assigning every matching offering the same absolute price.
 
 The adjusted price becomes the Priority value in the AWS CreateFleet API call. Lower Priority = higher preference.
 
@@ -66,7 +67,7 @@ Veneer uses a tiered weight system to ensure the most specific capacity data tak
 |-------------|----------------|-------|---------------|
 | Reserved Instance | 30 | Instance-type + region specific | `cost-aware-ri-` |
 | EC2 Instance Savings Plan | 20 | Instance-family + region specific | `cost-aware-ec2-sp-` |
-| Compute Savings Plan | 10 | Global (all families, all regions) | `cost-aware-compute-sp-` |
+| Compute Savings Plan | 10 | All families; optionally restricted to named NodePools | `cost-aware-compute-sp-` |
 | Preference | 1-9 | User-defined | `pref-` |
 
 This hierarchy ensures that when both an RI and a Compute SP apply to the same instance type, the more specific RI overlay (weight 30) takes precedence over the general Compute SP overlay (weight 10).
@@ -112,7 +113,7 @@ These labels are used for:
 
 ### Cost-Aware: Reserved Instance Overlay
 
-Created when Lumina detects active Reserved Instances for `m5.xlarge` in `us-west-2`:
+Created when Lumina detects active Reserved Instances for `m5.xlarge` in `us-west-2`. The deeper default discount is intended to keep covered on-demand capacity competitive with Spot while preserving instance-price ordering:
 
 ```yaml
 apiVersion: karpenter.sh/v1alpha1
@@ -133,13 +134,13 @@ spec:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["on-demand"]
-  priceAdjustment: "-100%"
+  priceAdjustment: "-90%"
   weight: 30
 ```
 
 ### Cost-Aware: EC2 Instance Savings Plan Overlay
 
-Created when Lumina detects an EC2 Instance Savings Plan covering the `m5` family in `us-west-2` with remaining capacity:
+Created when Lumina detects an EC2 Instance Savings Plan covering the `m5` family in `us-west-2` with remaining capacity. Its deeper default discount keeps covered on-demand capacity competitive with Spot without flattening family prices:
 
 ```yaml
 apiVersion: karpenter.sh/v1alpha1
@@ -160,13 +161,13 @@ spec:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["on-demand"]
-  priceAdjustment: "-30%"
+  priceAdjustment: "-90%"
   weight: 20
 ```
 
 ### Cost-Aware: Compute Savings Plan Overlay
 
-Created when Lumina detects a Compute Savings Plan with remaining capacity:
+Created when Lumina detects a Compute Savings Plan with remaining capacity. This example scopes the overlay to an on-demand-only NodePool:
 
 ```yaml
 apiVersion: karpenter.sh/v1alpha1
@@ -181,9 +182,25 @@ spec:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["on-demand"]
-  priceAdjustment: "-15%"
+    - key: karpenter.sh/nodepool
+      operator: In
+      values: ["on-demand-general"]
+  priceAdjustment: "-50%"
   weight: 10
 ```
+
+### Compute Savings Plan Safety and Scope
+
+Compute Savings Plans are broader than RI and EC2 Instance SP coverage. An unscoped Compute SP overlay can match every on-demand offering and can change purchasing behavior in NodePools that permit both Spot and On-Demand capacity.
+
+Use one of these deployment patterns for mixed-capacity clusters:
+
+- Set `overlays.computeSavingsPlan.enabled: false` while leaving RI, EC2 Instance SP, and preference overlays enabled.
+- Set `overlays.computeSavingsPlan.nodePoolSelector.names` to NodePools that are constrained to On-Demand capacity.
+
+When names are configured, Veneer adds a `karpenter.sh/nodepool In [...]` requirement. Scope supports explicit NodePool names only; it does not support metadata label selectors. An empty name list leaves the Compute SP overlay unscoped.
+
+The Compute SP overlay also requires `minRemainingCapacityDollars` of remaining hourly commitment for `minBelowThresholdDuration` before creation. These defaults are `$50/hour` and `15m`. This hysteresis prevents a short utilization dip from immediately creating a broad overlay; unsafe conditions remove an existing overlay immediately.
 
 ### Preference Overlay
 
@@ -227,7 +244,7 @@ spec:
     - key: veneer.io/disabled
       operator: In
       values: ["true"]  # No node will ever have this label
-  priceAdjustment: "-100%"
+  priceAdjustment: "-90%"
   weight: 30
 ```
 

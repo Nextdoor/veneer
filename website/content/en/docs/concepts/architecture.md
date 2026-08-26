@@ -82,9 +82,10 @@ flowchart TD
    - Savings Plan remaining capacity ($/hour)
    - Reserved Instance counts by type and region
 2. **Check data freshness** -- Skip reconciliation if Lumina data is stale
-3. **Run the decision engine** -- For each SP and RI, determine whether a NodeOverlay should exist:
-   - **Create overlay** when utilization is below the threshold (default 95%) and remaining capacity exists
-   - **Delete overlay** when utilization exceeds the threshold or no capacity remains
+3. **Run the decision engine** -- For each enabled SP and RI type, determine whether a NodeOverlay should exist:
+   - **RI and EC2 Instance SP:** create when eligible capacity exists; delete when it disappears
+   - **Compute SP:** create only after utilization remains below the threshold, remaining capacity stays above the configured floor, and the dwell time elapses
+   - **Delete immediately** when utilization reaches the threshold, capacity falls below the floor, or the type is disabled
 4. **Apply changes** -- Create, update, or delete NodeOverlays in the cluster
 
 ### NodePool Reconciler
@@ -124,13 +125,16 @@ See [Instance Preferences]({{< relref "preferences" >}}) for annotation syntax a
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Active : SP below threshold\nor RI count > 0
+    [*] --> Eligible : Compute SP below threshold\nand above capacity floor
+    Eligible --> Active : Dwell time elapsed
+    Eligible --> Removed : Eligibility interrupted
+    [*] --> Active : RI or EC2 SP capacity available
     Active --> Active : Capacity still available\n(no change)
-    Active --> Removed : Utilization exceeds threshold\nor capacity exhausted
-    Removed --> Active : Capacity becomes available
-    Removed --> [*]
+    Active --> Removed : Threshold/floor crossed\nor capacity disappears
+    Removed --> Eligible : Compute SP becomes eligible
+    Removed --> Active : RI or EC2 SP capacity appears
     Active --> Preserved : Lumina data stale
-    Preserved --> Active : Fresh data arrives
+    Preserved --> Active : Fresh eligible data arrives
     Preserved --> Removed : Fresh data shows\nno capacity
 ```
 
@@ -138,8 +142,9 @@ Cost-aware overlays follow this lifecycle:
 
 | Event | Action | Overlay State |
 |-------|--------|---------------|
-| SP utilization below threshold, capacity available | Create overlay | Active -- influences Karpenter pricing |
-| SP utilization rises above threshold | Delete overlay | Removed -- Karpenter uses default pricing |
+| Compute SP remains below threshold and above the capacity floor for the dwell time | Create overlay | Active -- influences Karpenter pricing |
+| Compute SP crosses the threshold/floor or loses capacity | Delete overlay immediately | Removed -- Karpenter uses default pricing |
+| EC2 Instance SP capacity available | Create overlay | Active |
 | RI count > 0 for instance type in region | Create overlay | Active |
 | RI count drops to 0 | Delete overlay | Removed |
 | Lumina data becomes stale | Skip reconciliation | No change -- last known state preserved |
@@ -163,7 +168,7 @@ When multiple overlays target the same instance types, the overlay with the high
 |-------------|----------------|-------|
 | Reserved Instance | 30 | Instance-type specific (e.g., `m5.xlarge` in `us-west-2`) |
 | EC2 Instance Savings Plan | 20 | Family-specific (e.g., `m5` family in `us-west-2`) |
-| Compute Savings Plan | 10 | Global (all families, all regions) |
+| Compute Savings Plan | 10 | All families; optionally restricted to named NodePools |
 | Preference | 1-9 (from annotation) | User-defined scope |
 
 Keep preference overlay weights below 10 to ensure cost-aware overlays (backed by real AWS capacity data) take precedence.

@@ -73,7 +73,10 @@ func TestDecisionEngineIntegration(t *testing.T) {
 	// Create decision engine with test config
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -289,7 +292,10 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -390,8 +396,8 @@ func TestMultipleCapacityTypesIntegration(t *testing.T) {
 		if decision.Name == "" {
 			t.Errorf("decision has empty Name")
 		}
-		if decision.Price != "0.00" {
-			t.Errorf("decision Price = %q, want \"0.00\"", decision.Price)
+		if decision.PriceAdjustment != "-50%" {
+			t.Errorf("decision PriceAdjustment = %q, want \"-50%%\"", decision.PriceAdjustment)
 		}
 		if decision.TargetSelector == "" {
 			t.Errorf("decision has empty TargetSelector")
@@ -458,7 +464,10 @@ func TestNodeOverlayGeneratorIntegration(t *testing.T) {
 	// Create decision engine with test config
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -584,8 +593,11 @@ func TestNodeOverlayGeneratorIntegration(t *testing.T) {
 			}
 
 			// Verify price
-			if gen.Overlay.Spec.Price == nil || *gen.Overlay.Spec.Price != "0.00" {
-				t.Errorf("overlay %s has invalid price: %v", gen.Overlay.Name, gen.Overlay.Spec.Price)
+			if gen.Overlay.Spec.Price != nil {
+				t.Errorf("overlay %s must not set absolute price", gen.Overlay.Name)
+			}
+			if gen.Overlay.Spec.PriceAdjustment == nil || *gen.Overlay.Spec.PriceAdjustment != "-50%" {
+				t.Errorf("overlay %s has invalid price adjustment: %v", gen.Overlay.Name, gen.Overlay.Spec.PriceAdjustment)
 			}
 
 			// Verify weight matches decision
@@ -705,8 +717,8 @@ func TestNodeOverlayGeneratorIntegration(t *testing.T) {
 			if !strings.Contains(yaml, "name: "+gen.Overlay.Name) {
 				t.Errorf("YAML for %s missing name", gen.Overlay.Name)
 			}
-			if !strings.Contains(yaml, `price: "0.00"`) {
-				t.Errorf("YAML for %s missing price", gen.Overlay.Name)
+			if !strings.Contains(yaml, `priceAdjustment: "-50%"`) {
+				t.Errorf("YAML for %s missing price adjustment", gen.Overlay.Name)
 			}
 			if !strings.Contains(yaml, "requirements:") {
 				t.Errorf("YAML for %s missing requirements", gen.Overlay.Name)

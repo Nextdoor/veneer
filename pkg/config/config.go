@@ -20,55 +20,84 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"os"
+	"regexp"
+	"time"
 
 	"github.com/spf13/viper"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Configuration key constants for viper SetDefault and BindEnv calls.
 const (
-	KeyPrometheusURL                       = "prometheusUrl"
-	KeyLogLevel                            = "logLevel"
-	KeyMetricsBindAddress                  = "metricsBindAddress"
-	KeyHealthProbeBindAddress              = "healthProbeBindAddress"
-	KeyAWSAccountID                        = "aws.accountId"
-	KeyAWSRegion                           = "aws.region"
-	KeyOverlayDisabled                     = "overlays.disabled"
-	KeyOverlayUtilizationThreshold         = "overlays.utilizationThreshold"
-	KeyOverlayWeightReservedInstance       = "overlays.weights.reservedInstance"
-	KeyOverlayWeightEC2InstanceSavingsPlan = "overlays.weights.ec2InstanceSavingsPlan"
-	KeyOverlayWeightComputeSavingsPlan     = "overlays.weights.computeSavingsPlan"
-	KeyOverlayNamingReservedInstancePrefix = "overlays.naming.reservedInstancePrefix"
-	KeyOverlayNamingEC2InstanceSPPrefix    = "overlays.naming.ec2InstanceSavingsPlanPrefix"
-	KeyOverlayNamingComputeSPPrefix        = "overlays.naming.computeSavingsPlanPrefix"
-	KeyPreferencesEnabled                  = "preferences.enabled"
+	KeyPrometheusURL                                = "prometheusUrl"
+	KeyLogLevel                                     = "logLevel"
+	KeyMetricsBindAddress                           = "metricsBindAddress"
+	KeyHealthProbeBindAddress                       = "healthProbeBindAddress"
+	KeyAWSAccountID                                 = "aws.accountId"
+	KeyAWSRegion                                    = "aws.region"
+	KeyOverlayDisabled                              = "overlays.disabled"
+	KeyOverlayUtilizationThreshold                  = "overlays.utilizationThreshold"
+	KeyOverlayReservedInstanceEnabled               = "overlays.reservedInstance.enabled"
+	KeyOverlayReservedInstancePriceAdjustment       = "overlays.reservedInstance.priceAdjustment"
+	KeyOverlayEC2InstanceSavingsPlanEnabled         = "overlays.ec2InstanceSavingsPlan.enabled"
+	KeyOverlayEC2InstanceSavingsPlanPriceAdjustment = "overlays.ec2InstanceSavingsPlan.priceAdjustment"
+	KeyOverlayComputeSavingsPlanEnabled             = "overlays.computeSavingsPlan.enabled"
+	KeyOverlayComputeSavingsPlanPriceAdjustment     = "overlays.computeSavingsPlan.priceAdjustment"
+	KeyOverlayComputeSPMinRemainingCapacityDollars  = "overlays.computeSavingsPlan.minRemainingCapacityDollars"
+	KeyOverlayComputeSPMinBelowThresholdDuration    = "overlays.computeSavingsPlan.minBelowThresholdDuration"
+	KeyOverlayWeightReservedInstance                = "overlays.weights.reservedInstance"
+	KeyOverlayWeightEC2InstanceSavingsPlan          = "overlays.weights.ec2InstanceSavingsPlan"
+	KeyOverlayWeightComputeSavingsPlan              = "overlays.weights.computeSavingsPlan"
+	KeyOverlayNamingReservedInstancePrefix          = "overlays.naming.reservedInstancePrefix"
+	KeyOverlayNamingEC2InstanceSPPrefix             = "overlays.naming.ec2InstanceSavingsPlanPrefix"
+	KeyOverlayNamingComputeSPPrefix                 = "overlays.naming.computeSavingsPlanPrefix"
+	KeyPreferencesEnabled                           = "preferences.enabled"
 )
 
 // Environment variable name constants.
 const (
-	EnvPrometheusURL          = "VENEER_PROMETHEUS_URL"
-	EnvLogLevel               = "VENEER_LOG_LEVEL"
-	EnvMetricsBindAddress     = "VENEER_METRICS_BIND_ADDRESS"
-	EnvHealthProbeBindAddress = "VENEER_HEALTH_PROBE_BIND_ADDRESS"
-	EnvAWSAccountID           = "VENEER_AWS_ACCOUNT_ID"
-	EnvAWSRegion              = "VENEER_AWS_REGION"
-	EnvOverlayDisabled        = "VENEER_OVERLAY_DISABLED"
-	EnvPrefix                 = "VENEER"
+	EnvPrometheusURL                                = "VENEER_PROMETHEUS_URL"
+	EnvLogLevel                                     = "VENEER_LOG_LEVEL"
+	EnvMetricsBindAddress                           = "VENEER_METRICS_BIND_ADDRESS"
+	EnvHealthProbeBindAddress                       = "VENEER_HEALTH_PROBE_BIND_ADDRESS"
+	EnvAWSAccountID                                 = "VENEER_AWS_ACCOUNT_ID"
+	EnvAWSRegion                                    = "VENEER_AWS_REGION"
+	EnvOverlayDisabled                              = "VENEER_OVERLAY_DISABLED"
+	EnvOverlayReservedInstanceEnabled               = "VENEER_OVERLAY_RESERVED_INSTANCE_ENABLED"
+	EnvOverlayReservedInstancePriceAdjustment       = "VENEER_OVERLAY_RESERVED_INSTANCE_PRICE_ADJUSTMENT"
+	EnvOverlayEC2InstanceSavingsPlanEnabled         = "VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_ENABLED"
+	EnvOverlayEC2InstanceSavingsPlanPriceAdjustment = "VENEER_OVERLAY_EC2_INSTANCE_SAVINGS_PLAN_PRICE_ADJUSTMENT"
+	EnvOverlayComputeSavingsPlanEnabled             = "VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_ENABLED"
+	EnvOverlayComputeSavingsPlanPriceAdjustment     = "VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_PRICE_ADJUSTMENT"
+	EnvOverlayComputeSPMinRemainingCapacityDollars  = "VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_REMAINING_CAPACITY_DOLLARS"
+	EnvOverlayComputeSPMinBelowThresholdDuration    = "VENEER_OVERLAY_COMPUTE_SAVINGS_PLAN_MIN_BELOW_THRESHOLD_DURATION"
+	EnvPrefix                                       = "VENEER"
 )
 
 // Default configuration values.
 const (
-	DefaultPrometheusURL                       = "http://prometheus:9090"
-	DefaultLogLevel                            = "info"
-	DefaultMetricsBindAddress                  = ":8080"
-	DefaultHealthProbeBindAddress              = ":8081"
-	DefaultOverlayUtilizationThreshold         = 95.0                    // Delete overlays at 95% utilization
-	DefaultOverlayWeightReservedInstance       = 30                      // Highest priority (most specific)
-	DefaultOverlayWeightEC2InstanceSavingsPlan = 20                      // Medium priority (family-specific)
-	DefaultOverlayWeightComputeSavingsPlan     = 10                      // Lowest priority (global)
-	DefaultOverlayNamingReservedInstancePrefix = "cost-aware-ri"         // RI overlay name prefix
-	DefaultOverlayNamingEC2InstanceSPPrefix    = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
-	DefaultOverlayNamingComputeSPPrefix        = "cost-aware-compute-sp" // Compute SP overlay name prefix
-	DefaultPreferencesEnabled                  = true                    // Instance preferences enabled by default
+	DefaultPrometheusURL                                = "http://prometheus:9090"
+	DefaultLogLevel                                     = "info"
+	DefaultMetricsBindAddress                           = ":8080"
+	DefaultHealthProbeBindAddress                       = ":8081"
+	DefaultOverlayUtilizationThreshold                  = 95.0 // Delete overlays at 95% utilization
+	DefaultOverlayReservedInstanceEnabled               = true
+	DefaultOverlayReservedInstancePriceAdjustment       = "-90%"
+	DefaultOverlayEC2InstanceSavingsPlanEnabled         = true
+	DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment = "-90%"
+	DefaultOverlayComputeSavingsPlanEnabled             = true
+	DefaultOverlayComputeSavingsPlanPriceAdjustment     = "-50%"
+	DefaultOverlayComputeSPMinRemainingCapacityDollars  = 50.0
+	DefaultOverlayComputeSPMinBelowThresholdDuration    = 15 * time.Minute
+	DefaultOverlayWeightReservedInstance                = 30                      // Highest priority (most specific)
+	DefaultOverlayWeightEC2InstanceSavingsPlan          = 20                      // Medium priority (family-specific)
+	DefaultOverlayWeightComputeSavingsPlan              = 10                      // Lowest priority (global)
+	DefaultOverlayNamingReservedInstancePrefix          = "cost-aware-ri"         // RI overlay name prefix
+	DefaultOverlayNamingEC2InstanceSPPrefix             = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
+	DefaultOverlayNamingComputeSPPrefix                 = "cost-aware-compute-sp" // Compute SP overlay name prefix
+	DefaultPreferencesEnabled                           = true
 )
 
 // Config represents the complete controller configuration.
@@ -156,6 +185,16 @@ type OverlayManagementConfig struct {
 	// Valid range: 0-100
 	UtilizationThreshold float64 `yaml:"utilizationThreshold,omitempty"`
 
+	// ReservedInstance configures instance-type-specific Reserved Instance overlays.
+	ReservedInstance CapacityOverlayConfig `yaml:"reservedInstance,omitempty"`
+
+	// EC2InstanceSavingsPlan configures family-specific EC2 Instance Savings Plan overlays.
+	EC2InstanceSavingsPlan CapacityOverlayConfig `yaml:"ec2InstanceSavingsPlan,omitempty"`
+
+	// ComputeSavingsPlan configures the broad Compute Savings Plan overlay, including
+	// safeguards that limit where and when it can influence Karpenter.
+	ComputeSavingsPlan ComputeSavingsPlanOverlayConfig `yaml:"computeSavingsPlan,omitempty"`
+
 	// Weights controls overlay precedence when multiple overlays target the same instances.
 	// Higher weights win. Reserved Instances (most specific) should have highest weight,
 	// followed by EC2 Instance SPs (family-specific), then Compute SPs (global).
@@ -163,6 +202,43 @@ type OverlayManagementConfig struct {
 
 	// Naming controls overlay naming conventions.
 	Naming OverlayNamingConfig `yaml:"naming,omitempty"`
+}
+
+// CapacityOverlayConfig controls a capacity-specific overlay type.
+type CapacityOverlayConfig struct {
+	// Enabled controls whether Veneer creates overlays for this capacity type.
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// PriceAdjustment is the relative discount applied to matching on-demand offerings.
+	// It must be a percentage strictly between -100% and 0% so price ordering is
+	// preserved while the covered capacity remains preferred.
+	PriceAdjustment string `yaml:"priceAdjustment,omitempty"`
+}
+
+// ComputeSavingsPlanOverlayConfig controls Compute Savings Plan overlays.
+type ComputeSavingsPlanOverlayConfig struct {
+	// Enabled controls whether Veneer creates Compute Savings Plan overlays.
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// PriceAdjustment is the relative discount applied to matching on-demand offerings.
+	PriceAdjustment string `yaml:"priceAdjustment,omitempty"`
+
+	// NodePoolSelector optionally restricts the overlay to explicitly named NodePools.
+	NodePoolSelector NodePoolSelectorConfig `yaml:"nodePoolSelector,omitempty"`
+
+	// MinRemainingCapacityDollars is the minimum remaining hourly commitment required
+	// before the Compute Savings Plan overlay becomes eligible for creation.
+	MinRemainingCapacityDollars float64 `yaml:"minRemainingCapacityDollars,omitempty"`
+
+	// MinBelowThresholdDuration is how long capacity must remain below the utilization
+	// threshold and above the capacity floor before the overlay is created.
+	MinBelowThresholdDuration time.Duration `yaml:"minBelowThresholdDuration,omitempty"`
+}
+
+// NodePoolSelectorConfig scopes an overlay to specific Karpenter NodePool names.
+type NodePoolSelectorConfig struct {
+	// Names is an explicit allowlist of NodePool names. An empty list targets all NodePools.
+	Names []string `yaml:"names,omitempty"`
 }
 
 // OverlayWeightsConfig defines precedence for different capacity types.
@@ -223,6 +299,14 @@ func Load(path string) (*Config, error) {
 	v.SetDefault(KeyMetricsBindAddress, DefaultMetricsBindAddress)
 	v.SetDefault(KeyHealthProbeBindAddress, DefaultHealthProbeBindAddress)
 	v.SetDefault(KeyOverlayUtilizationThreshold, DefaultOverlayUtilizationThreshold)
+	v.SetDefault(KeyOverlayReservedInstanceEnabled, DefaultOverlayReservedInstanceEnabled)
+	v.SetDefault(KeyOverlayReservedInstancePriceAdjustment, DefaultOverlayReservedInstancePriceAdjustment)
+	v.SetDefault(KeyOverlayEC2InstanceSavingsPlanEnabled, DefaultOverlayEC2InstanceSavingsPlanEnabled)
+	v.SetDefault(KeyOverlayEC2InstanceSavingsPlanPriceAdjustment, DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment)
+	v.SetDefault(KeyOverlayComputeSavingsPlanEnabled, DefaultOverlayComputeSavingsPlanEnabled)
+	v.SetDefault(KeyOverlayComputeSavingsPlanPriceAdjustment, DefaultOverlayComputeSavingsPlanPriceAdjustment)
+	v.SetDefault(KeyOverlayComputeSPMinRemainingCapacityDollars, DefaultOverlayComputeSPMinRemainingCapacityDollars)
+	v.SetDefault(KeyOverlayComputeSPMinBelowThresholdDuration, DefaultOverlayComputeSPMinBelowThresholdDuration)
 	v.SetDefault(KeyOverlayWeightReservedInstance, DefaultOverlayWeightReservedInstance)
 	v.SetDefault(KeyOverlayWeightEC2InstanceSavingsPlan, DefaultOverlayWeightEC2InstanceSavingsPlan)
 	v.SetDefault(KeyOverlayWeightComputeSavingsPlan, DefaultOverlayWeightComputeSavingsPlan)
@@ -240,10 +324,22 @@ func Load(path string) (*Config, error) {
 	_ = v.BindEnv(KeyAWSAccountID, EnvAWSAccountID)
 	_ = v.BindEnv(KeyAWSRegion, EnvAWSRegion)
 	_ = v.BindEnv(KeyOverlayDisabled, EnvOverlayDisabled)
+	_ = v.BindEnv(KeyOverlayReservedInstanceEnabled, EnvOverlayReservedInstanceEnabled)
+	_ = v.BindEnv(KeyOverlayReservedInstancePriceAdjustment, EnvOverlayReservedInstancePriceAdjustment)
+	_ = v.BindEnv(KeyOverlayEC2InstanceSavingsPlanEnabled, EnvOverlayEC2InstanceSavingsPlanEnabled)
+	_ = v.BindEnv(KeyOverlayEC2InstanceSavingsPlanPriceAdjustment, EnvOverlayEC2InstanceSavingsPlanPriceAdjustment)
+	_ = v.BindEnv(KeyOverlayComputeSavingsPlanEnabled, EnvOverlayComputeSavingsPlanEnabled)
+	_ = v.BindEnv(KeyOverlayComputeSavingsPlanPriceAdjustment, EnvOverlayComputeSavingsPlanPriceAdjustment)
+	_ = v.BindEnv(KeyOverlayComputeSPMinRemainingCapacityDollars, EnvOverlayComputeSPMinRemainingCapacityDollars)
+	_ = v.BindEnv(KeyOverlayComputeSPMinBelowThresholdDuration, EnvOverlayComputeSPMinBelowThresholdDuration)
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
+	}
+
+	if err := validateDurationSetting(v); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	// Unmarshal into Config struct
@@ -304,6 +400,53 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if err := validatePriceAdjustment(
+		"overlays.reservedInstance.priceAdjustment",
+		c.Overlays.ReservedInstance.PriceAdjustment,
+	); err != nil {
+		return err
+	}
+	if err := validatePriceAdjustment(
+		"overlays.ec2InstanceSavingsPlan.priceAdjustment",
+		c.Overlays.EC2InstanceSavingsPlan.PriceAdjustment,
+	); err != nil {
+		return err
+	}
+	if err := validatePriceAdjustment(
+		"overlays.computeSavingsPlan.priceAdjustment",
+		c.Overlays.ComputeSavingsPlan.PriceAdjustment,
+	); err != nil {
+		return err
+	}
+	if math.IsNaN(c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars) ||
+		math.IsInf(c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars, 0) ||
+		c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars < 0 {
+		return fmt.Errorf(
+			"overlays.computeSavingsPlan.minRemainingCapacityDollars must be a finite non-negative number, got %f",
+			c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars,
+		)
+	}
+	if c.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration < 0 {
+		return fmt.Errorf(
+			"overlays.computeSavingsPlan.minBelowThresholdDuration must be non-negative, got %s",
+			c.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration,
+		)
+	}
+	seenNodePools := make(map[string]struct{}, len(c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names))
+	for _, name := range c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names {
+		if errors := validation.IsDNS1123Label(name); len(errors) > 0 {
+			return fmt.Errorf(
+				"overlays.computeSavingsPlan.nodePoolSelector.names contains invalid NodePool name %q: %s",
+				name,
+				errors[0],
+			)
+		}
+		if _, exists := seenNodePools[name]; exists {
+			return fmt.Errorf("overlays.computeSavingsPlan.nodePoolSelector.names contains duplicate NodePool name %q", name)
+		}
+		seenNodePools[name] = struct{}{}
+	}
+
 	// Validate weights are positive
 	if c.Overlays.Weights.ReservedInstance < 0 {
 		return fmt.Errorf(
@@ -324,5 +467,38 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	return nil
+}
+
+// PriceAdjustmentPattern is the accepted syntax for cost-aware overlay discounts.
+// It is exported so configuration and generated-resource validation cannot drift.
+var PriceAdjustmentPattern = regexp.MustCompile(`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`)
+
+func validatePriceAdjustment(key, adjustment string) error {
+	if !PriceAdjustmentPattern.MatchString(adjustment) {
+		return fmt.Errorf("%s must be a percentage discount strictly between -100%% and 0%%, got %q", key, adjustment)
+	}
+	return nil
+}
+
+func validateDurationSetting(v *viper.Viper) error {
+	const key = KeyOverlayComputeSPMinBelowThresholdDuration
+	if raw, ok := os.LookupEnv(EnvOverlayComputeSPMinBelowThresholdDuration); ok {
+		if _, err := time.ParseDuration(raw); err != nil {
+			return fmt.Errorf("%s must include a duration unit such as 15m, got %q", key, raw)
+		}
+		return nil
+	}
+	if !v.InConfig(key) {
+		return nil
+	}
+	raw := v.Get(key)
+	value, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("%s must include a duration unit such as 15m, got %v", key, raw)
+	}
+	if _, err := time.ParseDuration(value); err != nil {
+		return fmt.Errorf("%s must include a duration unit such as 15m, got %q", key, value)
+	}
 	return nil
 }

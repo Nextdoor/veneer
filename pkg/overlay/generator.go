@@ -17,8 +17,10 @@ package overlay
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/nextdoor/veneer/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
@@ -67,6 +69,9 @@ const (
 
 	// LabelCapacityTypeKarpenter is the Karpenter label for capacity type (spot vs on-demand).
 	LabelCapacityTypeKarpenter = "karpenter.sh/capacity-type"
+
+	// LabelNodePoolKarpenter scopes an overlay to one or more Karpenter NodePools.
+	LabelNodePoolKarpenter = "karpenter.sh/nodepool"
 
 	// LabelDisabledKey is the label key used to create an impossible requirement.
 	// When Disabled mode is enabled, overlays include a requirement that this label
@@ -131,7 +136,7 @@ type GeneratedOverlay struct {
 //   - Proper naming convention based on capacity type
 //   - Labels for identification and debugging
 //   - Requirements to target appropriate instances
-//   - Price set to "0.00" (pre-paid capacity is effectively free)
+//   - Relative price adjustment that preserves instance-type price ordering
 //   - Weight based on capacity type priority
 func (g *Generator) Generate(decision Decision) *karpenterv1alpha1.NodeOverlay {
 	if !decision.ShouldExist {
@@ -148,9 +153,9 @@ func (g *Generator) Generate(decision Decision) *karpenterv1alpha1.NodeOverlay {
 			Labels: g.generateLabels(decision),
 		},
 		Spec: karpenterv1alpha1.NodeOverlaySpec{
-			Requirements: g.generateRequirements(decision),
-			Price:        &decision.Price,
-			Weight:       int32Ptr(int32(decision.Weight)),
+			Requirements:    g.generateRequirements(decision),
+			PriceAdjustment: stringPtr(decision.PriceAdjustment),
+			Weight:          int32Ptr(int32(decision.Weight)),
 		},
 	}
 
@@ -220,6 +225,9 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 	switch decision.CapacityType {
 	case CapacityTypeEC2InstanceSavingsPlan:
 		family, region := parseEC2InstanceSPName(decision.Name)
+		if decision.InstanceFamily != "" {
+			family = decision.InstanceFamily
+		}
 		if family != "" {
 			labels[LabelInstanceFamily] = family
 		}
@@ -229,6 +237,9 @@ func (g *Generator) generateLabels(decision Decision) map[string]string {
 
 	case CapacityTypeReservedInstance:
 		instanceType, region := parseRIName(decision.Name)
+		if decision.InstanceType != "" {
+			instanceType = decision.InstanceType
+		}
 		if instanceType != "" {
 			labels[LabelInstanceType] = instanceType
 			// Extract family from instance type (e.g., "m5" from "m5.xlarge")
@@ -281,8 +292,8 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 
 	switch decision.CapacityType {
 	case CapacityTypeComputeSavingsPlan:
-		// Global Compute SPs apply to all instance families
-		// Use Exists operator to match any instance family
+		// Global Compute SPs apply to all instance families. Operators can restrict
+		// them to named NodePools so mixed spot/on-demand pools are unaffected.
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
@@ -290,10 +301,20 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 			},
 			capacityTypeReq,
 		)
+		if len(decision.NodePoolNames) > 0 {
+			requirements = append(requirements, karpenterv1alpha1.NodeSelectorRequirement{
+				Key:      LabelNodePoolKarpenter,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   append([]string(nil), decision.NodePoolNames...),
+			})
+		}
 
 	case CapacityTypeEC2InstanceSavingsPlan:
 		// EC2 Instance SPs are scoped to a specific instance family
-		family, _ := parseEC2InstanceSPName(decision.Name)
+		family := decision.InstanceFamily
+		if family == "" {
+			family, _ = parseEC2InstanceSPName(decision.Name)
+		}
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceFamilyKarpenter,
@@ -305,7 +326,10 @@ func (g *Generator) generateRequirements(decision Decision) []karpenterv1alpha1.
 
 	case CapacityTypeReservedInstance:
 		// RIs are scoped to a specific instance type
-		instanceType, _ := parseRIName(decision.Name)
+		instanceType := decision.InstanceType
+		if instanceType == "" {
+			instanceType, _ = parseRIName(decision.Name)
+		}
 		requirements = append(requirements,
 			karpenterv1alpha1.NodeSelectorRequirement{
 				Key:      LabelInstanceTypeK8s,
@@ -443,6 +467,10 @@ func int32Ptr(i int32) *int32 {
 	return &i
 }
 
+func stringPtr(s string) *string {
+	return &s
+}
+
 // ValidationError represents an error found during overlay validation.
 type ValidationError struct {
 	Field   string
@@ -462,121 +490,137 @@ func (e ValidationError) Error() string {
 //   - Name is valid (DNS subdomain name)
 //   - Labels are valid (keys and values)
 //   - Requirements are properly formed
-//   - Price is in valid format
+//   - Exactly one valid price field is set
 //   - Weight is within bounds (1-10000)
 func ValidateOverlay(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
-	var errors []ValidationError
-
 	if overlay == nil {
 		return []ValidationError{{Field: "overlay", Message: "overlay is nil"}}
 	}
 
-	// Validate name (must be a valid DNS subdomain name)
+	errors := make([]ValidationError, 0, 4)
+	errors = append(errors, validateOverlayMetadata(overlay)...)
+	errors = append(errors, validateOverlayRequirements(overlay.Spec.Requirements)...)
+	errors = append(errors, validateOverlayPricing(overlay.Spec.Price, overlay.Spec.PriceAdjustment)...)
+	errors = append(errors, validateOverlayWeight(overlay.Spec.Weight)...)
+	return errors
+}
+
+func validateOverlayMetadata(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
+	var errors []ValidationError
 	if overlay.Name == "" {
 		errors = append(errors, ValidationError{Field: "metadata.name", Message: "name is required"})
 	} else if len(overlay.Name) > 253 {
 		errors = append(errors, ValidationError{Field: "metadata.name", Message: "name must be 253 characters or less"})
 	}
 
-	// Validate labels
-	for k, v := range overlay.Labels {
-		if len(k) > 253 {
+	for key, value := range overlay.Labels {
+		if len(key) > 253 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("metadata.labels[%s]", k),
+				Field:   fmt.Sprintf("metadata.labels[%s]", key),
 				Message: "label key must be 253 characters or less",
 			})
 		}
-		if len(v) > 63 {
+		if len(value) > 63 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("metadata.labels[%s]", k),
+				Field:   fmt.Sprintf("metadata.labels[%s]", key),
 				Message: "label value must be 63 characters or less",
 			})
 		}
 	}
+	return errors
+}
 
-	// Validate requirements
-	if len(overlay.Spec.Requirements) == 0 {
+func validateOverlayRequirements(
+	requirements []karpenterv1alpha1.NodeSelectorRequirement,
+) []ValidationError {
+	var errors []ValidationError
+	if len(requirements) == 0 {
 		errors = append(errors, ValidationError{
 			Field:   "spec.requirements",
 			Message: "at least one requirement is required",
 		})
 	}
-	for i, req := range overlay.Spec.Requirements {
-		if req.Key == "" {
+
+	validOperators := map[corev1.NodeSelectorOperator]bool{
+		corev1.NodeSelectorOpIn:           true,
+		corev1.NodeSelectorOpNotIn:        true,
+		corev1.NodeSelectorOpExists:       true,
+		corev1.NodeSelectorOpDoesNotExist: true,
+		corev1.NodeSelectorOpGt:           true,
+		corev1.NodeSelectorOpLt:           true,
+	}
+	for index, requirement := range requirements {
+		if requirement.Key == "" {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].key", i),
+				Field:   fmt.Sprintf("spec.requirements[%d].key", index),
 				Message: "requirement key is required",
 			})
 		}
-		// Validate operator
-		validOps := map[corev1.NodeSelectorOperator]bool{
-			corev1.NodeSelectorOpIn:           true,
-			corev1.NodeSelectorOpNotIn:        true,
-			corev1.NodeSelectorOpExists:       true,
-			corev1.NodeSelectorOpDoesNotExist: true,
-			corev1.NodeSelectorOpGt:           true,
-			corev1.NodeSelectorOpLt:           true,
-		}
-		if !validOps[req.Operator] {
+		if !validOperators[requirement.Operator] {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].operator", i),
-				Message: fmt.Sprintf("invalid operator %q", req.Operator),
+				Field:   fmt.Sprintf("spec.requirements[%d].operator", index),
+				Message: fmt.Sprintf("invalid operator %q", requirement.Operator),
 			})
 		}
-		// In/NotIn require values
-		if (req.Operator == corev1.NodeSelectorOpIn || req.Operator == corev1.NodeSelectorOpNotIn) && len(req.Values) == 0 {
+		if requiresValues(requirement.Operator) && len(requirement.Values) == 0 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].values", i),
-				Message: fmt.Sprintf("operator %q requires at least one value", req.Operator),
+				Field:   fmt.Sprintf("spec.requirements[%d].values", index),
+				Message: fmt.Sprintf("operator %q requires at least one value", requirement.Operator),
 			})
 		}
 	}
-
-	// Validate price format (must be a non-negative decimal)
-	if overlay.Spec.Price != nil {
-		price := *overlay.Spec.Price
-		// Price must match pattern: ^\d+(\.\d+)?$
-		if price == "" {
-			errors = append(errors, ValidationError{
-				Field:   "spec.price",
-				Message: "price cannot be empty string",
-			})
-		} else {
-			valid := true
-			dotSeen := false
-			for i, ch := range price {
-				if ch == '.' {
-					if dotSeen || i == 0 || i == len(price)-1 {
-						valid = false
-						break
-					}
-					dotSeen = true
-				} else if ch < '0' || ch > '9' {
-					valid = false
-					break
-				}
-			}
-			if !valid {
-				errors = append(errors, ValidationError{
-					Field:   "spec.price",
-					Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", price),
-				})
-			}
-		}
-	}
-
-	// Validate weight (1-10000)
-	if overlay.Spec.Weight != nil {
-		w := *overlay.Spec.Weight
-		if w < 1 || w > 10000 {
-			errors = append(errors, ValidationError{
-				Field:   "spec.weight",
-				Message: fmt.Sprintf("weight %d must be between 1 and 10000", w),
-			})
-		}
-	}
-
 	return errors
+}
+
+func requiresValues(operator corev1.NodeSelectorOperator) bool {
+	return operator == corev1.NodeSelectorOpIn || operator == corev1.NodeSelectorOpNotIn
+}
+
+func validateOverlayPricing(price, adjustment *string) []ValidationError {
+	var errors []ValidationError
+	if price != nil && adjustment != nil {
+		errors = append(errors, ValidationError{
+			Field:   "spec",
+			Message: "price and priceAdjustment are mutually exclusive",
+		})
+	}
+	if price == nil && adjustment == nil {
+		errors = append(errors, ValidationError{
+			Field:   "spec",
+			Message: "one of price or priceAdjustment is required",
+		})
+	}
+	if price != nil && !validAbsolutePrice(*price) {
+		errors = append(errors, ValidationError{
+			Field:   "spec.price",
+			Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", *price),
+		})
+	}
+	if adjustment != nil && !config.PriceAdjustmentPattern.MatchString(*adjustment) {
+		errors = append(errors, ValidationError{
+			Field:   "spec.priceAdjustment",
+			Message: fmt.Sprintf("priceAdjustment %q must be a discount greater than -100%% and below 0%%", *adjustment),
+		})
+	}
+	return errors
+}
+
+func validAbsolutePrice(price string) bool {
+	if price == "" {
+		return false
+	}
+	matched, err := regexp.MatchString(`^\d+(\.\d+)?$`, price)
+	return err == nil && matched
+}
+
+func validateOverlayWeight(weight *int32) []ValidationError {
+	if weight == nil || (*weight >= 1 && *weight <= 10000) {
+		return nil
+	}
+	return []ValidationError{{
+		Field:   "spec.weight",
+		Message: fmt.Sprintf("weight %d must be between 1 and 10000", *weight),
+	}}
 }
 
 // FormatOverlayYAML returns a YAML representation of a NodeOverlay for logging.
@@ -608,6 +652,9 @@ func FormatOverlayYAML(overlay *karpenterv1alpha1.NodeOverlay) string {
 
 	if overlay.Spec.Price != nil {
 		sb.WriteString(fmt.Sprintf("  price: %q\n", *overlay.Spec.Price))
+	}
+	if overlay.Spec.PriceAdjustment != nil {
+		sb.WriteString(fmt.Sprintf("  priceAdjustment: %q\n", *overlay.Spec.PriceAdjustment))
 	}
 
 	if len(overlay.Spec.Requirements) > 0 {

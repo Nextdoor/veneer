@@ -15,9 +15,11 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -177,6 +179,7 @@ func TestValidate(t *testing.T) {
 					AccountID: "123456789012",
 					Region:    "us-west-2",
 				},
+				Overlays: validOverlayManagementConfig(),
 			},
 			wantErr: false,
 		},
@@ -201,6 +204,7 @@ func TestValidate(t *testing.T) {
 					AccountID: "123456789012",
 					Region:    "us-west-2",
 				},
+				Overlays: validOverlayManagementConfig(),
 			},
 			wantErr: false,
 		},
@@ -329,6 +333,34 @@ aws:
 			DefaultOverlayWeightComputeSavingsPlan,
 		)
 	}
+	if !cfg.Overlays.ReservedInstance.Enabled ||
+		cfg.Overlays.ReservedInstance.PriceAdjustment != DefaultOverlayReservedInstancePriceAdjustment {
+		t.Errorf("ReservedInstance config = %+v, want enabled with %q adjustment",
+			cfg.Overlays.ReservedInstance, DefaultOverlayReservedInstancePriceAdjustment)
+	}
+	if !cfg.Overlays.EC2InstanceSavingsPlan.Enabled ||
+		cfg.Overlays.EC2InstanceSavingsPlan.PriceAdjustment != DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment {
+		t.Errorf("EC2InstanceSavingsPlan config = %+v, want enabled with %q adjustment",
+			cfg.Overlays.EC2InstanceSavingsPlan, DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment)
+	}
+	if !cfg.Overlays.ComputeSavingsPlan.Enabled ||
+		cfg.Overlays.ComputeSavingsPlan.PriceAdjustment != DefaultOverlayComputeSavingsPlanPriceAdjustment {
+		t.Errorf("ComputeSavingsPlan config = %+v, want enabled with %q adjustment",
+			cfg.Overlays.ComputeSavingsPlan, DefaultOverlayComputeSavingsPlanPriceAdjustment)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars != DefaultOverlayComputeSPMinRemainingCapacityDollars {
+		t.Errorf("ComputeSavingsPlan floor = %f, want %f",
+			cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars,
+			DefaultOverlayComputeSPMinRemainingCapacityDollars)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration != DefaultOverlayComputeSPMinBelowThresholdDuration {
+		t.Errorf("ComputeSavingsPlan duration = %s, want %s",
+			cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration,
+			DefaultOverlayComputeSPMinBelowThresholdDuration)
+	}
+	if len(cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names) != 0 {
+		t.Errorf("ComputeSavingsPlan NodePool names = %v, want empty", cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names)
+	}
 }
 
 func TestOverlayManagementCustomValues(t *testing.T) {
@@ -342,6 +374,19 @@ aws:
   region: "us-west-2"
 overlays:
   utilizationThreshold: 90.0
+  reservedInstance:
+    enabled: false
+    priceAdjustment: "-60%"
+  ec2InstanceSavingsPlan:
+    enabled: false
+    priceAdjustment: "-40%"
+  computeSavingsPlan:
+    enabled: false
+    priceAdjustment: "-25%"
+    nodePoolSelector:
+      names: ["on-demand", "batch"]
+    minRemainingCapacityDollars: 75.5
+    minBelowThresholdDuration: 30m
   weights:
     reservedInstance: 100
     ec2InstanceSavingsPlan: 50
@@ -361,6 +406,29 @@ overlays:
 	if cfg.Overlays.UtilizationThreshold != 90.0 {
 		t.Errorf("UtilizationThreshold = %f, want 90.0", cfg.Overlays.UtilizationThreshold)
 	}
+	if cfg.Overlays.ReservedInstance.Enabled || cfg.Overlays.ReservedInstance.PriceAdjustment != "-60%" {
+		t.Errorf("ReservedInstance config = %+v, want disabled with -60%% adjustment", cfg.Overlays.ReservedInstance)
+	}
+	if cfg.Overlays.EC2InstanceSavingsPlan.Enabled ||
+		cfg.Overlays.EC2InstanceSavingsPlan.PriceAdjustment != "-40%" {
+		t.Errorf(
+			"EC2InstanceSavingsPlan config = %+v, want disabled with -40%% adjustment",
+			cfg.Overlays.EC2InstanceSavingsPlan,
+		)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.Enabled || cfg.Overlays.ComputeSavingsPlan.PriceAdjustment != "-25%" {
+		t.Errorf("ComputeSavingsPlan config = %+v, want disabled with -25%% adjustment", cfg.Overlays.ComputeSavingsPlan)
+	}
+	if got := cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names; len(got) != 2 ||
+		got[0] != "on-demand" || got[1] != "batch" {
+		t.Errorf("ComputeSavingsPlan NodePool names = %v, want [on-demand batch]", got)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars != 75.5 {
+		t.Errorf("ComputeSavingsPlan floor = %f, want 75.5", cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration != 30*time.Minute {
+		t.Errorf("ComputeSavingsPlan duration = %s, want 30m", cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration)
+	}
 	if cfg.Overlays.Weights.ReservedInstance != 100 {
 		t.Errorf("ReservedInstance weight = %d, want 100", cfg.Overlays.Weights.ReservedInstance)
 	}
@@ -369,6 +437,177 @@ overlays:
 	}
 	if cfg.Overlays.Weights.ComputeSavingsPlan != 25 {
 		t.Errorf("ComputeSavingsPlan weight = %d, want 25", cfg.Overlays.Weights.ComputeSavingsPlan)
+	}
+}
+
+func TestOverlayTypeEnvironmentVariableOverrides(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	configYAML := `
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+overlays:
+  computeSavingsPlan:
+    nodePoolSelector:
+      names: ["on-demand"]
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	t.Setenv(EnvOverlayReservedInstanceEnabled, "false")
+	t.Setenv(EnvOverlayReservedInstancePriceAdjustment, "-65%")
+	t.Setenv(EnvOverlayEC2InstanceSavingsPlanEnabled, "false")
+	t.Setenv(EnvOverlayEC2InstanceSavingsPlanPriceAdjustment, "-45%")
+	t.Setenv(EnvOverlayComputeSavingsPlanEnabled, "false")
+	t.Setenv(EnvOverlayComputeSavingsPlanPriceAdjustment, "-35%")
+	t.Setenv(EnvOverlayComputeSPMinRemainingCapacityDollars, "80.5")
+	t.Setenv(EnvOverlayComputeSPMinBelowThresholdDuration, "45m")
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Overlays.ReservedInstance.Enabled || cfg.Overlays.ReservedInstance.PriceAdjustment != "-65%" {
+		t.Errorf("ReservedInstance env override = %+v", cfg.Overlays.ReservedInstance)
+	}
+	if cfg.Overlays.EC2InstanceSavingsPlan.Enabled || cfg.Overlays.EC2InstanceSavingsPlan.PriceAdjustment != "-45%" {
+		t.Errorf("EC2InstanceSavingsPlan env override = %+v", cfg.Overlays.EC2InstanceSavingsPlan)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.Enabled || cfg.Overlays.ComputeSavingsPlan.PriceAdjustment != "-35%" {
+		t.Errorf("ComputeSavingsPlan env override = %+v", cfg.Overlays.ComputeSavingsPlan)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars != 80.5 {
+		t.Errorf("ComputeSavingsPlan floor = %f, want 80.5", cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars)
+	}
+	if cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration != 45*time.Minute {
+		t.Errorf("ComputeSavingsPlan duration = %s, want 45m", cfg.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration)
+	}
+	if got := cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names; len(got) != 1 || got[0] != "on-demand" {
+		t.Errorf("NodePool names = %v, want file value [on-demand]; names must not have an env override", got)
+	}
+}
+
+func TestLoadRejectsUnitlessComputeSPDuration(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	configYAML := `
+prometheusUrl: "http://prometheus:9090"
+aws:
+  accountId: "123456789012"
+  region: "us-west-2"
+overlays:
+  computeSavingsPlan:
+    minBelowThresholdDuration: 15
+`
+	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("expected unitless duration to be rejected")
+	}
+}
+
+func TestValidateOverlayTypeConfiguration(t *testing.T) {
+	baseConfig := func() Config {
+		return Config{
+			PrometheusURL: "http://prometheus:9090",
+			LogLevel:      "info",
+			AWS: AWSConfig{
+				AccountID: "123456789012",
+				Region:    "us-west-2",
+			},
+			Overlays: OverlayManagementConfig{
+				ReservedInstance:       CapacityOverlayConfig{PriceAdjustment: "-50%"},
+				EC2InstanceSavingsPlan: CapacityOverlayConfig{PriceAdjustment: "-50%"},
+				ComputeSavingsPlan:     ComputeSavingsPlanOverlayConfig{PriceAdjustment: "-50%"},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{name: "valid boundaries", mutate: func(c *Config) {
+			c.Overlays.ReservedInstance.PriceAdjustment = "-99.999%"
+			c.Overlays.EC2InstanceSavingsPlan.PriceAdjustment = "-0.001%"
+			c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars = 0
+			c.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration = 0
+		}},
+		{name: "negative one hundred percent rejected", mutate: func(c *Config) {
+			c.Overlays.ReservedInstance.PriceAdjustment = "-100%"
+		}, wantErr: true},
+		{name: "zero percent rejected", mutate: func(c *Config) {
+			c.Overlays.EC2InstanceSavingsPlan.PriceAdjustment = "0%"
+		}, wantErr: true},
+		{name: "positive adjustment rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.PriceAdjustment = "+10%"
+		}, wantErr: true},
+		{name: "absolute price rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.PriceAdjustment = "0.00"
+		}, wantErr: true},
+		{name: "empty adjustment rejected", mutate: func(c *Config) {
+			c.Overlays.ReservedInstance.PriceAdjustment = ""
+		}, wantErr: true},
+		{name: "nan adjustment rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.PriceAdjustment = "NaN%"
+		}, wantErr: true},
+		{name: "exponent adjustment rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.PriceAdjustment = "-1e1%"
+		}, wantErr: true},
+		{name: "negative floor rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars = -1
+		}, wantErr: true},
+		{name: "nan floor rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars = math.NaN()
+		}, wantErr: true},
+		{name: "invalid NodePool name rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{"Invalid_Name"}
+		}, wantErr: true},
+		{name: "NodePool name longer than label limit rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{
+				"a234567890123456789012345678901234567890123456789012345678901234",
+			}
+		}, wantErr: true},
+		{name: "duplicate NodePool name rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names = []string{"on-demand", "on-demand"}
+		}, wantErr: true},
+		{name: "negative duration rejected", mutate: func(c *Config) {
+			c.Overlays.ComputeSavingsPlan.MinBelowThresholdDuration = -time.Second
+		}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := baseConfig()
+			tt.mutate(&cfg)
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func validOverlayManagementConfig() OverlayManagementConfig {
+	return OverlayManagementConfig{
+		ReservedInstance: CapacityOverlayConfig{
+			Enabled:         true,
+			PriceAdjustment: DefaultOverlayReservedInstancePriceAdjustment,
+		},
+		EC2InstanceSavingsPlan: CapacityOverlayConfig{
+			Enabled:         true,
+			PriceAdjustment: DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment,
+		},
+		ComputeSavingsPlan: ComputeSavingsPlanOverlayConfig{
+			Enabled:                     true,
+			PriceAdjustment:             DefaultOverlayComputeSavingsPlanPriceAdjustment,
+			MinRemainingCapacityDollars: DefaultOverlayComputeSPMinRemainingCapacityDollars,
+			MinBelowThresholdDuration:   DefaultOverlayComputeSPMinBelowThresholdDuration,
+		},
 	}
 }
 
@@ -430,6 +669,9 @@ func TestValidateOverlayManagement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.config.ReservedInstance.PriceAdjustment = DefaultOverlayReservedInstancePriceAdjustment
+			tt.config.EC2InstanceSavingsPlan.PriceAdjustment = DefaultOverlayEC2InstanceSavingsPlanPriceAdjustment
+			tt.config.ComputeSavingsPlan.PriceAdjustment = DefaultOverlayComputeSavingsPlanPriceAdjustment
 			cfg := &Config{
 				PrometheusURL: "http://prometheus:9090",
 				AWS: AWSConfig{

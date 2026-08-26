@@ -73,7 +73,10 @@ func TestMultipleSavingsPlansAggregation(t *testing.T) {
 
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -177,7 +180,10 @@ func TestMultipleEC2InstanceSPsAggregation(t *testing.T) {
 
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,
@@ -314,7 +320,10 @@ func TestMultipleReservedInstancesAggregation(t *testing.T) {
 
 	cfg := &config.Config{
 		Overlays: config.OverlayManagementConfig{
-			UtilizationThreshold: 95.0,
+			UtilizationThreshold:   95.0,
+			ReservedInstance:       config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			EC2InstanceSavingsPlan: config.CapacityOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
+			ComputeSavingsPlan:     config.ComputeSavingsPlanOverlayConfig{Enabled: true, PriceAdjustment: "-50%"},
 			Weights: config.OverlayWeightsConfig{
 				ReservedInstance:       30,
 				EC2InstanceSavingsPlan: 20,

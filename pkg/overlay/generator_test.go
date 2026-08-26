@@ -31,7 +31,7 @@ func TestGenerator_Generate_ComputeSavingsPlan(t *testing.T) {
 		CapacityType:       CapacityTypeComputeSavingsPlan,
 		ShouldExist:        true,
 		Weight:             10,
-		Price:              "0.00",
+		PriceAdjustment:    "-50%",
 		TargetSelector:     "karpenter.k8s.aws/instance-family: Exists, karpenter.sh/capacity-type: In [on-demand]",
 		Reason:             "utilization 50.0% below threshold 95.0%, capacity available (25.00 $/hour)",
 		UtilizationPercent: 50.0,
@@ -58,8 +58,11 @@ func TestGenerator_Generate_ComputeSavingsPlan(t *testing.T) {
 	}
 
 	// Verify spec
-	if overlay.Spec.Price == nil || *overlay.Spec.Price != expectedTestPrice {
-		t.Errorf("expected price %q, got %v", expectedTestPrice, overlay.Spec.Price)
+	if overlay.Spec.Price != nil {
+		t.Errorf("expected absolute price to be unset, got %v", overlay.Spec.Price)
+	}
+	if overlay.Spec.PriceAdjustment == nil || *overlay.Spec.PriceAdjustment != "-50%" {
+		t.Errorf("expected price adjustment -50%%, got %v", overlay.Spec.PriceAdjustment)
 	}
 	if overlay.Spec.Weight == nil || *overlay.Spec.Weight != 10 {
 		t.Errorf("expected weight %d, got %v", 10, overlay.Spec.Weight)
@@ -92,6 +95,33 @@ func TestGenerator_Generate_ComputeSavingsPlan(t *testing.T) {
 	}
 }
 
+func TestGenerator_Generate_ComputeSavingsPlanWithNodePoolScope(t *testing.T) {
+	decision := Decision{
+		Name:            "cost-aware-compute-sp-global",
+		CapacityType:    CapacityTypeComputeSavingsPlan,
+		ShouldExist:     true,
+		Weight:          10,
+		PriceAdjustment: "-50%",
+		NodePoolNames:   []string{"on-demand-general", "on-demand-batch"},
+		Reason:          "capacity available",
+	}
+
+	overlay := NewGenerator().Generate(decision)
+	if overlay == nil {
+		t.Fatal("expected overlay")
+	}
+	if len(overlay.Spec.Requirements) != 3 {
+		t.Fatalf("expected 3 requirements, got %d", len(overlay.Spec.Requirements))
+	}
+	scope := overlay.Spec.Requirements[2]
+	if scope.Key != LabelNodePoolKarpenter || scope.Operator != corev1.NodeSelectorOpIn {
+		t.Fatalf("unexpected NodePool scope requirement: %+v", scope)
+	}
+	if len(scope.Values) != 2 || scope.Values[0] != "on-demand-general" || scope.Values[1] != "on-demand-batch" {
+		t.Fatalf("unexpected NodePool names: %v", scope.Values)
+	}
+}
+
 func TestGenerator_Generate_EC2InstanceSavingsPlan(t *testing.T) {
 	g := NewGenerator()
 
@@ -100,7 +130,7 @@ func TestGenerator_Generate_EC2InstanceSavingsPlan(t *testing.T) {
 		CapacityType:       CapacityTypeEC2InstanceSavingsPlan,
 		ShouldExist:        true,
 		Weight:             20,
-		Price:              "0.00",
+		PriceAdjustment:    "-50%",
 		TargetSelector:     "karpenter.k8s.aws/instance-family: In [m5], karpenter.sh/capacity-type: In [on-demand]",
 		Reason:             "utilization 75.0% below threshold 95.0%, capacity available (10.00 $/hour)",
 		UtilizationPercent: 75.0,
@@ -150,11 +180,11 @@ func TestGenerator_Generate_ReservedInstance(t *testing.T) {
 	g := NewGenerator()
 
 	decision := Decision{
-		Name:         "cost-aware-ri-m5.xlarge-us-west-2",
-		CapacityType: CapacityTypeReservedInstance,
-		ShouldExist:  true,
-		Weight:       30,
-		Price:        "0.00",
+		Name:            "cost-aware-ri-m5.xlarge-us-west-2",
+		CapacityType:    CapacityTypeReservedInstance,
+		ShouldExist:     true,
+		Weight:          30,
+		PriceAdjustment: "-50%",
 		TargetSelector: "node.kubernetes.io/instance-type: In [m5.xlarge], " +
 			"karpenter.sh/capacity-type: In [on-demand]",
 		Reason: "3 reserved instances available",
@@ -206,12 +236,12 @@ func TestGenerator_Generate_ShouldNotExist(t *testing.T) {
 	g := NewGenerator()
 
 	decision := Decision{
-		Name:         "cost-aware-compute-sp-global",
-		CapacityType: CapacityTypeComputeSavingsPlan,
-		ShouldExist:  false,
-		Weight:       10,
-		Price:        "0.00",
-		Reason:       "no remaining capacity",
+		Name:            "cost-aware-compute-sp-global",
+		CapacityType:    CapacityTypeComputeSavingsPlan,
+		ShouldExist:     false,
+		Weight:          10,
+		PriceAdjustment: "-50%",
+		Reason:          "no remaining capacity",
 	}
 
 	overlay := g.Generate(decision)
@@ -226,28 +256,28 @@ func TestGenerator_GenerateAll(t *testing.T) {
 
 	decisions := []Decision{
 		{
-			Name:         "cost-aware-compute-sp-global",
-			CapacityType: CapacityTypeComputeSavingsPlan,
-			ShouldExist:  true,
-			Weight:       10,
-			Price:        "0.00",
-			Reason:       "capacity available",
+			Name:            "cost-aware-compute-sp-global",
+			CapacityType:    CapacityTypeComputeSavingsPlan,
+			ShouldExist:     true,
+			Weight:          10,
+			PriceAdjustment: "-50%",
+			Reason:          "capacity available",
 		},
 		{
-			Name:         "cost-aware-ec2-sp-m5-us-west-2",
-			CapacityType: CapacityTypeEC2InstanceSavingsPlan,
-			ShouldExist:  false, // Should be marked for deletion
-			Weight:       20,
-			Price:        "0.00",
-			Reason:       "no remaining capacity",
+			Name:            "cost-aware-ec2-sp-m5-us-west-2",
+			CapacityType:    CapacityTypeEC2InstanceSavingsPlan,
+			ShouldExist:     false, // Should be marked for deletion
+			Weight:          20,
+			PriceAdjustment: "-50%",
+			Reason:          "no remaining capacity",
 		},
 		{
-			Name:         "cost-aware-ri-c5.large-us-east-1",
-			CapacityType: CapacityTypeReservedInstance,
-			ShouldExist:  true,
-			Weight:       30,
-			Price:        "0.00",
-			Reason:       "2 reserved instances available",
+			Name:            "cost-aware-ri-c5.large-us-east-1",
+			CapacityType:    CapacityTypeReservedInstance,
+			ShouldExist:     true,
+			Weight:          30,
+			PriceAdjustment: "-50%",
+			Reason:          "2 reserved instances available",
 		},
 	}
 
@@ -441,7 +471,7 @@ func TestCapacityTypeToLabelValue(t *testing.T) {
 }
 
 func TestValidateOverlay(t *testing.T) {
-	validPrice := "0.00"
+	validPrice := "-50%"
 	validWeight := int32(10)
 
 	tests := []struct {
@@ -469,8 +499,8 @@ func TestValidateOverlay(t *testing.T) {
 							Operator: corev1.NodeSelectorOpExists,
 						},
 					},
-					Price:  &validPrice,
-					Weight: &validWeight,
+					PriceAdjustment: &validPrice,
+					Weight:          &validWeight,
 				},
 			},
 			expectedErrors: 0,
@@ -479,6 +509,7 @@ func TestValidateOverlay(t *testing.T) {
 			name: "missing name",
 			overlay: &karpenterv1alpha1.NodeOverlay{
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: stringPtr("-50%"),
 					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
@@ -497,8 +528,8 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
-					Price:  &validPrice,
-					Weight: &validWeight,
+					PriceAdjustment: &validPrice,
+					Weight:          &validWeight,
 				},
 			},
 			expectedErrors: 1,
@@ -511,6 +542,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: stringPtr("-50%"),
 					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
@@ -549,6 +581,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: stringPtr("-50%"),
 					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
@@ -568,6 +601,7 @@ func TestValidateOverlay(t *testing.T) {
 					Name: "test-overlay",
 				},
 				Spec: karpenterv1alpha1.NodeOverlaySpec{
+					PriceAdjustment: stringPtr("-50%"),
 					Requirements: []karpenterv1alpha1.NodeSelectorRequirement{
 						{
 							Key:      LabelInstanceFamilyKarpenter,
@@ -606,7 +640,6 @@ func TestValidateOverlay(t *testing.T) {
 }
 
 func TestFormatOverlayYAML(t *testing.T) {
-	price := "0.00"
 	weight := int32(10)
 
 	overlay := &karpenterv1alpha1.NodeOverlay{
@@ -629,8 +662,8 @@ func TestFormatOverlayYAML(t *testing.T) {
 					Values:   []string{"on-demand"},
 				},
 			},
-			Price:  &price,
-			Weight: &weight,
+			PriceAdjustment: stringPtr("-50%"),
+			Weight:          &weight,
 		},
 	}
 
@@ -642,7 +675,7 @@ func TestFormatOverlayYAML(t *testing.T) {
 		"kind: NodeOverlay",
 		"name: cost-aware-compute-sp-global",
 		"weight: 10",
-		`price: "0.00"`,
+		`priceAdjustment: "-50%"`,
 		"requirements:",
 		"key: karpenter.k8s.aws/instance-family",
 		"operator: Exists",
@@ -662,11 +695,6 @@ func TestFormatOverlayYAML_Nil(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty string for nil overlay, got %q", result)
 	}
-}
-
-// stringPtr returns a pointer to a string value.
-func stringPtr(s string) *string {
-	return &s
 }
 
 func TestNewGeneratorWithOptions(t *testing.T) {
@@ -693,7 +721,7 @@ func TestGenerator_DisabledMode_AddsImpossibleRequirement(t *testing.T) {
 		CapacityType:       CapacityTypeComputeSavingsPlan,
 		ShouldExist:        true,
 		Weight:             10,
-		Price:              "0.00",
+		PriceAdjustment:    "-50%",
 		Reason:             "capacity available",
 		UtilizationPercent: 50.0,
 		RemainingCapacity:  25.0,
@@ -733,12 +761,12 @@ func TestGenerator_DisabledMode_EC2InstanceSP(t *testing.T) {
 	g := NewGeneratorWithOptions(true) // Disabled mode enabled
 
 	decision := Decision{
-		Name:         "cost-aware-ec2-sp-m5-us-west-2",
-		CapacityType: CapacityTypeEC2InstanceSavingsPlan,
-		ShouldExist:  true,
-		Weight:       20,
-		Price:        "0.00",
-		Reason:       "capacity available",
+		Name:            "cost-aware-ec2-sp-m5-us-west-2",
+		CapacityType:    CapacityTypeEC2InstanceSavingsPlan,
+		ShouldExist:     true,
+		Weight:          20,
+		PriceAdjustment: "-50%",
+		Reason:          "capacity available",
 	}
 
 	overlay := g.Generate(decision)
@@ -771,12 +799,12 @@ func TestGenerator_DisabledMode_ReservedInstance(t *testing.T) {
 	g := NewGeneratorWithOptions(true) // Disabled mode enabled
 
 	decision := Decision{
-		Name:         "cost-aware-ri-m5.xlarge-us-west-2",
-		CapacityType: CapacityTypeReservedInstance,
-		ShouldExist:  true,
-		Weight:       30,
-		Price:        "0.00",
-		Reason:       "3 reserved instances available",
+		Name:            "cost-aware-ri-m5.xlarge-us-west-2",
+		CapacityType:    CapacityTypeReservedInstance,
+		ShouldExist:     true,
+		Weight:          30,
+		PriceAdjustment: "-50%",
+		Reason:          "3 reserved instances available",
 	}
 
 	overlay := g.Generate(decision)
@@ -806,12 +834,12 @@ func TestGenerator_EnabledMode_NoImpossibleRequirement(t *testing.T) {
 	g := NewGenerator() // Default: disabled=false
 
 	decision := Decision{
-		Name:         "cost-aware-compute-sp-global",
-		CapacityType: CapacityTypeComputeSavingsPlan,
-		ShouldExist:  true,
-		Weight:       10,
-		Price:        "0.00",
-		Reason:       "capacity available",
+		Name:            "cost-aware-compute-sp-global",
+		CapacityType:    CapacityTypeComputeSavingsPlan,
+		ShouldExist:     true,
+		Weight:          10,
+		PriceAdjustment: "-50%",
+		Reason:          "capacity available",
 	}
 
 	overlay := g.Generate(decision)
