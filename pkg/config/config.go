@@ -97,7 +97,7 @@ const (
 	DefaultOverlayNamingReservedInstancePrefix          = "cost-aware-ri"         // RI overlay name prefix
 	DefaultOverlayNamingEC2InstanceSPPrefix             = "cost-aware-ec2-sp"     // EC2 Instance SP overlay name prefix
 	DefaultOverlayNamingComputeSPPrefix                 = "cost-aware-compute-sp" // Compute SP overlay name prefix
-	DefaultPreferencesEnabled                           = true                    // Instance preferences enabled by default
+	DefaultPreferencesEnabled                           = true
 )
 
 // Config represents the complete controller configuration.
@@ -435,7 +435,11 @@ func (c *Config) Validate() error {
 	seenNodePools := make(map[string]struct{}, len(c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names))
 	for _, name := range c.Overlays.ComputeSavingsPlan.NodePoolSelector.Names {
 		if errors := validation.IsDNS1123Subdomain(name); len(errors) > 0 {
-			return fmt.Errorf("overlays.computeSavingsPlan.nodePoolSelector.names contains invalid NodePool name %q: %s", name, errors[0])
+			return fmt.Errorf(
+				"overlays.computeSavingsPlan.nodePoolSelector.names contains invalid NodePool name %q: %s",
+				name,
+				errors[0],
+			)
 		}
 		if _, exists := seenNodePools[name]; exists {
 			return fmt.Errorf("overlays.computeSavingsPlan.nodePoolSelector.names contains duplicate NodePool name %q", name)

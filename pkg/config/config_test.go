@@ -409,13 +409,18 @@ overlays:
 	if cfg.Overlays.ReservedInstance.Enabled || cfg.Overlays.ReservedInstance.PriceAdjustment != "-60%" {
 		t.Errorf("ReservedInstance config = %+v, want disabled with -60%% adjustment", cfg.Overlays.ReservedInstance)
 	}
-	if cfg.Overlays.EC2InstanceSavingsPlan.Enabled || cfg.Overlays.EC2InstanceSavingsPlan.PriceAdjustment != "-40%" {
-		t.Errorf("EC2InstanceSavingsPlan config = %+v, want disabled with -40%% adjustment", cfg.Overlays.EC2InstanceSavingsPlan)
+	if cfg.Overlays.EC2InstanceSavingsPlan.Enabled ||
+		cfg.Overlays.EC2InstanceSavingsPlan.PriceAdjustment != "-40%" {
+		t.Errorf(
+			"EC2InstanceSavingsPlan config = %+v, want disabled with -40%% adjustment",
+			cfg.Overlays.EC2InstanceSavingsPlan,
+		)
 	}
 	if cfg.Overlays.ComputeSavingsPlan.Enabled || cfg.Overlays.ComputeSavingsPlan.PriceAdjustment != "-25%" {
 		t.Errorf("ComputeSavingsPlan config = %+v, want disabled with -25%% adjustment", cfg.Overlays.ComputeSavingsPlan)
 	}
-	if got := cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names; len(got) != 2 || got[0] != "on-demand" || got[1] != "batch" {
+	if got := cfg.Overlays.ComputeSavingsPlan.NodePoolSelector.Names; len(got) != 2 ||
+		got[0] != "on-demand" || got[1] != "batch" {
 		t.Errorf("ComputeSavingsPlan NodePool names = %v, want [on-demand batch]", got)
 	}
 	if cfg.Overlays.ComputeSavingsPlan.MinRemainingCapacityDollars != 75.5 {

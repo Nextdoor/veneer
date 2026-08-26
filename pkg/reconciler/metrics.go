@@ -491,7 +491,9 @@ func (r *MetricsReconciler) cleanupMissingOverlays(
 	}
 
 	var existing karpenterv1alpha1.NodeOverlayList
-	if err := r.Client.List(ctx, &existing, client.MatchingLabels{overlay.LabelManagedBy: overlay.LabelManagedByValue}); err != nil {
+	if err := r.Client.List(ctx, &existing, client.MatchingLabels{
+		overlay.LabelManagedBy: overlay.LabelManagedByValue,
+	}); err != nil {
 		r.Logger.Error(err, "Failed to list managed NodeOverlays for garbage collection")
 		return
 	}

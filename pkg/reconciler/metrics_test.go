@@ -267,9 +267,13 @@ func TestMetricsReconciler_CleanupMissingOverlays(t *testing.T) {
 	scheme.AddKnownTypes(gv, &karpenterv1alpha1.NodeOverlay{}, &karpenterv1alpha1.NodeOverlayList{})
 	metav1.AddToGroupVersion(scheme, gv)
 
-	existing := &karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: "obsolete-compute", Labels: map[string]string{
-		overlay.LabelManagedBy: overlay.LabelManagedByValue, overlay.LabelCapacityType: "compute-savings-plan",
-	}}}
+	existing := &karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{
+		Name: "obsolete-compute",
+		Labels: map[string]string{
+			overlay.LabelManagedBy:    overlay.LabelManagedByValue,
+			overlay.LabelCapacityType: "compute-savings-plan",
+		},
+	}}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existing).Build()
 	reconciler := &MetricsReconciler{Client: client, Logger: logr.Discard()}
 

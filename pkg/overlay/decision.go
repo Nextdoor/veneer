@@ -330,7 +330,11 @@ func (e *DecisionEngine) AnalyzeComputeSavingsPlan(
 	if wait := computeConfig.MinBelowThresholdDuration; wait > 0 {
 		eligibleFor := e.eligibleDuration(overlayName)
 		if eligibleFor < wait {
-			decision.Reason = fmt.Sprintf("eligible for %s; waiting for %s minimum duration", eligibleFor.Round(time.Second), wait)
+			decision.Reason = fmt.Sprintf(
+				"eligible for %s; waiting for %s minimum duration",
+				eligibleFor.Round(time.Second),
+				wait,
+			)
 			return decision
 		}
 	}

@@ -480,6 +480,10 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
+var overlayPriceAdjustmentPattern = regexp.MustCompile(
+	`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`,
+)
+
 // ValidateOverlay checks that a generated NodeOverlay is valid and will be accepted by Kubernetes.
 //
 // This performs client-side validation before attempting to create the resource,
@@ -492,141 +496,134 @@ func (e ValidationError) Error() string {
 //   - Exactly one valid price field is set
 //   - Weight is within bounds (1-10000)
 func ValidateOverlay(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
-	var errors []ValidationError
-
 	if overlay == nil {
 		return []ValidationError{{Field: "overlay", Message: "overlay is nil"}}
 	}
 
-	// Validate name (must be a valid DNS subdomain name)
+	errors := make([]ValidationError, 0, 4)
+	errors = append(errors, validateOverlayMetadata(overlay)...)
+	errors = append(errors, validateOverlayRequirements(overlay.Spec.Requirements)...)
+	errors = append(errors, validateOverlayPricing(overlay.Spec.Price, overlay.Spec.PriceAdjustment)...)
+	errors = append(errors, validateOverlayWeight(overlay.Spec.Weight)...)
+	return errors
+}
+
+func validateOverlayMetadata(overlay *karpenterv1alpha1.NodeOverlay) []ValidationError {
+	var errors []ValidationError
 	if overlay.Name == "" {
 		errors = append(errors, ValidationError{Field: "metadata.name", Message: "name is required"})
 	} else if len(overlay.Name) > 253 {
 		errors = append(errors, ValidationError{Field: "metadata.name", Message: "name must be 253 characters or less"})
 	}
 
-	// Validate labels
-	for k, v := range overlay.Labels {
-		if len(k) > 253 {
+	for key, value := range overlay.Labels {
+		if len(key) > 253 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("metadata.labels[%s]", k),
+				Field:   fmt.Sprintf("metadata.labels[%s]", key),
 				Message: "label key must be 253 characters or less",
 			})
 		}
-		if len(v) > 63 {
+		if len(value) > 63 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("metadata.labels[%s]", k),
+				Field:   fmt.Sprintf("metadata.labels[%s]", key),
 				Message: "label value must be 63 characters or less",
 			})
 		}
 	}
+	return errors
+}
 
-	// Validate requirements
-	if len(overlay.Spec.Requirements) == 0 {
+func validateOverlayRequirements(
+	requirements []karpenterv1alpha1.NodeSelectorRequirement,
+) []ValidationError {
+	var errors []ValidationError
+	if len(requirements) == 0 {
 		errors = append(errors, ValidationError{
 			Field:   "spec.requirements",
 			Message: "at least one requirement is required",
 		})
 	}
-	for i, req := range overlay.Spec.Requirements {
-		if req.Key == "" {
+
+	validOperators := map[corev1.NodeSelectorOperator]bool{
+		corev1.NodeSelectorOpIn:           true,
+		corev1.NodeSelectorOpNotIn:        true,
+		corev1.NodeSelectorOpExists:       true,
+		corev1.NodeSelectorOpDoesNotExist: true,
+		corev1.NodeSelectorOpGt:           true,
+		corev1.NodeSelectorOpLt:           true,
+	}
+	for index, requirement := range requirements {
+		if requirement.Key == "" {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].key", i),
+				Field:   fmt.Sprintf("spec.requirements[%d].key", index),
 				Message: "requirement key is required",
 			})
 		}
-		// Validate operator
-		validOps := map[corev1.NodeSelectorOperator]bool{
-			corev1.NodeSelectorOpIn:           true,
-			corev1.NodeSelectorOpNotIn:        true,
-			corev1.NodeSelectorOpExists:       true,
-			corev1.NodeSelectorOpDoesNotExist: true,
-			corev1.NodeSelectorOpGt:           true,
-			corev1.NodeSelectorOpLt:           true,
-		}
-		if !validOps[req.Operator] {
+		if !validOperators[requirement.Operator] {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].operator", i),
-				Message: fmt.Sprintf("invalid operator %q", req.Operator),
+				Field:   fmt.Sprintf("spec.requirements[%d].operator", index),
+				Message: fmt.Sprintf("invalid operator %q", requirement.Operator),
 			})
 		}
-		// In/NotIn require values
-		if (req.Operator == corev1.NodeSelectorOpIn || req.Operator == corev1.NodeSelectorOpNotIn) && len(req.Values) == 0 {
+		if requiresValues(requirement.Operator) && len(requirement.Values) == 0 {
 			errors = append(errors, ValidationError{
-				Field:   fmt.Sprintf("spec.requirements[%d].values", i),
-				Message: fmt.Sprintf("operator %q requires at least one value", req.Operator),
+				Field:   fmt.Sprintf("spec.requirements[%d].values", index),
+				Message: fmt.Sprintf("operator %q requires at least one value", requirement.Operator),
 			})
 		}
 	}
+	return errors
+}
 
-	if overlay.Spec.Price != nil && overlay.Spec.PriceAdjustment != nil {
+func requiresValues(operator corev1.NodeSelectorOperator) bool {
+	return operator == corev1.NodeSelectorOpIn || operator == corev1.NodeSelectorOpNotIn
+}
+
+func validateOverlayPricing(price, adjustment *string) []ValidationError {
+	var errors []ValidationError
+	if price != nil && adjustment != nil {
 		errors = append(errors, ValidationError{
 			Field:   "spec",
 			Message: "price and priceAdjustment are mutually exclusive",
 		})
 	}
-	if overlay.Spec.Price == nil && overlay.Spec.PriceAdjustment == nil {
+	if price == nil && adjustment == nil {
 		errors = append(errors, ValidationError{
 			Field:   "spec",
 			Message: "one of price or priceAdjustment is required",
 		})
 	}
-
-	// Validate absolute price format for compatibility with existing resources.
-	if overlay.Spec.Price != nil {
-		price := *overlay.Spec.Price
-		// Price must match pattern: ^\d+(\.\d+)?$
-		if price == "" {
-			errors = append(errors, ValidationError{
-				Field:   "spec.price",
-				Message: "price cannot be empty string",
-			})
-		} else {
-			valid := true
-			dotSeen := false
-			for i, ch := range price {
-				if ch == '.' {
-					if dotSeen || i == 0 || i == len(price)-1 {
-						valid = false
-						break
-					}
-					dotSeen = true
-				} else if ch < '0' || ch > '9' {
-					valid = false
-					break
-				}
-			}
-			if !valid {
-				errors = append(errors, ValidationError{
-					Field:   "spec.price",
-					Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", price),
-				})
-			}
-		}
+	if price != nil && !validAbsolutePrice(*price) {
+		errors = append(errors, ValidationError{
+			Field:   "spec.price",
+			Message: fmt.Sprintf("price %q must be a non-negative decimal (e.g., \"0.00\", \"1.5\")", *price),
+		})
 	}
-
-	if overlay.Spec.PriceAdjustment != nil {
-		adjustment := *overlay.Spec.PriceAdjustment
-		if !regexp.MustCompile(`^-(([1-9][0-9]?)(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)%$`).MatchString(adjustment) {
-			errors = append(errors, ValidationError{
-				Field:   "spec.priceAdjustment",
-				Message: fmt.Sprintf("priceAdjustment %q must be a discount greater than -100%% and below 0%%", adjustment),
-			})
-		}
+	if adjustment != nil && !overlayPriceAdjustmentPattern.MatchString(*adjustment) {
+		errors = append(errors, ValidationError{
+			Field:   "spec.priceAdjustment",
+			Message: fmt.Sprintf("priceAdjustment %q must be a discount greater than -100%% and below 0%%", *adjustment),
+		})
 	}
-
-	// Validate weight (1-10000)
-	if overlay.Spec.Weight != nil {
-		w := *overlay.Spec.Weight
-		if w < 1 || w > 10000 {
-			errors = append(errors, ValidationError{
-				Field:   "spec.weight",
-				Message: fmt.Sprintf("weight %d must be between 1 and 10000", w),
-			})
-		}
-	}
-
 	return errors
+}
+
+func validAbsolutePrice(price string) bool {
+	if price == "" {
+		return false
+	}
+	matched, err := regexp.MatchString(`^\d+(\.\d+)?$`, price)
+	return err == nil && matched
+}
+
+func validateOverlayWeight(weight *int32) []ValidationError {
+	if weight == nil || (*weight >= 1 && *weight <= 10000) {
+		return nil
+	}
+	return []ValidationError{{
+		Field:   "spec.weight",
+		Message: fmt.Sprintf("weight %d must be between 1 and 10000", *weight),
+	}}
 }
 
 // FormatOverlayYAML returns a YAML representation of a NodeOverlay for logging.
