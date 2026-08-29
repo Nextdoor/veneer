@@ -75,9 +75,20 @@ The following Karpenter and Kubernetes labels can be used in matchers:
 | `karpenter.k8s.aws/instance-cpu` | Number of vCPUs | `4`, `8`, `16` |
 | `karpenter.k8s.aws/instance-cpu-manufacturer` | CPU manufacturer | `intel`, `amd`, `aws` |
 | `karpenter.k8s.aws/instance-memory` | Memory in MiB | `8192`, `16384` |
+| `karpenter.k8s.aws/instance-capability-flex` | Set on EC2 `-flex` instance variants | `true` |
+| `karpenter.k8s.aws/instance-cpu-sustained-clock-speed-mhz` | Sustained all-core clock speed in MHz | `2600`, `3600` |
+| `karpenter.k8s.aws/instance-ebs-bandwidth` | EBS bandwidth in Mbps | `4750`, `10000` |
+| `karpenter.k8s.aws/instance-encryption-in-transit-supported` | Encryption-in-transit support | `true`, `false` |
+| `karpenter.k8s.aws/instance-hypervisor` | Hypervisor | `nitro`, `xen` |
+| `karpenter.k8s.aws/instance-local-nvme` | Local NVMe capacity in GiB | `237`, `1900` |
+| `karpenter.k8s.aws/instance-network-bandwidth` | Network bandwidth in Mbps | `12500`, `25000` |
 | `kubernetes.io/arch` | Architecture | `amd64`, `arm64` |
 | `karpenter.sh/capacity-type` | Capacity type | `on-demand`, `spot` |
 | `node.kubernetes.io/instance-type` | Specific instance type | `m5.xlarge`, `c7g.2xlarge` |
+
+Labels that are absent on an instance type never match. `instance-capability-flex`
+is only published on `-flex` variants and `instance-local-nvme` only on instance
+types with local NVMe, so a matcher on either implicitly excludes everything else.
 
 ## Operators
 
