@@ -122,6 +122,36 @@ func (r *NodePoolReconciler) listPreferenceOverlaysForNodePool(
 	return overlayList.Items, nil
 }
 
+// updatePreferenceOverlayCount refreshes veneer_overlay_count for the
+// "preference" capacity type.
+//
+// The gauge has no NodePool dimension but this reconciler is scoped to a single
+// NodePool, so the value cannot be derived from the overlays one pass happened
+// to touch -- reconciling pool-a must not clobber pool-b's contribution. It is
+// therefore recounted from a full list, served by the same controller-runtime
+// cache that backs listPreferenceOverlaysForNodePool, so it costs no extra API
+// call.
+//
+// On error the previous value is left in place rather than being zeroed: a
+// stale count is far less misleading than a spurious 0, which would be
+// indistinguishable from "every preference overlay was deleted".
+func (r *NodePoolReconciler) updatePreferenceOverlayCount(ctx context.Context, log logr.Logger) {
+	if r.Metrics == nil {
+		return
+	}
+
+	var overlayList karpenterv1alpha1.NodeOverlayList
+	if err := r.List(ctx, &overlayList, client.MatchingLabels{
+		preference.LabelManagedBy:      preference.LabelManagedByValue,
+		preference.LabelPreferenceType: preference.LabelPreferenceTypeValue,
+	}); err != nil {
+		log.Error(err, "Failed to count preference overlays for metrics")
+		return
+	}
+
+	r.Metrics.SetOverlayCount(metrics.CapacityTypePreference, len(overlayList.Items))
+}
+
 // reconcileOverlays compares desired vs existing overlays and performs CRUD operations.
 func (r *NodePoolReconciler) reconcileOverlays(
 	ctx context.Context,
@@ -220,6 +250,8 @@ func (r *NodePoolReconciler) reconcileOverlays(
 		)
 	}
 
+	r.updatePreferenceOverlayCount(ctx, log)
+
 	return ctrl.Result{}, nil
 }
 
@@ -283,6 +315,8 @@ func (r *NodePoolReconciler) cleanupOverlaysForNodePool(
 			"errors", errorCount,
 		)
 	}
+
+	r.updatePreferenceOverlayCount(ctx, log)
 
 	return ctrl.Result{}, nil
 }

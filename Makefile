@@ -15,6 +15,11 @@
 # Image URL to use all building/pushing image targets
 IMG ?= veneer:latest
 
+# VERSION is stamped into the binary via -ldflags and reported by the
+# veneer_info metric. Defaults to the current git describe so local images are
+# self-identifying; CI overrides it with the release tag.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 CONTAINER_TOOL ?= docker
 
@@ -181,7 +186,7 @@ kind-load: install-kind docker-build ## Load the docker image into Kind cluster
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build --build-arg VERSION=$(VERSION) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

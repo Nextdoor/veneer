@@ -148,6 +148,17 @@ func (c CapacityType) String() string {
 	return string(c)
 }
 
+// AllCapacityTypes lists every capacity type Veneer can manage NodeOverlays
+// for. Kept next to the constants above so that adding a new capacity type
+// automatically gets it exported with a zero value at startup; see
+// initializeOverlayCounts for why that matters.
+var AllCapacityTypes = []CapacityType{
+	CapacityTypeComputeSP,
+	CapacityTypeEC2InstanceSP,
+	CapacityTypeRI,
+	CapacityTypePreference,
+}
+
 // DecisionReason represents the reason for a decision.
 type DecisionReason string
 
@@ -447,7 +458,32 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.Info,
 	)
 
+	m.initializeOverlayCounts()
+
 	return m
+}
+
+// initializeOverlayCounts exports veneer_overlay_count = 0 for every capacity
+// type at registration time.
+//
+// A Prometheus *GaugeVec creates a child series only the first time a label
+// combination is written to, and the cost-aware overlay counts are written at
+// the very end of the reconcile path -- a path that is skipped entirely when no
+// decisions are produced (every capacity type toggled off, or Lumina publishing
+// no data for the ones that are on). In that steady state the metric exported
+// no series at all, which is precisely the state operators most want to assert
+// on: a query such as
+//
+//	veneer_overlay_count{capacity_type="compute_savings_plan"} == 0
+//
+// returns "no data" rather than 0, so any alert or release check built on it is
+// silently inert instead of passing. Seeding an explicit 0 makes "Veneer manages
+// no overlays of this type" observable, and distinguishable from "Veneer is not
+// running or not scraped".
+func (m *Metrics) initializeOverlayCounts() {
+	for _, capacityType := range AllCapacityTypes {
+		m.OverlayCount.WithLabelValues(capacityType.String()).Set(0)
+	}
 }
 
 // SetConfigMetrics sets configuration-related metrics. Call this once at startup.
