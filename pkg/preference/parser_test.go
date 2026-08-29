@@ -211,7 +211,10 @@ func TestParseNodePoolPreferences(t *testing.T) {
 		{
 			name: "accepts instance-capability-flex label",
 			annotations: map[string]string{
-				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=true karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
+				// Split across lines to stay within the line-length limit;
+				// this is a single-line annotation value in practice.
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=true " +
+					"karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
 			},
 			nodePoolName: "flex",
 			wantPrefs:    1,
