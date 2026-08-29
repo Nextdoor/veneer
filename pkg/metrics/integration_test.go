@@ -15,6 +15,7 @@
 package metrics_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -450,4 +451,59 @@ func TestMetricsIntegration_InfoMetric(t *testing.T) {
 
 	infoValueDisabled := testutil.ToFloat64(m2.Info.WithLabelValues(veneermetrics.Version, "true"))
 	assert.Equal(t, float64(1), infoValueDisabled)
+}
+
+// TestMetricsIntegration_OverlayCountInitializedAtRegistration verifies that
+// veneer_overlay_count exports an explicit 0 for every capacity type as soon as
+// the metrics are registered, before any reconciliation has run.
+//
+// This is the regression guard for a silent-failure mode: the gauge used to
+// gain a child series only once the cost-aware reconcile path wrote to it, so
+// with every capacity type toggled off the metric exported nothing and
+// verification queries of the form
+// `veneer_overlay_count{capacity_type="..."} == 0` returned no data instead of
+// matching.
+func TestMetricsIntegration_OverlayCountInitializedAtRegistration(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	veneermetrics.NewMetrics(reg)
+
+	expected := `
+# HELP veneer_overlay_count Current number of NodeOverlays managed by Veneer
+# TYPE veneer_overlay_count gauge
+veneer_overlay_count{capacity_type="compute_savings_plan"} 0
+veneer_overlay_count{capacity_type="ec2_instance_savings_plan"} 0
+veneer_overlay_count{capacity_type="preference"} 0
+veneer_overlay_count{capacity_type="reserved_instance"} 0
+`
+	err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "veneer_overlay_count")
+	assert.NoError(t, err, "overlay count should be seeded to 0 for every capacity type")
+}
+
+// TestMetricsIntegration_AllCapacityTypesCoversEveryConstant guards against a
+// new CapacityType constant being added without being added to
+// AllCapacityTypes, which would silently reintroduce the missing-series bug for
+// that type.
+func TestMetricsIntegration_AllCapacityTypesCoversEveryConstant(t *testing.T) {
+	assert.ElementsMatch(t,
+		[]veneermetrics.CapacityType{
+			veneermetrics.CapacityTypeComputeSP,
+			veneermetrics.CapacityTypeEC2InstanceSP,
+			veneermetrics.CapacityTypeRI,
+			veneermetrics.CapacityTypePreference,
+		},
+		veneermetrics.AllCapacityTypes,
+	)
+}
+
+// TestMetricsIntegration_OverlayCountOverwritesSeededZero verifies the seeded
+// zero does not interfere with real counts being reported.
+func TestMetricsIntegration_OverlayCountOverwritesSeededZero(t *testing.T) {
+	m := newTestMetrics(t)
+
+	assert.Equal(t, float64(0),
+		testutil.ToFloat64(m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypeRI.String())))
+
+	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 3)
+	assert.Equal(t, float64(3),
+		testutil.ToFloat64(m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypeRI.String())))
 }

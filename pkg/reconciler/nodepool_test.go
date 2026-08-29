@@ -19,7 +19,10 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/preference"
+	promclient "github.com/prometheus/client_golang/prometheus"
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -831,4 +834,121 @@ func strPtr(s string) *string {
 
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+// TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount verifies that
+// veneer_overlay_count{capacity_type="preference"} reflects the cluster-wide
+// number of Veneer-managed preference overlays after a reconcile.
+//
+// The gauge has no NodePool dimension, so it must be recounted from a full
+// list rather than derived from the overlays a single reconcile touched: a pass
+// over pool-a must not clobber the contribution of pool-b.
+func TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount(t *testing.T) {
+	scheme := setupTestScheme(t)
+
+	poolA := &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pool-a",
+			Annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
+				"veneer.io/preference.2": "kubernetes.io/arch=arm64 adjust=+10%",
+			},
+		},
+	}
+	poolB := &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pool-b",
+			Annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=m7g adjust=-15%",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(poolA, poolB).
+		Build()
+
+	reg := promclient.NewRegistry()
+	m := veneermetrics.NewMetrics(reg)
+
+	reconciler := &NodePoolReconciler{
+		Client:    fakeClient,
+		Logger:    logr.Discard(),
+		Generator: preference.NewGenerator(),
+		Metrics:   m,
+	}
+
+	gauge := m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypePreference.String())
+
+	// Seeded at registration, before anything has reconciled.
+	if got := promtest.ToFloat64(gauge); got != 0 {
+		t.Fatalf("expected seeded preference overlay count 0, got %v", got)
+	}
+
+	ctx := context.Background()
+
+	result, err := reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "pool-a"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error reconciling pool-a: %v", err)
+	}
+	if result.Requeue {
+		t.Errorf("unexpected requeue")
+	}
+	if got := promtest.ToFloat64(gauge); got != 2 {
+		t.Errorf("expected 2 preference overlays after reconciling pool-a, got %v", got)
+	}
+
+	// Reconciling a second pool must add to the total, not replace it.
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "pool-b"},
+	}); err != nil {
+		t.Fatalf("unexpected error reconciling pool-b: %v", err)
+	}
+	if got := promtest.ToFloat64(gauge); got != 3 {
+		t.Errorf("expected 3 preference overlays after reconciling pool-b, got %v", got)
+	}
+
+	// Deleting a NodePool cleans up its overlays and the count follows.
+	if err := fakeClient.Delete(ctx, poolA); err != nil {
+		t.Fatalf("failed to delete pool-a: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "pool-a"},
+	}); err != nil {
+		t.Fatalf("unexpected error reconciling deleted pool-a: %v", err)
+	}
+	if got := promtest.ToFloat64(gauge); got != 1 {
+		t.Errorf("expected 1 preference overlay after pool-a cleanup, got %v", got)
+	}
+}
+
+// TestNodePoolReconciler_Reconcile_NilMetricsIsSafe verifies the overlay-count
+// bookkeeping is skipped rather than panicking when metrics are not wired up,
+// which is how most of the other tests construct the reconciler.
+func TestNodePoolReconciler_Reconcile_NilMetricsIsSafe(t *testing.T) {
+	scheme := setupTestScheme(t)
+
+	nodePool := &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "no-metrics",
+			Annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
+			},
+		},
+	}
+
+	reconciler := &NodePoolReconciler{
+		Client:    fake.NewClientBuilder().WithScheme(scheme).WithObjects(nodePool).Build(),
+		Logger:    logr.Discard(),
+		Generator: preference.NewGenerator(),
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "no-metrics"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
