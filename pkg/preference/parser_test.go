@@ -20,6 +20,8 @@ import (
 	"testing"
 )
 
+const testQuotedLabelValue = "true"
+
 //nolint:gocyclo // Table-driven tests with inline assertions have high cyclomatic complexity
 func TestParseNodePoolPreferences(t *testing.T) {
 	tests := []struct {
@@ -223,7 +225,7 @@ func TestParseNodePoolPreferences(t *testing.T) {
 			wantErrors:   0,
 			checkPrefs: func(t *testing.T, prefs []Preference) {
 				got := prefs[0].Matchers[0].Values
-				if len(got) != 1 || got[0] != "true" {
+				if len(got) != 1 || got[0] != testQuotedLabelValue {
 					t.Errorf("expected quoted value to normalize to [true], got %v", got)
 				}
 			},
@@ -530,7 +532,7 @@ func TestParseMatcher(t *testing.T) {
 			expr:    "karpenter.k8s.aws/instance-capability-flex=\"true\"",
 			wantErr: false,
 			check: func(t *testing.T, m *LabelMatcher) {
-				if len(m.Values) != 1 || m.Values[0] != "true" {
+				if len(m.Values) != 1 || m.Values[0] != testQuotedLabelValue {
 					t.Errorf("expected [true], got %v", m.Values)
 				}
 			},
@@ -540,7 +542,7 @@ func TestParseMatcher(t *testing.T) {
 			expr:    "karpenter.k8s.aws/instance-capability-flex='true'",
 			wantErr: false,
 			check: func(t *testing.T, m *LabelMatcher) {
-				if len(m.Values) != 1 || m.Values[0] != "true" {
+				if len(m.Values) != 1 || m.Values[0] != testQuotedLabelValue {
 					t.Errorf("expected [true], got %v", m.Values)
 				}
 			},
@@ -668,8 +670,8 @@ func TestParseValues(t *testing.T) {
 		input string
 		want  []string
 	}{
-		{name: "double quotes", input: `"true"`, want: []string{"true"}},
-		{name: "single quotes", input: `'true'`, want: []string{"true"}},
+		{name: "double quotes", input: `"true"`, want: []string{testQuotedLabelValue}},
+		{name: "single quotes", input: `'true'`, want: []string{testQuotedLabelValue}},
 		{name: "embedded quote unchanged", input: `tr"ue`, want: []string{`tr"ue`}},
 		{name: "unmatched leading quote unchanged", input: `"true`, want: []string{`"true`}},
 		{

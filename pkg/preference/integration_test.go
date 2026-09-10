@@ -112,7 +112,7 @@ func TestIntegration_ParseGenerateValidate(t *testing.T) {
 			check: func(t *testing.T, overlays []*v1alpha1.NodeOverlay) {
 				for _, req := range overlays[0].Spec.Requirements {
 					if req.Key == LabelInstanceCapabilityFlex {
-						if len(req.Values) != 1 || req.Values[0] != "true" {
+						if len(req.Values) != 1 || req.Values[0] != testQuotedLabelValue {
 							t.Errorf("expected normalized value [true], got %v", req.Values)
 						}
 						return
