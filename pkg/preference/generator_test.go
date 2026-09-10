@@ -19,6 +19,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	karpenterv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
 
@@ -353,6 +354,19 @@ func TestGenerator_Generate(t *testing.T) {
 			}
 			if overlay.TypeMeta.Kind != "NodeOverlay" {
 				t.Errorf("expected Kind NodeOverlay, got %s", overlay.TypeMeta.Kind)
+			}
+
+			for _, requirement := range overlay.Spec.Requirements {
+				for _, value := range requirement.Values {
+					if errors := validation.IsValidLabelValue(value); len(errors) > 0 {
+						t.Errorf(
+							"generated invalid label value %q for requirement %q: %v",
+							value,
+							requirement.Key,
+							errors,
+						)
+					}
+				}
 			}
 
 			tt.check(t, overlay)
