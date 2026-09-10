@@ -15,6 +15,8 @@
 package preference
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -209,16 +211,22 @@ func TestParseNodePoolPreferences(t *testing.T) {
 			wantErrors:   0,
 		},
 		{
-			name: "accepts instance-capability-flex label",
+			name: "accepts quoted instance-capability-flex value",
 			annotations: map[string]string{
 				// Split across lines to stay within the line-length limit;
 				// this is a single-line annotation value in practice.
-				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=true " +
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=\"true\" " +
 					"karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
 			},
 			nodePoolName: "flex",
 			wantPrefs:    1,
 			wantErrors:   0,
+			checkPrefs: func(t *testing.T, prefs []Preference) {
+				got := prefs[0].Matchers[0].Values
+				if len(got) != 1 || got[0] != "true" {
+					t.Errorf("expected quoted value to normalize to [true], got %v", got)
+				}
+			},
 		},
 		{
 			name: "accepts instance-hypervisor and instance-local-nvme labels",
@@ -290,6 +298,31 @@ func TestParseNodePoolPreferences(t *testing.T) {
 			nodePoolName: "unsupported",
 			wantPrefs:    0,
 			wantErrors:   1,
+		},
+		{
+			name: "invalid label value identifies annotation key label key and value",
+			annotations: map[string]string{
+				"veneer.io/preference.7": "karpenter.k8s.aws/instance-family=c7a/large adjust=-10%",
+			},
+			nodePoolName: "invalid-value",
+			wantPrefs:    0,
+			wantErrors:   1,
+			checkErrors: func(t *testing.T, errs []error) {
+				t.Helper()
+
+				var parseErr ParseError
+				if !errors.As(errs[0], &parseErr) {
+					t.Fatalf("expected ParseError, got %T", errs[0])
+				}
+				if parseErr.AnnotationKey != "veneer.io/preference.7" {
+					t.Errorf("expected annotation key veneer.io/preference.7, got %q", parseErr.AnnotationKey)
+				}
+				for _, want := range []string{LabelInstanceFamily, "c7a/large"} {
+					if !strings.Contains(parseErr.Message, want) {
+						t.Errorf("expected error message %q to contain %q", parseErr.Message, want)
+					}
+				}
+			},
 		},
 		{
 			name: "empty value",
@@ -493,6 +526,75 @@ func TestParseMatcher(t *testing.T) {
 			},
 		},
 		{
+			name:    "double-quoted In value",
+			expr:    "karpenter.k8s.aws/instance-capability-flex=\"true\"",
+			wantErr: false,
+			check: func(t *testing.T, m *LabelMatcher) {
+				if len(m.Values) != 1 || m.Values[0] != "true" {
+					t.Errorf("expected [true], got %v", m.Values)
+				}
+			},
+		},
+		{
+			name:    "single-quoted In value",
+			expr:    "karpenter.k8s.aws/instance-capability-flex='true'",
+			wantErr: false,
+			check: func(t *testing.T, m *LabelMatcher) {
+				if len(m.Values) != 1 || m.Values[0] != "true" {
+					t.Errorf("expected [true], got %v", m.Values)
+				}
+			},
+		},
+		{
+			name:    "quoted NotIn value",
+			expr:    "karpenter.k8s.aws/instance-family!='m5'",
+			wantErr: false,
+			check: func(t *testing.T, m *LabelMatcher) {
+				if m.Operator != OperatorNotIn {
+					t.Errorf("expected NotIn, got %s", m.Operator)
+				}
+				if len(m.Values) != 1 || m.Values[0] != "m5" {
+					t.Errorf("expected [m5], got %v", m.Values)
+				}
+			},
+		},
+		{
+			name:    "mixed quoted and unquoted values",
+			expr:    "karpenter.k8s.aws/instance-family=\"c7a\",c7g,'m7g'",
+			wantErr: false,
+			check: func(t *testing.T, m *LabelMatcher) {
+				want := []string{"c7a", "c7g", "m7g"}
+				if len(m.Values) != len(want) {
+					t.Fatalf("expected %v, got %v", want, m.Values)
+				}
+				for i := range want {
+					if m.Values[i] != want[i] {
+						t.Errorf("expected %v, got %v", want, m.Values)
+					}
+				}
+			},
+		},
+		{
+			name:    "embedded quote is rejected",
+			expr:    "karpenter.k8s.aws/instance-family=c\"7a",
+			wantErr: true,
+		},
+		{
+			name:    "value containing a space is rejected",
+			expr:    "karpenter.k8s.aws/instance-family=\"c7a large\"",
+			wantErr: true,
+		},
+		{
+			name:    "unmatched leading quote is rejected",
+			expr:    "karpenter.k8s.aws/instance-family=\"c7a",
+			wantErr: true,
+		},
+		{
+			name:    "invalid NotIn value is rejected",
+			expr:    "karpenter.k8s.aws/instance-family!=m5/large",
+			wantErr: true,
+		},
+		{
 			name:    "Gt operator",
 			expr:    "karpenter.k8s.aws/instance-cpu>8",
 			wantErr: false,
@@ -555,6 +657,38 @@ func TestParseMatcher(t *testing.T) {
 			}
 			if tt.check != nil && m != nil {
 				tt.check(t, m)
+			}
+		})
+	}
+}
+
+func TestParseValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{name: "double quotes", input: `"true"`, want: []string{"true"}},
+		{name: "single quotes", input: `'true'`, want: []string{"true"}},
+		{name: "embedded quote unchanged", input: `tr"ue`, want: []string{`tr"ue`}},
+		{name: "unmatched leading quote unchanged", input: `"true`, want: []string{`"true`}},
+		{
+			name:  "mixed quoted and unquoted values",
+			input: `"c7a", c7g, 'm7g'`,
+			want:  []string{"c7a", "c7g", "m7g"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseValues(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("expected %v, got %v", tt.want, got)
+				}
 			}
 		})
 	}

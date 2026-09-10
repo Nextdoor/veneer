@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // ParseError represents an error encountered while parsing a preference annotation.
@@ -240,15 +242,36 @@ func parseMatcher(expr string) (*LabelMatcher, error) {
 		return nil, fmt.Errorf("invalid matcher %q: at least one value is required", expr)
 	}
 
+	// Karpenter stores In and NotIn values as Kubernetes label values. Validate
+	// them here so invalid annotations fail visibly instead of producing a
+	// NodeOverlay that is accepted by the API server but rejected at runtime.
+	if matcher.Operator == OperatorIn || matcher.Operator == OperatorNotIn {
+		for _, value := range matcher.Values {
+			if errors := validation.IsValidLabelValue(value); len(errors) > 0 {
+				return nil, fmt.Errorf(
+					"invalid value %q for label key %q: %s",
+					value,
+					matcher.Key,
+					strings.Join(errors, "; "),
+				)
+			}
+		}
+	}
+
 	return matcher, nil
 }
 
-// parseValues splits a comma-separated value string and trims whitespace.
+// parseValues splits a comma-separated value string, trims whitespace, and
+// removes matched surrounding quotes. Unmatched or embedded quotes remain so
+// validation can report the original invalid value instead of changing it.
 func parseValues(valuesStr string) []string {
 	parts := strings.Split(valuesStr, ",")
 	var values []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
+		if len(p) >= 2 && (p[0] == '\'' || p[0] == '"') && p[len(p)-1] == p[0] {
+			p = p[1 : len(p)-1]
+		}
 		if p != "" {
 			values = append(values, p)
 		}

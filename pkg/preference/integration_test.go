@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 )
 
@@ -97,6 +98,27 @@ func TestIntegration_ParseGenerateValidate(t *testing.T) {
 				if !hasInstanceFamilyReq {
 					t.Error("missing instance-family requirement")
 				}
+			},
+		},
+		{
+			name: "quoted matcher value generates valid requirements",
+			annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=\"true\" " +
+					"karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
+			},
+			nodePoolName: "quoted-value",
+			disabled:     false,
+			wantOverlays: 1,
+			check: func(t *testing.T, overlays []*v1alpha1.NodeOverlay) {
+				for _, req := range overlays[0].Spec.Requirements {
+					if req.Key == LabelInstanceCapabilityFlex {
+						if len(req.Values) != 1 || req.Values[0] != "true" {
+							t.Errorf("expected normalized value [true], got %v", req.Values)
+						}
+						return
+					}
+				}
+				t.Error("missing instance-capability-flex requirement")
 			},
 		},
 		{
@@ -293,6 +315,19 @@ func TestIntegration_ParseGenerateValidate(t *testing.T) {
 				}
 				if o.Spec.Weight == nil {
 					t.Errorf("overlay %d: missing weight", i)
+				}
+				for _, requirement := range o.Spec.Requirements {
+					for _, value := range requirement.Values {
+						if errors := validation.IsValidLabelValue(value); len(errors) > 0 {
+							t.Errorf(
+								"overlay %d generated invalid label value %q for requirement %q: %v",
+								i,
+								value,
+								requirement.Key,
+								errors,
+							)
+						}
+					}
 				}
 			}
 		})
