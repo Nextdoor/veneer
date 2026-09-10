@@ -213,6 +213,22 @@ func TestParseNodePoolPreferences(t *testing.T) {
 			wantErrors:   0,
 		},
 		{
+			name: "accepts unquoted instance-capability-flex value",
+			annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=true " +
+					"karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
+			},
+			nodePoolName: "flex-unquoted",
+			wantPrefs:    1,
+			wantErrors:   0,
+			checkPrefs: func(t *testing.T, prefs []Preference) {
+				got := prefs[0].Matchers[0].Values
+				if len(got) != 1 || got[0] != testQuotedLabelValue {
+					t.Errorf("expected unquoted value [true], got %v", got)
+				}
+			},
+		},
+		{
 			name: "accepts quoted instance-capability-flex value",
 			annotations: map[string]string{
 				// Split across lines to stay within the line-length limit;
@@ -220,7 +236,7 @@ func TestParseNodePoolPreferences(t *testing.T) {
 				"veneer.io/preference.1": "karpenter.k8s.aws/instance-capability-flex=\"true\" " +
 					"karpenter.k8s.aws/instance-size=2xlarge,4xlarge adjust=+20%",
 			},
-			nodePoolName: "flex",
+			nodePoolName: "flex-quoted",
 			wantPrefs:    1,
 			wantErrors:   0,
 			checkPrefs: func(t *testing.T, prefs []Preference) {
