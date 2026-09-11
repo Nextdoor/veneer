@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -392,6 +393,75 @@ func (n *NodePoolClient) DeleteNodePool(ctx context.Context, name string) error 
 	}
 
 	return dynClient.Resource(nodePoolGVR).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// SetNodeOverlayConditions updates a NodeOverlay's status conditions directly.
+// The E2E environment installs the Karpenter CRDs without the Karpenter
+// controller, so tests use this helper to simulate asynchronous validation.
+func (n *NodePoolClient) SetNodeOverlayConditions(
+	ctx context.Context, name string, conditions []interface{},
+) error {
+	dynClient, err := dynamic.NewForConfig(n.restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
+	nodeOverlayGVR := schema.GroupVersionResource{
+		Group:    "karpenter.sh",
+		Version:  "v1alpha1",
+		Resource: "nodeoverlays",
+	}
+
+	existing, err := dynClient.Resource(nodeOverlayGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get NodeOverlay: %w", err)
+	}
+	existing.Object["status"] = map[string]interface{}{"conditions": conditions}
+
+	_, err = dynClient.Resource(nodeOverlayGVR).UpdateStatus(ctx, existing, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update NodeOverlay status: %w", err)
+	}
+	return nil
+}
+
+// GetControllerMetrics retrieves the Veneer metrics endpoint through the
+// controller pod proxy. This avoids exposing a separate test-only Service.
+func (n *NodePoolClient) GetControllerMetrics(ctx context.Context, namespace, podName string) (string, error) {
+	clientset, err := kubernetes.NewForConfig(n.restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	result := clientset.CoreV1().RESTClient().Get().
+		Namespace(namespace).
+		Resource("pods").
+		SubResource("proxy").
+		Name(fmt.Sprintf("%s:8080", podName)).
+		Suffix("metrics").
+		Do(ctx)
+	if err := result.Error(); err != nil {
+		return "", fmt.Errorf("failed to proxy controller metrics: %w", err)
+	}
+	body, err := result.Raw()
+	if err != nil {
+		return "", fmt.Errorf("failed to read controller metrics: %w", err)
+	}
+	return string(body), nil
+}
+
+// metricValue returns the value for an exact Prometheus metric label set.
+func metricValue(body, series string) (float64, error) {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, series+" ") {
+			var value float64
+			if _, err := fmt.Sscanf(line, series+" %f", &value); err != nil {
+				return 0, err
+			}
+			return value, nil
+		}
+	}
+	return 0, fmt.Errorf("metric series %q not found", series)
 }
 
 // ListPreferenceOverlays lists all NodeOverlays that were created from preferences.

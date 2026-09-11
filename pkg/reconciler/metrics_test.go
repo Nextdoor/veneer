@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/awslabs/operatorpkg/status"
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/internal/testutil"
 	"github.com/nextdoor/veneer/pkg/config"
@@ -519,6 +520,76 @@ func TestMetricsReconciler_CleanupMissingOverlays(t *testing.T) {
 	}
 }
 
+func TestMetricsReconciler_UpdateCostAwareOverlayStatus(t *testing.T) {
+	objects := []runtime.Object{
+		costOverlay("compute-ready", "compute-savings-plan", true),
+		costOverlayWithConditions("compute-rejected", "compute-savings-plan", []status.Condition{{
+			Type:    karpenterv1alpha1.ConditionTypeValidationSucceeded,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InvalidRequirement",
+			Message: "requirement key is not supported",
+		}}),
+		costOverlayWithConditions("ri-ready", "reserved-instance", []status.Condition{{
+			Type:   status.ConditionReady,
+			Status: metav1.ConditionTrue,
+		}}),
+		&karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{
+			Name: "preference-overlay",
+			Labels: map[string]string{
+				overlay.LabelManagedBy:         overlay.LabelManagedByValue,
+				overlay.LabelCapacityType:      "compute-savings-plan",
+				preference.LabelPreferenceType: preference.LabelPreferenceTypeValue,
+			},
+		}},
+	}
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(metricsTestScheme(t)).
+		WithRuntimeObjects(objects...).
+		Build()
+	registry := promclient.NewRegistry()
+	controllerMetrics := veneermetrics.NewMetrics(registry)
+	reconciler := &MetricsReconciler{
+		Client:  kubeClient,
+		Logger:  logr.Discard(),
+		Metrics: controllerMetrics,
+	}
+
+	reconciler.updateCostAwareOverlayStatus(context.Background())
+
+	if got := promtest.ToFloat64(controllerMetrics.OverlayCount.WithLabelValues(
+		veneermetrics.CapacityTypeComputeSP.String(),
+	)); got != 2 {
+		t.Fatalf("compute overlay count = %v, want 2", got)
+	}
+	if got := promtest.ToFloat64(controllerMetrics.OverlayReady.WithLabelValues(
+		veneermetrics.CapacityTypeComputeSP.String(),
+	)); got != 1 {
+		t.Fatalf("compute ready overlay count = %v, want 1", got)
+	}
+	if got := promtest.ToFloat64(controllerMetrics.OverlayCount.WithLabelValues(
+		veneermetrics.CapacityTypeRI.String(),
+	)); got != 1 {
+		t.Fatalf("RI overlay count = %v, want 1", got)
+	}
+	if got := promtest.ToFloat64(controllerMetrics.OverlayReady.WithLabelValues(
+		veneermetrics.CapacityTypeRI.String(),
+	)); got != 1 {
+		t.Fatalf("RI ready overlay count = %v, want 1", got)
+	}
+	validationErrors := controllerMetrics.OverlayOperationErrorsTotal.WithLabelValues(
+		veneermetrics.OperationUpdate.String(),
+		veneermetrics.ErrorTypeValidation.String(),
+	)
+	if got := promtest.ToFloat64(validationErrors); got != 1 {
+		t.Fatalf("validation error count = %v, want 1", got)
+	}
+
+	reconciler.updateCostAwareOverlayStatus(context.Background())
+	if got := promtest.ToFloat64(validationErrors); got != 1 {
+		t.Fatalf("persistent validation error count = %v, want 1", got)
+	}
+}
+
 func TestMetricsReconciler_CleanupDisabledOverlayTypes(t *testing.T) {
 	objects := []runtime.Object{
 		costOverlay("compute", "compute-savings-plan", true),
@@ -600,6 +671,14 @@ func costOverlay(name, capacityType string, managed bool) *karpenterv1alpha1.Nod
 		labels[overlay.LabelManagedBy] = overlay.LabelManagedByValue
 	}
 	return &karpenterv1alpha1.NodeOverlay{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}}
+}
+
+func costOverlayWithConditions(
+	name, capacityType string, conditions []status.Condition,
+) *karpenterv1alpha1.NodeOverlay {
+	nodeOverlay := costOverlay(name, capacityType, true)
+	nodeOverlay.Status.Conditions = conditions
+	return nodeOverlay
 }
 
 func overlayNames(items []karpenterv1alpha1.NodeOverlay) map[string]bool {

@@ -76,6 +76,10 @@ type MetricsReconciler struct {
 	// Metrics holds the Prometheus metrics for recording reconciler behavior.
 	// This follows Lumina's pattern of passing metrics struct to reconcilers.
 	Metrics *veneermetrics.Metrics
+
+	// observedFailures deduplicates validation error counters across periodic
+	// reconciliations while an overlay remains in the same failed state.
+	observedFailures map[string]observedOverlayFailure
 }
 
 // Start begins the metrics reconciliation loop.
@@ -221,6 +225,17 @@ func (r *MetricsReconciler) reconcile(ctx context.Context) error {
 		generatedOverlays := r.Generator.GenerateAll(decisions)
 		r.applyOverlays(ctx, generatedOverlays)
 	}
+
+	// Karpenter validates NodeOverlays asynchronously after the Kubernetes API
+	// accepts them. Recount the actual cluster inventory after all mutations so
+	// object and readiness gauges include status failures and stale objects rather
+	// than only the successful actions attempted in this reconciliation.
+	//
+	// This client reads through controller-runtime's informer cache, which may not
+	// have observed the writes above yet. RI and Savings Plan gauges are therefore
+	// eventually consistent and can retain the previous value until the next
+	// metrics reconciliation, at most one configured interval later.
+	r.updateCostAwareOverlayStatus(ctx)
 
 	r.Logger.V(1).Info("Metrics reconciliation complete",
 		"decisions_count", len(decisions),
@@ -530,6 +545,98 @@ func (r *MetricsReconciler) cleanupMissingOverlays(
 	}
 }
 
+// updateCostAwareOverlayStatus refreshes the object and readiness gauges for
+// RI and Savings Plan overlays and reports explicit Karpenter rejections.
+// Preference overlays are handled by NodePoolReconciler because their owner
+// watch provides immediate status updates; cost-aware overlays are refreshed on
+// the metrics reconciler interval.
+func (r *MetricsReconciler) updateCostAwareOverlayStatus(ctx context.Context) {
+	if r.Client == nil || r.Metrics == nil {
+		return
+	}
+
+	var overlayList karpenterv1alpha1.NodeOverlayList
+	if err := r.Client.List(ctx, &overlayList, client.MatchingLabels{
+		overlay.LabelManagedBy: overlay.LabelManagedByValue,
+	}); err != nil {
+		r.Logger.Error(err, "Failed to inspect cost-aware NodeOverlays for status")
+		return
+	}
+
+	counts := map[veneermetrics.CapacityType]int{
+		veneermetrics.CapacityTypeComputeSP:     0,
+		veneermetrics.CapacityTypeEC2InstanceSP: 0,
+		veneermetrics.CapacityTypeRI:            0,
+	}
+	readyCounts := map[veneermetrics.CapacityType]int{
+		veneermetrics.CapacityTypeComputeSP:     0,
+		veneermetrics.CapacityTypeEC2InstanceSP: 0,
+		veneermetrics.CapacityTypeRI:            0,
+	}
+
+	seenFailures := make(map[string]struct{})
+	for i := range overlayList.Items {
+		item := &overlayList.Items[i]
+		if preference.IsPreferenceOverlay(item) {
+			continue
+		}
+
+		capacityType := veneermetrics.CapacityTypeFromOverlay(string(
+			capacityTypeFromLabel(item.Labels[overlay.LabelCapacityType]),
+		))
+		if _, tracked := counts[capacityType]; !tracked {
+			continue
+		}
+		counts[capacityType]++
+
+		failedCondition := failedNodeOverlayCondition(item)
+		if failedCondition == nil {
+			readyCounts[capacityType]++
+			continue
+		}
+
+		failure := observedOverlayFailureFromCondition(failedCondition)
+		seenFailures[item.Name] = struct{}{}
+		r.Logger.Error(
+			fmt.Errorf("%s condition failed: %s", failedCondition.Type, failedCondition.Message),
+			"Karpenter rejected NodeOverlay",
+			"overlay", item.Name,
+			"capacity_type", capacityType,
+			"condition", failedCondition.Type,
+			"reason", failedCondition.Reason,
+			"message", failedCondition.Message,
+		)
+		if r.recordFailureTransition(item.Name, failure) {
+			r.Metrics.RecordOverlayOperationError(veneermetrics.OperationUpdate, veneermetrics.ErrorTypeValidation)
+		}
+	}
+
+	r.clearRecoveredFailures(seenFailures)
+	for capacityType, count := range counts {
+		r.Metrics.SetOverlayCount(capacityType, count)
+		r.Metrics.SetOverlayReady(capacityType, readyCounts[capacityType])
+	}
+}
+
+func (r *MetricsReconciler) recordFailureTransition(name string, failure observedOverlayFailure) bool {
+	if r.observedFailures == nil {
+		r.observedFailures = make(map[string]observedOverlayFailure)
+	}
+	if previous, found := r.observedFailures[name]; found && previous == failure {
+		return false
+	}
+	r.observedFailures[name] = failure
+	return true
+}
+
+func (r *MetricsReconciler) clearRecoveredFailures(seen map[string]struct{}) {
+	for name := range r.observedFailures {
+		if _, failed := seen[name]; !failed {
+			delete(r.observedFailures, name)
+		}
+	}
+}
+
 func capacityTypeFromLabel(value string) overlay.CapacityType {
 	switch value {
 	case "compute-savings-plan":
@@ -592,13 +699,6 @@ func (r *MetricsReconciler) cleanupDisabledOverlayTypes(ctx context.Context) {
 
 // applyOverlays creates, updates, or deletes NodeOverlay resources based on decisions.
 func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overlay.GeneratedOverlay) {
-	// Track counts by capacity type for metrics
-	overlayCounts := map[veneermetrics.CapacityType]int{
-		veneermetrics.CapacityTypeComputeSP:     0,
-		veneermetrics.CapacityTypeEC2InstanceSP: 0,
-		veneermetrics.CapacityTypeRI:            0,
-	}
-
 	createCount := 0
 	updateCount := 0
 	deleteCount := 0
@@ -642,7 +742,6 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					if r.Metrics != nil {
 						r.Metrics.RecordOverlayOperation(veneermetrics.OperationCreate, capacityType)
 					}
-					overlayCounts[capacityType]++
 					createCount++
 					r.Logger.Info("Created NodeOverlay",
 						"name", gen.Overlay.Name,
@@ -677,7 +776,6 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 					if r.Metrics != nil {
 						r.Metrics.RecordOverlayOperation(veneermetrics.OperationUpdate, capacityType)
 					}
-					overlayCounts[capacityType]++
 					updateCount++
 					r.Logger.V(1).Info("Updated NodeOverlay",
 						"name", gen.Overlay.Name,
@@ -736,13 +834,6 @@ func (r *MetricsReconciler) applyOverlays(ctx context.Context, overlays []overla
 				"capacity_type", gen.Decision.CapacityType,
 				"reason", gen.Decision.Reason,
 			)
-		}
-	}
-
-	// Update overlay count metrics
-	if r.Metrics != nil {
-		for ct, count := range overlayCounts {
-			r.Metrics.SetOverlayCount(ct, count)
 		}
 	}
 

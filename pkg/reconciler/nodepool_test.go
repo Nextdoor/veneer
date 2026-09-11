@@ -16,9 +16,12 @@ package reconciler
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/awslabs/operatorpkg/status"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	veneermetrics "github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/preference"
 	promclient "github.com/prometheus/client_golang/prometheus"
@@ -531,6 +534,9 @@ func TestNodePoolReconciler_Reconcile_OwnerReferences(t *testing.T) {
 
 	if len(overlay.OwnerReferences) > 0 {
 		ref := overlay.OwnerReferences[0]
+		if ref.Controller == nil || !*ref.Controller {
+			t.Error("expected NodePool owner reference to be marked as controller owner")
+		}
 		if ref.Kind != "NodePool" {
 			t.Errorf("expected owner reference kind NodePool, got %s", ref.Kind)
 		}
@@ -758,10 +764,10 @@ func TestNodePoolReconciler_Reconcile_SkipsUpdateWhenUnchanged(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "pref-skip-update-pool-1",
 			Labels: map[string]string{
-				"managed-by":                  "veneer",
-				"veneer.io/type":              "preference",
-				"veneer.io/source-nodepool":   "skip-update-pool",
-				"veneer.io/preference-number": "1",
+				preference.LabelManagedBy:        preference.LabelManagedByValue,
+				preference.LabelPreferenceType:   preference.LabelPreferenceTypeValue,
+				preference.LabelSourceNodePool:   "skip-update-pool",
+				preference.LabelPreferenceNumber: "1",
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
@@ -813,7 +819,8 @@ func TestNodePoolReconciler_Reconcile_SkipsUpdateWhenUnchanged(t *testing.T) {
 		t.Errorf("unexpected requeue")
 	}
 
-	// Verify overlay still exists with same ResourceVersion (not updated)
+	// Verify the existing overlay was migrated to a controller owner reference
+	// so status-only events can be routed through SetupWithManager's Owns watch.
 	var overlayList karpenterv1alpha1.NodeOverlayList
 	if err := client.List(context.Background(), &overlayList); err != nil {
 		t.Fatalf("failed to list overlays: %v", err)
@@ -823,8 +830,236 @@ func TestNodePoolReconciler_Reconcile_SkipsUpdateWhenUnchanged(t *testing.T) {
 		t.Fatalf("expected 1 overlay, got %d", len(overlayList.Items))
 	}
 
-	// The fake client doesn't preserve ResourceVersion exactly, but this test
-	// verifies the reconciler path doesn't error when overlay already matches
+	if ref := overlayList.Items[0].OwnerReferences[0]; ref.Controller == nil || !*ref.Controller {
+		t.Error("expected existing overlay to be migrated to a controller owner reference")
+	}
+}
+
+func TestFailedNodeOverlayCondition(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []status.Condition
+		wantType   string
+	}{
+		{name: "no conditions yet"},
+		{
+			name: "validation failed",
+			conditions: []status.Condition{{
+				Type:    karpenterv1alpha1.ConditionTypeValidationSucceeded,
+				Status:  metav1.ConditionFalse,
+				Reason:  "InvalidRequirement",
+				Message: "requirement key is not supported",
+			}},
+			wantType: karpenterv1alpha1.ConditionTypeValidationSucceeded,
+		},
+		{
+			name: "ready failed",
+			conditions: []status.Condition{{
+				Type:    status.ConditionReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  "UnhealthyDependents",
+				Message: "validation has not succeeded",
+			}},
+			wantType: status.ConditionReady,
+		},
+		{
+			name: "validation failure preferred over derived ready failure",
+			conditions: []status.Condition{
+				{Type: status.ConditionReady, Status: metav1.ConditionFalse},
+				{Type: karpenterv1alpha1.ConditionTypeValidationSucceeded, Status: metav1.ConditionFalse},
+			},
+			wantType: karpenterv1alpha1.ConditionTypeValidationSucceeded,
+		},
+		{
+			name: "all conditions true",
+			conditions: []status.Condition{
+				{Type: karpenterv1alpha1.ConditionTypeValidationSucceeded, Status: metav1.ConditionTrue},
+				{Type: status.ConditionReady, Status: metav1.ConditionTrue},
+			},
+		},
+		{
+			name: "unknown is not failed",
+			conditions: []status.Condition{
+				{Type: karpenterv1alpha1.ConditionTypeValidationSucceeded, Status: metav1.ConditionUnknown},
+				{Type: status.ConditionReady, Status: metav1.ConditionUnknown},
+			},
+		},
+		{
+			name: "stale failure is not reported",
+			conditions: []status.Condition{{
+				Type:               karpenterv1alpha1.ConditionTypeValidationSucceeded,
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: 1,
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			overlay := &karpenterv1alpha1.NodeOverlay{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status:     karpenterv1alpha1.NodeOverlayStatus{Conditions: tt.conditions},
+			}
+
+			got := failedNodeOverlayCondition(overlay)
+			if tt.wantType == "" {
+				if got != nil {
+					t.Fatalf("expected no failed condition, got %s", got.Type)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected failed condition %s, got nil", tt.wantType)
+			}
+			if got.Type != tt.wantType {
+				t.Fatalf("expected failed condition %s, got %s", tt.wantType, got.Type)
+			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_Reconcile_ReportsRejectedOverlayAndRecovery(t *testing.T) {
+	scheme := setupTestScheme(t)
+	ctx := context.Background()
+
+	nodePool := &karpenterv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "status-pool",
+			UID:  types.UID("status-pool-uid"),
+			Annotations: map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&karpenterv1alpha1.NodeOverlay{}).
+		WithObjects(nodePool).
+		Build()
+
+	reg := promclient.NewRegistry()
+	m := veneermetrics.NewMetrics(reg)
+	var logs []string
+	logger := funcr.NewJSON(func(entry string) {
+		logs = append(logs, entry)
+	}, funcr.Options{})
+
+	reconciler := &NodePoolReconciler{
+		Client:    fakeClient,
+		Logger:    logger,
+		Generator: preference.NewGenerator(),
+		Metrics:   m,
+	}
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: nodePool.Name}}
+
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("unexpected initial reconcile error: %v", err)
+	}
+
+	var overlay karpenterv1alpha1.NodeOverlay
+	key := types.NamespacedName{Name: "pref-status-pool-1"}
+	if err := fakeClient.Get(ctx, key, &overlay); err != nil {
+		t.Fatalf("failed to get created overlay: %v", err)
+	}
+	overlay.Status.Conditions = []status.Condition{
+		{
+			Type:    karpenterv1alpha1.ConditionTypeValidationSucceeded,
+			Status:  metav1.ConditionFalse,
+			Reason:  "InvalidRequirement",
+			Message: "requirement key is not supported",
+		},
+		{
+			Type:    status.ConditionReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  "UnhealthyDependents",
+			Message: "validation has not succeeded",
+		},
+	}
+	if err := fakeClient.Status().Update(ctx, &overlay); err != nil {
+		t.Fatalf("failed to set rejected overlay status: %v", err)
+	}
+
+	logs = nil
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("unexpected rejected-overlay reconcile error: %v", err)
+	}
+
+	readyGauge := m.OverlayReady.WithLabelValues(veneermetrics.CapacityTypePreference.String())
+	countGauge := m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypePreference.String())
+	validationErrors := m.OverlayOperationErrorsTotal.WithLabelValues(
+		veneermetrics.OperationUpdate.String(),
+		veneermetrics.ErrorTypeValidation.String(),
+	)
+	if got := promtest.ToFloat64(countGauge); got != 1 {
+		t.Fatalf("expected overlay count 1, got %v", got)
+	}
+	if got := promtest.ToFloat64(readyGauge); got != 0 {
+		t.Fatalf("expected ready overlay count 0, got %v", got)
+	}
+	if got := promtest.ToFloat64(validationErrors); got != 1 {
+		t.Fatalf("expected one validation error, got %v", got)
+	}
+	joinedLogs := strings.Join(logs, "\n")
+	for _, want := range []string{
+		"Karpenter rejected preference overlay",
+		"pref-status-pool-1",
+		"status-pool",
+		"InvalidRequirement",
+		"requirement key is not supported",
+		`"errors":1`,
+	} {
+		if !strings.Contains(joinedLogs, want) {
+			t.Errorf("expected logs to contain %q, got:\n%s", want, joinedLogs)
+		}
+	}
+
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("unexpected repeated rejected-overlay reconcile error: %v", err)
+	}
+	if got := promtest.ToFloat64(validationErrors); got != 1 {
+		t.Fatalf("expected persistent failure not to increment counter again, got %v", got)
+	}
+
+	if err := fakeClient.Get(ctx, key, &overlay); err != nil {
+		t.Fatalf("failed to get rejected overlay: %v", err)
+	}
+	overlay.Status.Conditions = []status.Condition{
+		{Type: karpenterv1alpha1.ConditionTypeValidationSucceeded, Status: metav1.ConditionTrue},
+		{Type: status.ConditionReady, Status: metav1.ConditionTrue},
+	}
+	if err := fakeClient.Status().Update(ctx, &overlay); err != nil {
+		t.Fatalf("failed to set recovered overlay status: %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("unexpected recovered-overlay reconcile error: %v", err)
+	}
+	if got := promtest.ToFloat64(countGauge); got != 1 {
+		t.Fatalf("expected overlay count to remain 1 after recovery, got %v", got)
+	}
+	if got := promtest.ToFloat64(readyGauge); got != 1 {
+		t.Fatalf("expected ready overlay count 1 after recovery, got %v", got)
+	}
+
+	if err := fakeClient.Get(ctx, key, &overlay); err != nil {
+		t.Fatalf("failed to get recovered overlay: %v", err)
+	}
+	overlay.Status.Conditions = []status.Condition{{
+		Type:    karpenterv1alpha1.ConditionTypeValidationSucceeded,
+		Status:  metav1.ConditionFalse,
+		Reason:  "InvalidRequirement",
+		Message: "requirement key is not supported",
+	}}
+	if err := fakeClient.Status().Update(ctx, &overlay); err != nil {
+		t.Fatalf("failed to reject recovered overlay again: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, req); err != nil {
+		t.Fatalf("unexpected second rejection reconcile error: %v", err)
+	}
+	if got := promtest.ToFloat64(validationErrors); got != 2 {
+		t.Fatalf("expected recovery followed by rejection to increment counter to 2, got %v", got)
+	}
 }
 
 // Helper functions
@@ -880,6 +1115,7 @@ func TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount(t *testing.T
 	}
 
 	gauge := m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypePreference.String())
+	readyGauge := m.OverlayReady.WithLabelValues(veneermetrics.CapacityTypePreference.String())
 
 	// Seeded at registration, before anything has reconciled.
 	if got := promtest.ToFloat64(gauge); got != 0 {
@@ -900,6 +1136,9 @@ func TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount(t *testing.T
 	if got := promtest.ToFloat64(gauge); got != 2 {
 		t.Errorf("expected 2 preference overlays after reconciling pool-a, got %v", got)
 	}
+	if got := promtest.ToFloat64(readyGauge); got != 2 {
+		t.Errorf("expected 2 ready preference overlays after reconciling pool-a, got %v", got)
+	}
 
 	// Reconciling a second pool must add to the total, not replace it.
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -909,6 +1148,9 @@ func TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount(t *testing.T
 	}
 	if got := promtest.ToFloat64(gauge); got != 3 {
 		t.Errorf("expected 3 preference overlays after reconciling pool-b, got %v", got)
+	}
+	if got := promtest.ToFloat64(readyGauge); got != 3 {
+		t.Errorf("expected 3 ready preference overlays after reconciling pool-b, got %v", got)
 	}
 
 	// Deleting a NodePool cleans up its overlays and the count follows.
@@ -922,6 +1164,9 @@ func TestNodePoolReconciler_Reconcile_UpdatesPreferenceOverlayCount(t *testing.T
 	}
 	if got := promtest.ToFloat64(gauge); got != 1 {
 		t.Errorf("expected 1 preference overlay after pool-a cleanup, got %v", got)
+	}
+	if got := promtest.ToFloat64(readyGauge); got != 1 {
+		t.Errorf("expected 1 ready preference overlay after pool-a cleanup, got %v", got)
 	}
 }
 

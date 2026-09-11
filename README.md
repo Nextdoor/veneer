@@ -27,6 +27,7 @@ helm install veneer ./charts/veneer \
 | Bin-Packing | [Bin-Packing & NodeOverlay](https://oss.nextdoor.com/veneer/docs/concepts/binpacking/) |
 | Configuration | [Configuration Reference](https://oss.nextdoor.com/veneer/docs/configuration/) |
 | Instance Preferences | [NodePool Preference Annotations](https://oss.nextdoor.com/veneer/docs/configuration/preferences/) |
+| Metrics | [Prometheus Metrics](https://oss.nextdoor.com/veneer/docs/reference/metrics/) |
 | Development | [Development Guide](https://oss.nextdoor.com/veneer/docs/development/) |
 
 ## Quick Start (Development)

@@ -24,6 +24,7 @@ Veneer intentionally does **not** duplicate Lumina metrics (which are already in
 | [`veneer_overlay_operations_total`](#nodeoverlay-lifecycle-metrics) | Counter | Total overlay operations |
 | [`veneer_overlay_operation_errors_total`](#nodeoverlay-lifecycle-metrics) | Counter | Total overlay operation errors |
 | [`veneer_overlay_count`](#nodeoverlay-lifecycle-metrics) | Gauge | Current overlay count |
+| [`veneer_overlay_ready`](#nodeoverlay-lifecycle-metrics) | Gauge | Current non-rejected overlay count |
 | [`veneer_prometheus_query_duration_seconds`](#prometheus-query-metrics) | Histogram | Prometheus query duration |
 | [`veneer_prometheus_query_errors_total`](#prometheus-query-metrics) | Counter | Prometheus query errors |
 | [`veneer_prometheus_query_result_count`](#prometheus-query-metrics) | Gauge | Prometheus query result count |
@@ -88,6 +89,9 @@ Veneer intentionally does **not** duplicate Lumina metrics (which are already in
 | `veneer_overlay_operations_total` | Counter | `operation`, `capacity_type` | Total NodeOverlay operations. |
 | `veneer_overlay_operation_errors_total` | Counter | `operation`, `error_type` | Total NodeOverlay operation errors. |
 | `veneer_overlay_count` | Gauge | `capacity_type` | Current number of NodeOverlays managed by Veneer. |
+| `veneer_overlay_ready` | Gauge | `capacity_type` | Current number of managed NodeOverlays without an explicit `ValidationSucceeded=False` or `Ready=False` condition. Newly created overlays with no conditions yet are included until Karpenter reports a failure. |
+
+Both gauges are seeded to `0` for every capacity type at startup, so zero-value queries return data before the first reconciliation.
 
 **Label values:**
 
@@ -160,6 +164,9 @@ rate(veneer_overlay_operations_total{operation="create"}[1h])
 # Current overlay count
 veneer_overlay_count
 
+# Overlays explicitly rejected by Karpenter
+veneer_overlay_count - veneer_overlay_ready > 0
+
 # Overlay operation error rate
 rate(veneer_overlay_operation_errors_total[5m])
 ```
@@ -180,7 +187,7 @@ You can build a Grafana dashboard using these metrics. Key panels to include:
 
 1. **Reconciliation Status** -- Success/error rate over time
 2. **Lumina Data Freshness** -- Gauge showing data age
-3. **Overlay Count** -- Breakdown by capacity type
+3. **Overlay Health** -- Object and ready counts by capacity type
 4. **Decision Activity** -- Create vs delete decisions over time
 5. **Prometheus Query Performance** -- Query latency and error rates
 6. **SP Utilization** -- Per-type utilization percentages

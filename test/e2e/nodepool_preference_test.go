@@ -69,6 +69,7 @@ var _ = Describe("NodePool Preference Reconciler", Ordered, func() {
 			_ = nodePoolClient.DeleteNodePool(ctx, "test-preferences")
 			_ = nodePoolClient.DeleteNodePool(ctx, "test-multi-preferences")
 			_ = nodePoolClient.DeleteNodePool(ctx, "test-update-preferences")
+			_ = nodePoolClient.DeleteNodePool(ctx, "test-overlay-status")
 		}
 	})
 
@@ -201,6 +202,125 @@ var _ = Describe("NodePool Preference Reconciler", Ordered, func() {
 					}
 				}
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+	})
+
+	Context("NodeOverlay Status", func() {
+		It("should react to Karpenter rejection and recovery status updates", func() {
+			ctx := context.Background()
+			const (
+				nodePoolName = "test-overlay-status"
+				overlayName  = "pref-test-overlay-status-1"
+				countSeries  = `veneer_overlay_count{capacity_type="preference"}`
+				readySeries  = `veneer_overlay_ready{capacity_type="preference"}`
+			)
+
+			By("creating a NodePool with a valid preference")
+			err := nodePoolClient.CreateNodePoolWithPreferences(ctx, nodePoolName, map[string]string{
+				"veneer.io/preference.1": "karpenter.k8s.aws/instance-family=c7a adjust=-20%",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the preference overlay to be created and counted ready")
+			Eventually(func(g Gomega) {
+				overlays, err := nodePoolClient.ListPreferenceOverlays(ctx)
+				g.Expect(err).NotTo(HaveOccurred())
+				var found bool
+				for _, overlay := range overlays {
+					if overlay.Name == overlayName {
+						found = true
+					}
+				}
+				g.Expect(found).To(BeTrue())
+
+				metricsBody, err := nodePoolClient.GetControllerMetrics(ctx, namespace, controllerPodName)
+				g.Expect(err).NotTo(HaveOccurred())
+				count, err := metricValue(metricsBody, countSeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				ready, err := metricValue(metricsBody, readySeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal(count))
+			}, 30*time.Second, time.Second).Should(Succeed())
+
+			By("simulating Karpenter rejecting the overlay asynchronously")
+			now := time.Now().UTC().Format(time.RFC3339)
+			err = nodePoolClient.SetNodeOverlayConditions(ctx, overlayName, []interface{}{
+				map[string]interface{}{
+					"type":               "ValidationSucceeded",
+					"status":             "False",
+					"observedGeneration": int64(1),
+					"lastTransitionTime": now,
+					"reason":             "InvalidRequirement",
+					"message":            "requirement key is not supported",
+				},
+				map[string]interface{}{
+					"type":               "Ready",
+					"status":             "False",
+					"observedGeneration": int64(1),
+					"lastTransitionTime": now,
+					"reason":             "UnhealthyDependents",
+					"message":            "validation has not succeeded",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the owned-resource watch logs and counts the rejected overlay")
+			Eventually(func(g Gomega) {
+				logsClient, err := NewLogsClient(namespace)
+				g.Expect(err).NotTo(HaveOccurred())
+				logs, err := logsClient.GetPodLogs(ctx, controllerPodName, nil, "")
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(logs).To(ContainSubstring("Karpenter rejected preference overlay"))
+				g.Expect(logs).To(ContainSubstring(overlayName))
+				g.Expect(logs).To(ContainSubstring(nodePoolName))
+				g.Expect(logs).To(ContainSubstring("InvalidRequirement"))
+				g.Expect(logs).To(ContainSubstring("requirement key is not supported"))
+
+				metricsBody, err := nodePoolClient.GetControllerMetrics(ctx, namespace, controllerPodName)
+				g.Expect(err).NotTo(HaveOccurred())
+				count, err := metricValue(metricsBody, countSeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				ready, err := metricValue(metricsBody, readySeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(BeNumerically("<", count))
+				validationErrors, err := metricValue(metricsBody,
+					`veneer_overlay_operation_errors_total{error_type="validation",operation="update"}`)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(validationErrors).To(BeNumerically(">=", 1))
+			}, 30*time.Second, time.Second).Should(Succeed())
+
+			By("simulating Karpenter accepting the same overlay")
+			now = time.Now().UTC().Format(time.RFC3339)
+			err = nodePoolClient.SetNodeOverlayConditions(ctx, overlayName, []interface{}{
+				map[string]interface{}{
+					"type":               "ValidationSucceeded",
+					"status":             "True",
+					"observedGeneration": int64(1),
+					"lastTransitionTime": now,
+					"reason":             "ValidationSucceeded",
+					"message":            "",
+				},
+				map[string]interface{}{
+					"type":               "Ready",
+					"status":             "True",
+					"observedGeneration": int64(1),
+					"lastTransitionTime": now,
+					"reason":             "Ready",
+					"message":            "",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the status-only recovery restores the ready gauge")
+			Eventually(func(g Gomega) {
+				metricsBody, err := nodePoolClient.GetControllerMetrics(ctx, namespace, controllerPodName)
+				g.Expect(err).NotTo(HaveOccurred())
+				count, err := metricValue(metricsBody, countSeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				ready, err := metricValue(metricsBody, readySeries)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal(count))
+			}, 30*time.Second, time.Second).Should(Succeed())
 		})
 	})
 
