@@ -242,6 +242,11 @@
  &lt;td>Current overlay count&lt;/td>
  &lt;/tr>
  &lt;tr>
+ &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#nodeoverlay-lifecycle-metrics">&lt;code>veneer_overlay_ready&lt;/code>&lt;/a>&lt;/td>
+ &lt;td>Gauge&lt;/td>
+ &lt;td>Current non-rejected overlay count&lt;/td>
+ &lt;/tr>
+ &lt;tr>
  &lt;td>&lt;a href="https://oss.nextdoor.com/veneer/docs/reference/metrics/#prometheus-query-metrics">&lt;code>veneer_prometheus_query_duration_seconds&lt;/code>&lt;/a>&lt;/td>
  &lt;td>Histogram&lt;/td>
  &lt;td>Prometheus query duration&lt;/td>
