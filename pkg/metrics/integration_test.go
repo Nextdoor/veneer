@@ -352,6 +352,8 @@ func TestMetricsIntegration_MetricRegistration(t *testing.T) {
 		"veneer_lumina_data_freshness_seconds",
 		"veneer_lumina_data_available",
 		"veneer_reserved_instance_data_available",
+		"veneer_overlay_count",
+		"veneer_overlay_ready",
 		"veneer_config_overlays_disabled",
 		"veneer_config_utilization_threshold_percent",
 	}
@@ -403,6 +405,7 @@ func TestMetricsIntegration_NewMetricsCreatesAllFields(t *testing.T) {
 	assert.NotNil(t, m.OverlayOperationsTotal, "OverlayOperationsTotal should not be nil")
 	assert.NotNil(t, m.OverlayOperationErrorsTotal, "OverlayOperationErrorsTotal should not be nil")
 	assert.NotNil(t, m.OverlayCount, "OverlayCount should not be nil")
+	assert.NotNil(t, m.OverlayReady, "OverlayReady should not be nil")
 	assert.NotNil(t, m.PrometheusQueryDuration, "PrometheusQueryDuration should not be nil")
 	assert.NotNil(t, m.PrometheusQueryErrorsTotal, "PrometheusQueryErrorsTotal should not be nil")
 	assert.NotNil(t, m.PrometheusQueryResultCount, "PrometheusQueryResultCount should not be nil")
@@ -454,8 +457,8 @@ func TestMetricsIntegration_InfoMetric(t *testing.T) {
 }
 
 // TestMetricsIntegration_OverlayCountInitializedAtRegistration verifies that
-// veneer_overlay_count exports an explicit 0 for every capacity type as soon as
-// the metrics are registered, before any reconciliation has run.
+// the overlay object and ready gauges export an explicit 0 for every capacity
+// type as soon as the metrics are registered, before any reconciliation has run.
 //
 // This is the regression guard for a silent-failure mode: the gauge used to
 // gain a child series only once the cost-aware reconcile path wrote to it, so
@@ -474,9 +477,15 @@ veneer_overlay_count{capacity_type="compute_savings_plan"} 0
 veneer_overlay_count{capacity_type="ec2_instance_savings_plan"} 0
 veneer_overlay_count{capacity_type="preference"} 0
 veneer_overlay_count{capacity_type="reserved_instance"} 0
+# HELP veneer_overlay_ready Current number of Veneer-managed NodeOverlays not explicitly rejected by Karpenter
+# TYPE veneer_overlay_ready gauge
+veneer_overlay_ready{capacity_type="compute_savings_plan"} 0
+veneer_overlay_ready{capacity_type="ec2_instance_savings_plan"} 0
+veneer_overlay_ready{capacity_type="preference"} 0
+veneer_overlay_ready{capacity_type="reserved_instance"} 0
 `
-	err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "veneer_overlay_count")
-	assert.NoError(t, err, "overlay count should be seeded to 0 for every capacity type")
+	err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "veneer_overlay_count", "veneer_overlay_ready")
+	assert.NoError(t, err, "overlay gauges should be seeded to 0 for every capacity type")
 }
 
 // TestMetricsIntegration_AllCapacityTypesCoversEveryConstant guards against a
@@ -504,6 +513,9 @@ func TestMetricsIntegration_OverlayCountOverwritesSeededZero(t *testing.T) {
 		testutil.ToFloat64(m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypeRI.String())))
 
 	m.SetOverlayCount(veneermetrics.CapacityTypeRI, 3)
+	m.SetOverlayReady(veneermetrics.CapacityTypeRI, 2)
 	assert.Equal(t, float64(3),
 		testutil.ToFloat64(m.OverlayCount.WithLabelValues(veneermetrics.CapacityTypeRI.String())))
+	assert.Equal(t, float64(2),
+		testutil.ToFloat64(m.OverlayReady.WithLabelValues(veneermetrics.CapacityTypeRI.String())))
 }

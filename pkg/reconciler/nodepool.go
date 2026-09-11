@@ -16,12 +16,14 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
+	"github.com/awslabs/operatorpkg/status"
 	"github.com/go-logr/logr"
 	"github.com/nextdoor/veneer/pkg/metrics"
 	"github.com/nextdoor/veneer/pkg/preference"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,6 +53,11 @@ type NodePoolReconciler struct {
 
 	// Metrics holds the Prometheus metrics for recording reconciler behavior
 	Metrics *metrics.Metrics
+
+	// observedFailures tracks the current failed condition for each overlay so
+	// the validation counter records status transitions rather than increasing
+	// on every reconcile while the same failure persists.
+	observedFailures map[string]observedOverlayFailure
 }
 
 // Reconcile handles NodePool create/update/delete events.
@@ -72,7 +79,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Get the NodePool
 	var nodePool karpenterv1.NodePool
 	if err := r.Get(ctx, req.NamespacedName, &nodePool); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// NodePool was deleted - clean up any preference overlays from it
 			log.Info("NodePool deleted, cleaning up preference overlays")
 			return r.cleanupOverlaysForNodePool(ctx, req.Name)
@@ -122,34 +129,136 @@ func (r *NodePoolReconciler) listPreferenceOverlaysForNodePool(
 	return overlayList.Items, nil
 }
 
-// updatePreferenceOverlayCount refreshes veneer_overlay_count for the
-// "preference" capacity type.
+// updatePreferenceOverlayStatus refreshes the object and readiness gauges for
+// preference overlays and reports objects that Karpenter rejected asynchronously.
 //
-// The gauge has no NodePool dimension but this reconciler is scoped to a single
-// NodePool, so the value cannot be derived from the overlays one pass happened
-// to touch -- reconciling pool-a must not clobber pool-b's contribution. It is
-// therefore recounted from a full list, served by the same controller-runtime
-// cache that backs listPreferenceOverlaysForNodePool, so it costs no extra API
-// call.
+// The gauges have no NodePool dimension but this reconciler is scoped to a
+// single NodePool, so their values cannot be derived from the overlays one pass
+// happened to touch -- reconciling pool-a must not clobber pool-b's
+// contribution. They are therefore recounted from a full list served by the
+// controller-runtime cache.
 //
-// On error the previous value is left in place rather than being zeroed: a
-// stale count is far less misleading than a spurious 0, which would be
-// indistinguishable from "every preference overlay was deleted".
-func (r *NodePoolReconciler) updatePreferenceOverlayCount(ctx context.Context, log logr.Logger) {
-	if r.Metrics == nil {
-		return
-	}
-
+// A successful API write only proves that Kubernetes stored an overlay.
+// Karpenter validates it later and reports runtime rejection through status
+// conditions. Reading those conditions closes a silent-failure gap where an
+// unusable overlay otherwise looked successful in every Veneer signal.
+func (r *NodePoolReconciler) updatePreferenceOverlayStatus(
+	ctx context.Context, log logr.Logger, reconciledNodePool string,
+) (int, error) {
 	var overlayList karpenterv1alpha1.NodeOverlayList
 	if err := r.List(ctx, &overlayList, client.MatchingLabels{
 		preference.LabelManagedBy:      preference.LabelManagedByValue,
 		preference.LabelPreferenceType: preference.LabelPreferenceTypeValue,
 	}); err != nil {
-		log.Error(err, "Failed to count preference overlays for metrics")
-		return
+		log.Error(err, "Failed to inspect preference overlays for status")
+		return 0, err
 	}
 
-	r.Metrics.SetOverlayCount(metrics.CapacityTypePreference, len(overlayList.Items))
+	readyCount := 0
+	unhealthyCount := 0
+	seenFailures := make(map[string]struct{})
+	for i := range overlayList.Items {
+		overlay := &overlayList.Items[i]
+		failedCondition := failedNodeOverlayCondition(overlay)
+		if failedCondition == nil {
+			readyCount++
+			continue
+		}
+
+		sourceNodePool := preference.GetSourceNodePool(overlay)
+		failure := observedOverlayFailureFromCondition(failedCondition)
+		seenFailures[overlay.Name] = struct{}{}
+		if sourceNodePool == reconciledNodePool {
+			unhealthyCount++
+			// Log every reconciliation while rejection persists so the current
+			// operational failure remains visible. The counter below is separately
+			// deduplicated and records only changes to the failed condition state.
+			log.Error(
+				fmt.Errorf("%s condition failed: %s", failedCondition.Type, failedCondition.Message),
+				"Karpenter rejected preference overlay",
+				"overlay", overlay.Name,
+				"source_nodepool", sourceNodePool,
+				"condition", failedCondition.Type,
+				"reason", failedCondition.Reason,
+				"message", failedCondition.Message,
+			)
+			if r.Metrics != nil && r.recordFailureTransition(overlay.Name, failure) {
+				r.Metrics.RecordOverlayOperationError(metrics.OperationUpdate, metrics.ErrorTypeValidation)
+			}
+		}
+	}
+
+	r.clearRecoveredFailures(seenFailures)
+	if r.Metrics != nil {
+		r.Metrics.SetOverlayCount(metrics.CapacityTypePreference, len(overlayList.Items))
+		r.Metrics.SetOverlayReady(metrics.CapacityTypePreference, readyCount)
+	}
+	return unhealthyCount, nil
+}
+
+// failedNodeOverlayCondition returns an explicit Karpenter failure condition
+// that makes an overlay non-functional. ValidationSucceeded is preferred over
+// the derived Ready condition so a single rejected overlay produces one error
+// with the most specific reason. Missing or Unknown conditions are not failures
+// because a newly created overlay may not have been validated yet.
+func failedNodeOverlayCondition(overlay *karpenterv1alpha1.NodeOverlay) *status.Condition {
+	conditionSet := overlay.StatusConditions(status.WithObservedOnly())
+	validationCondition := conditionSet.Get(karpenterv1alpha1.ConditionTypeValidationSucceeded)
+	if conditionIsCurrentFailure(overlay, validationCondition) {
+		return validationCondition
+	}
+	if condition := conditionSet.Get(status.ConditionReady); conditionIsCurrentFailure(overlay, condition) {
+		return condition
+	}
+	return nil
+}
+
+// conditionIsCurrentFailure ignores a failure from an older object generation.
+// Karpenter may not have revalidated an updated spec yet, and reporting the old
+// rejection during that gap would produce a false alarm.
+func conditionIsCurrentFailure(overlay *karpenterv1alpha1.NodeOverlay, condition *status.Condition) bool {
+	if !condition.IsFalse() {
+		return false
+	}
+	return condition.ObservedGeneration == 0 || condition.ObservedGeneration == overlay.Generation
+}
+
+// observedOverlayFailure is the stable identity of one failed condition state.
+// Reason and message changes are new observations even if the condition remains
+// false, because they can identify a different Karpenter validation result.
+type observedOverlayFailure struct {
+	condition          string
+	reason             string
+	message            string
+	observedGeneration int64
+}
+
+func observedOverlayFailureFromCondition(condition *status.Condition) observedOverlayFailure {
+	return observedOverlayFailure{
+		condition:          condition.Type,
+		reason:             condition.Reason,
+		message:            condition.Message,
+		observedGeneration: condition.ObservedGeneration,
+	}
+}
+
+func (r *NodePoolReconciler) recordFailureTransition(name string, failure observedOverlayFailure) bool {
+	if r.observedFailures == nil {
+		r.observedFailures = make(map[string]observedOverlayFailure)
+	}
+	if previous, found := r.observedFailures[name]; found && previous == failure {
+		return false
+	}
+	r.observedFailures[name] = failure
+	return true
+}
+
+func (r *NodePoolReconciler) clearRecoveredFailures(seen map[string]struct{}) {
+	for name := range r.observedFailures {
+		if _, failed := seen[name]; !failed {
+			delete(r.observedFailures, name)
+		}
+	}
 }
 
 // reconcileOverlays compares desired vs existing overlays and performs CRUD operations.
@@ -197,15 +306,26 @@ func (r *NodePoolReconciler) reconcileOverlays(
 			}
 			createCount++
 		} else {
-			// Update existing overlay only if spec or labels actually differ
+			// Update existing overlay only if its managed spec, labels, or owner differ.
 			if !overlayNeedsUpdate(existingOverlay, desiredOverlay) {
 				log.V(2).Info("Preference overlay already up to date", "overlay", name)
 				continue
 			}
 
-			// Copy resource version to allow update
-			desiredOverlay.ResourceVersion = existingOverlay.ResourceVersion
-			if err := r.Update(ctx, desiredOverlay); err != nil {
+			// Mutate a copy of the existing object so annotations, finalizers, and
+			// labels owned by other tools survive Veneer's update. Legacy overlays
+			// also gain a controller owner reference so the Owns watch receives their
+			// status-only transitions.
+			updatedOverlay := existingOverlay.DeepCopy()
+			updatedOverlay.Spec = desiredOverlay.Spec
+			updatedOverlay.OwnerReferences = desiredOverlay.OwnerReferences
+			if updatedOverlay.Labels == nil {
+				updatedOverlay.Labels = map[string]string{}
+			}
+			for key, value := range desiredOverlay.Labels {
+				updatedOverlay.Labels[key] = value
+			}
+			if err := r.Update(ctx, updatedOverlay); err != nil {
 				log.Error(err, "Failed to update preference overlay", "overlay", name)
 				if r.Metrics != nil {
 					r.Metrics.RecordOverlayOperationError(metrics.OperationUpdate, metrics.ErrorTypeAPI)
@@ -240,6 +360,15 @@ func (r *NodePoolReconciler) reconcileOverlays(
 		}
 	}
 
+	// Karpenter may reject an overlay after its API write succeeded. Read status
+	// after CRUD so the summary and metrics reflect runtime validation failures,
+	// not just Kubernetes API errors.
+	unhealthyCount, err := r.updatePreferenceOverlayStatus(ctx, log, nodePool.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	errorCount += unhealthyCount
+
 	if createCount > 0 || updateCount > 0 || deleteCount > 0 || errorCount > 0 {
 		log.Info("Preference overlay reconciliation complete",
 			"nodepool", nodePool.Name,
@@ -249,8 +378,6 @@ func (r *NodePoolReconciler) reconcileOverlays(
 			"errors", errorCount,
 		)
 	}
-
-	r.updatePreferenceOverlayCount(ctx, log)
 
 	return ctrl.Result{}, nil
 }
@@ -273,6 +400,7 @@ func (r *NodePoolReconciler) setOwnerReferences(
 			Kind:       "NodePool",
 			Name:       nodePool.Name,
 			UID:        nodePool.UID,
+			Controller: boolPtr(true),
 		},
 	}
 }
@@ -293,7 +421,7 @@ func (r *NodePoolReconciler) cleanupOverlaysForNodePool(
 	var deleteCount, errorCount int
 	for i := range overlays {
 		if err := r.Delete(ctx, &overlays[i]); err != nil {
-			if !errors.IsNotFound(err) {
+			if !apierrors.IsNotFound(err) {
 				log.Error(err, "Failed to delete preference overlay during cleanup", "overlay", overlays[i].Name)
 				if r.Metrics != nil {
 					r.Metrics.RecordOverlayOperationError(metrics.OperationDelete, metrics.ErrorTypeAPI)
@@ -316,7 +444,9 @@ func (r *NodePoolReconciler) cleanupOverlaysForNodePool(
 		)
 	}
 
-	r.updatePreferenceOverlayCount(ctx, log)
+	if _, err := r.updatePreferenceOverlayStatus(ctx, log, nodePoolName); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -325,15 +455,26 @@ func (r *NodePoolReconciler) cleanupOverlaysForNodePool(
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&karpenterv1.NodePool{}).
+		// Karpenter validates NodeOverlays asynchronously. Watching owned overlays
+		// ensures a status-only rejection or recovery promptly re-reconciles the
+		// source NodePool instead of remaining invisible until its next update.
+		Owns(&karpenterv1alpha1.NodeOverlay{}).
 		Complete(r)
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 // overlayNeedsUpdate returns true if the existing overlay differs from the desired overlay
 // in any meaningful way (spec or labels). This prevents unnecessary updates that would
 // trigger additional reconciliation loops.
 func overlayNeedsUpdate(existing, desired *karpenterv1alpha1.NodeOverlay) bool {
-	// Compare specs using reflect.DeepEqual for the full spec comparison
-	if !reflect.DeepEqual(existing.Spec, desired.Spec) {
+	// Ownership is part of the controller contract: existing overlays created
+	// before the status watch must gain the controller bit so Owns can route their
+	// status events back to this reconciler.
+	if !reflect.DeepEqual(existing.Spec, desired.Spec) ||
+		!reflect.DeepEqual(existing.OwnerReferences, desired.OwnerReferences) {
 		return true
 	}
 

@@ -114,12 +114,22 @@ Port values are configurable via the [Configuration reference]({{< relref "refer
    kubectl get crd nodeoverlays.karpenter.sh
    ```
 
-2. **Check overlay requirements match instance types**: The requirements in the overlay must match instances that Karpenter is considering. Verify with:
+2. **Check Karpenter accepted the overlay**: Validation happens asynchronously after the object is written.
+   ```bash
+   kubectl get nodeoverlay <name> \
+     -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
+   ```
+   `ValidationSucceeded=False` or `Ready=False` identifies a rejected overlay. The same health gap is alertable with:
+   ```promql
+   veneer_overlay_count - veneer_overlay_ready > 0
+   ```
+
+3. **Check overlay requirements match instance types**: The requirements in the overlay must match instances that Karpenter is considering. Verify with:
    ```bash
    kubectl get nodeoverlay <name> -o yaml
    ```
 
-3. **Check allocation strategy in CloudTrail**: Look for `capacity-optimized-prioritized` (spot) or `prioritized` (on-demand) in CreateFleet requests. If you see `price-capacity-optimized` or `lowest-price`, NodeOverlay is not being applied.
+4. **Check allocation strategy in CloudTrail**: Look for `capacity-optimized-prioritized` (spot) or `prioritized` (on-demand) in CreateFleet requests. If you see `price-capacity-optimized` or `lowest-price`, NodeOverlay is not being applied.
 
 ### "No Matching Capacity" Warnings
 

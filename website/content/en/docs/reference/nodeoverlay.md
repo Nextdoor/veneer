@@ -248,6 +248,19 @@ spec:
   weight: 30
 ```
 
+## Status Conditions
+
+Karpenter validates NodeOverlays asynchronously after Kubernetes accepts the object. A successful create or update therefore does not prove that Karpenter can apply the overlay.
+
+Inspect the conditions when an overlay exists but has no effect:
+
+```bash
+kubectl get nodeoverlay <name> \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
+```
+
+`ValidationSucceeded=False` or `Ready=False` means the overlay is not functional. Veneer logs the rejection and excludes it from [`veneer_overlay_ready`]({{< relref "metrics" >}}), while `veneer_overlay_count` continues to report the Kubernetes object.
+
 ## How NodeOverlay Affects Karpenter
 
 When a NodeOverlay exists, Karpenter changes its behavior in two ways:

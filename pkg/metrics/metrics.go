@@ -50,6 +50,7 @@ const (
 	MetricOverlayOperationsTotal      = "overlay_operations_total"
 	MetricOverlayOperationErrorsTotal = "overlay_operation_errors_total"
 	MetricOverlayCount                = "overlay_count"
+	MetricOverlayReady                = "overlay_ready"
 	MetricPrometheusQueryDuration     = "prometheus_query_duration_seconds"
 	MetricPrometheusQueryErrorsTotal  = "prometheus_query_errors_total"
 	MetricPrometheusQueryResultCount  = "prometheus_query_result_count"
@@ -204,6 +205,7 @@ const (
 	helpOverlayOperationsTotal      = "Total NodeOverlay operations by type"
 	helpOverlayOperationErrorsTotal = "Total NodeOverlay operation errors"
 	helpOverlayCount                = "Current number of NodeOverlays managed by Veneer"
+	helpOverlayReady                = "Current number of Veneer-managed NodeOverlays not explicitly rejected by Karpenter"
 	helpPrometheusQueryDuration     = "Duration of Prometheus queries to Lumina metrics"
 	helpPrometheusQueryErrorsTotal  = "Total Prometheus query errors"
 	helpPrometheusQueryResultCount  = "Number of results returned by last Prometheus query"
@@ -290,6 +292,9 @@ type Metrics struct {
 
 	// OverlayCount tracks the current number of NodeOverlays managed by Veneer.
 	OverlayCount *prometheus.GaugeVec
+
+	// OverlayReady tracks managed NodeOverlays that Karpenter has not explicitly rejected.
+	OverlayReady *prometheus.GaugeVec
 
 	// ===================
 	// Prometheus Query Metrics
@@ -398,6 +403,12 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:      helpOverlayCount,
 		}, []string{LabelCapacityType}),
 
+		OverlayReady: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: Namespace,
+			Name:      MetricOverlayReady,
+			Help:      helpOverlayReady,
+		}, []string{LabelCapacityType}),
+
 		PrometheusQueryDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: Namespace,
 			Name:      MetricPrometheusQueryDuration,
@@ -450,6 +461,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.OverlayOperationsTotal,
 		m.OverlayOperationErrorsTotal,
 		m.OverlayCount,
+		m.OverlayReady,
 		m.PrometheusQueryDuration,
 		m.PrometheusQueryErrorsTotal,
 		m.PrometheusQueryResultCount,
@@ -463,11 +475,11 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	return m
 }
 
-// initializeOverlayCounts exports veneer_overlay_count = 0 for every capacity
-// type at registration time.
+// initializeOverlayCounts exports both NodeOverlay gauges as 0 for every
+// capacity type at registration time.
 //
 // A Prometheus *GaugeVec creates a child series only the first time a label
-// combination is written to, and the cost-aware overlay counts are written at
+// combination is written to, and the overlay gauges are written at
 // the very end of the reconcile path -- a path that is skipped entirely when no
 // decisions are produced (every capacity type toggled off, or Lumina publishing
 // no data for the ones that are on). In that steady state the metric exported
@@ -483,6 +495,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 func (m *Metrics) initializeOverlayCounts() {
 	for _, capacityType := range AllCapacityTypes {
 		m.OverlayCount.WithLabelValues(capacityType.String()).Set(0)
+		m.OverlayReady.WithLabelValues(capacityType.String()).Set(0)
 	}
 }
 
@@ -590,6 +603,13 @@ func (m *Metrics) SetSavingsPlanMetrics(
 // SetOverlayCount sets the current overlay count by capacity type.
 func (m *Metrics) SetOverlayCount(capacityType CapacityType, count int) {
 	m.OverlayCount.WithLabelValues(capacityType.String()).Set(float64(count))
+}
+
+// SetOverlayReady sets the number of overlays that are not explicitly rejected
+// by Karpenter for a capacity type. An overlay with no conditions yet is included
+// because asynchronous validation has not reported a failure.
+func (m *Metrics) SetOverlayReady(capacityType CapacityType, count int) {
+	m.OverlayReady.WithLabelValues(capacityType.String()).Set(float64(count))
 }
 
 // BoolToShouldExist converts a boolean to a ShouldExist label value.
