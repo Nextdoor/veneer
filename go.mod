@@ -6,7 +6,7 @@ require (
 	github.com/awslabs/operatorpkg v0.0.0-20260708223819-4da4c353c5fa
 	github.com/go-logr/logr v1.4.4
 	github.com/nextdoor/lumina v0.4.4
-	github.com/onsi/ginkgo/v2 v2.32.2
+	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.71.0
