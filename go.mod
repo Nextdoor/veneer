@@ -3,7 +3,7 @@ module github.com/nextdoor/veneer
 go 1.26.9
 
 require (
-	github.com/awslabs/operatorpkg v0.0.0-20261002163259-5e8ed3699dea
+	github.com/awslabs/operatorpkg v0.0.0-20261019155633-4e7ba6e9cd42
 	github.com/go-logr/logr v1.4.4
 	github.com/nextdoor/lumina v0.4.4
 	github.com/onsi/ginkgo/v2 v2.33.1
