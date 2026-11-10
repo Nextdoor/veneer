@@ -235,7 +235,7 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 		"region", c.region)
 
 	// Execute hourly commitment query first (this is our PRIMARY data source)
-	commitmentResult, warnings, err := c.api.Query(ctx, commitmentQuery, queryTime)
+	commitmentResult, warnings, _, err := c.api.Query(ctx, commitmentQuery, queryTime)
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query for hourly commitment failed: %w", err)
 	}
@@ -244,7 +244,7 @@ func (c *Client) QuerySavingsPlanCapacity(ctx context.Context, instanceFamily st
 	}
 
 	// Execute remaining capacity query
-	remainingResult, warnings, err := c.api.Query(ctx, remainingQuery, queryTime)
+	remainingResult, warnings, _, err := c.api.Query(ctx, remainingQuery, queryTime)
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query for remaining capacity failed: %w", err)
 	}
@@ -321,7 +321,7 @@ func (c *Client) QueryReservedInstances(ctx context.Context, instanceType string
 		"region", c.region)
 
 	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	result, warnings, _, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query failed: %w", err)
 	}
@@ -366,7 +366,7 @@ func buildInstanceTypeQuery(metricName, instanceType string) string {
 
 // executeQuery executes a Prometheus query and returns the vector result.
 func (c *Client) executeQuery(ctx context.Context, query string) (model.Vector, error) {
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	result, warnings, _, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query failed: %w", err)
 	}
@@ -517,7 +517,7 @@ func (c *Client) DataFreshness(ctx context.Context, dataType DataType) (float64,
 		"account_id", c.accountID,
 		"data_type", dataType)
 
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	result, warnings, _, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return 0, fmt.Errorf("prometheus query failed: %w", err)
 	}
@@ -597,7 +597,7 @@ func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string)
 		"account_id", c.accountID)
 
 	// Execute query
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	result, warnings, _, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("prometheus query failed: %w", err)
 	}
@@ -634,7 +634,7 @@ func (c *Client) QuerySavingsPlanUtilization(ctx context.Context, spType string)
 //
 // The result is formatted as: metric_name{labels} value
 func (c *Client) QueryRaw(ctx context.Context, query string) (string, error) {
-	result, warnings, err := c.api.Query(ctx, query, time.Now())
+	result, warnings, _, err := c.api.Query(ctx, query, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("prometheus query failed: %w", err)
 	}
